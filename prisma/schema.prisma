@@ -30,6 +30,11 @@ datasource db {
 /// The tenant. One row per client org (spec §3.1). Not itself tenant-scoped.
 model Organization {
   id       String @id @default(uuid()) @db.Uuid
+  /// Clerk organization id (org_…) — the bridge from a signed-in session's
+  /// active org to our tenant uuid (fed into app.org_id / withOrg). Mirrors
+  /// users.clerk_id. Nullable + unique: seeded test tenants and the HVEDC data
+  /// migration have no Clerk org, and Postgres unique permits multiple NULLs.
+  clerkId  String? @unique @map("clerk_id")
   name     String
   /// Label only in v1: edc, chamber, council, ria (no workflow branching yet).
   orgType  String @map("org_type")

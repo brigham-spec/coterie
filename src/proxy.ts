@@ -1,10 +1,17 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 // Next 16 renamed the `middleware` convention to `proxy`. Clerk session
-// handling runs on every request. Route-level protection (and the per-request
-// app.org_id used by Postgres RLS via withOrg) is layered on in later
-// build-order items; for now this just establishes the auth context.
-export default clerkMiddleware();
+// handling runs on every request; the per-request app.org_id used by Postgres
+// RLS is set in the data layer via withOrg (see src/lib/tenant.ts).
+//
+// Route-level protection (build item 4): /dashboard and everything under it
+// require a session. Unauthenticated requests are redirected to sign-in before
+// reaching the tenant-scoped pages.
+const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);
+
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) await auth.protect();
+});
 
 export const config = {
   matcher: [
