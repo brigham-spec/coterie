@@ -1,0 +1,469 @@
+// Coterie v1 — database schema.
+// Source of truth: coterie-v1-schema-spec.md (spec §3). Read the spec before
+// changing anything here. Deviations from the spec's literal column lists are
+// noted inline with a rationale.
+//
+// Conventions (spec §3): all PKs are uuid; every tenant table carries org_id
+// (uuid NOT NULL, FK -> organizations) and gets an RLS policy (added in a
+// later migration, build-order item 3); all tables carry created_at/updated_at.
+// DB identifiers are snake_case (RLS SQL references them); the Prisma client
+// surface is camelCase via @map/@@map.
+//
+// Status/type fields are `text` (String) by ratified decision — "status is a
+// field, not separate tables" (spec §2, decision #2). Allowed values are
+// documented in comments; validate at boundaries, not via Postgres enums
+// (deliberately avoided so lifecycle vocabularies can evolve additively).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Platform-level identity (NOT tenant-scoped)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The tenant. One row per client org (spec §3.1). Not itself tenant-scoped.
+model Organization {
+  id       String @id @default(uuid()) @db.Uuid
+  name     String
+  /// Label only in v1: edc, chamber, council, ria (no workflow branching yet).
+  orgType  String @map("org_type")
+  /// Feature flags, sync windows, branding.
+  settings Json   @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  memberships            OrgMembership[]
+  companies              Company[]
+  contacts               Contact[]
+  projects               Project[]
+  projectLinks           ProjectLink[]
+  introductions          Introduction[]
+  meetings               Meeting[]
+  meetingAttendees       MeetingAttendee[]
+  actionItems            ActionItem[]
+  invoices               Invoice[]
+  payments               Payment[]
+  newsItems              NewsItem[]
+  activities             Activity[]
+  integrationCredentials IntegrationCredential[]
+
+  @@map("organizations")
+}
+
+/// Platform-level identity (spec §3.2). One human = one row (managed by Clerk),
+/// spanning orgs via org_memberships. No org_id: identity is shared, data is not.
+model User {
+  id      String @id @default(uuid()) @db.Uuid
+  clerkId String @unique @map("clerk_id")
+  email   String @unique
+  name    String
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  memberships      OrgMembership[]
+  ownedActionItems ActionItem[]    @relation("ActionItemOwnerUser")
+  activities       Activity[]      @relation("ActivityActor")
+
+  @@map("users")
+}
+
+/// Junction: which users belong to which org, in what role (spec §3.3).
+model OrgMembership {
+  orgId  String @map("org_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  /// admin, staff
+  role   String
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, userId])
+  @@index([userId])
+  @@map("org_memberships")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tenant-scoped tables (every one carries org_id + RLS)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The managed relationship — the central table (spec §3.4). Relationship
+/// attributes (status, tier, temperature, value) live here, not on contacts.
+model Company {
+  id          String  @id @default(uuid()) @db.Uuid
+  orgId       String  @map("org_id") @db.Uuid
+  name        String
+  /// prospect, member, strategic_partner, former (lifecycle, not separate tables)
+  status      String
+  /// e.g. strategic_partner_10k, executive_board_20k, chairmans_circle_50k
+  tier        String?
+  /// Relationship strength score (demo's `lk`). Company-level only in v1.
+  temperature Int?
+  industry    String
+  /// Standardized on dollars (not thousands) — spec §2, conventions.
+  annualValue Decimal @map("annual_value") @db.Decimal(14, 2)
+  website     String?
+  /// Drives Fireflies attendee -> company matching.
+  emailDomain String? @map("email_domain")
+  /// How the relationship originated (demo's `src`).
+  source      String?
+  notes       String  @default("")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contacts     Contact[]
+  projectLinks ProjectLink[]
+  invoices     Invoice[]
+  newsItems    NewsItem[]
+  activities   Activity[]
+
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([orgId, emailDomain])
+  // Composite-FK target so tenant junctions (project_links) can reference
+  // (id, org_id) and never point at a company in another org.
+  @@unique([id, orgId])
+  @@map("companies")
+}
+
+/// People at companies (spec §3.5). Tenant-scoped even when the same human
+/// exists in another org's tenant — sealed silos.
+model Contact {
+  id        String  @id @default(uuid()) @db.Uuid
+  orgId     String  @map("org_id") @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  name      String
+  /// Primary key for meeting matching.
+  email     String?
+  phone     String?
+  title     String?
+  /// The main relationship contact at the firm.
+  isPrimary Boolean @default(false) @map("is_primary")
+  notes     String  @default("")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization     Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  introsAsPartyA   Introduction[]    @relation("IntroPartyA")
+  introsAsPartyB   Introduction[]    @relation("IntroPartyB")
+  meetingAttendees MeetingAttendee[]
+  ownedActionItems ActionItem[]      @relation("ActionItemOwnerContact")
+
+  @@index([orgId])
+  @@index([companyId])
+  @@index([orgId, email])
+  // Composite-FK target for meeting_attendees (id, org_id).
+  @@unique([id, orgId])
+  @@map("contacts")
+}
+
+/// Multi-party initiatives — relocations, developments, cluster efforts (spec §3.6).
+model Project {
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  name        String
+  /// Pipeline stage — enum defined per product needs.
+  stage       String
+  description String    @default("")
+  targetDate  DateTime? @map("target_date") @db.Date
+  value       Decimal?  @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  projectLinks  ProjectLink[]
+  introductions Introduction[]
+
+  @@index([orgId])
+  // Composite-FK target for project_links (id, org_id).
+  @@unique([id, orgId])
+  @@map("projects")
+}
+
+/// Many-to-many: which companies participate in which projects, and how (spec §3.7).
+/// Carries org_id (beyond the spec's literal column list) per CLAUDE.md cardinal
+/// rule #1 so RLS scopes this table directly instead of via joins. Ratified.
+/// The item-3 migration adds composite FKs so a link can never straddle orgs:
+///   (org_id, project_id) -> projects(org_id, id)
+///   (org_id, company_id) -> companies(org_id, id)
+model ProjectLink {
+  orgId     String @map("org_id") @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+  /// developer, lender, site_host, agency, advisor, …
+  role      String
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FKs include org_id so a link's parents must be in the SAME org.
+  project      Project      @relation(fields: [projectId, orgId], references: [id, orgId], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@id([projectId, companyId])
+  @@index([orgId])
+  @@index([companyId])
+  @@map("project_links")
+}
+
+/// First-class object — the product's core verb (spec §3.8). Generates the board report.
+model Introduction {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  partyAContactId String    @map("party_a_contact_id") @db.Uuid
+  partyBContactId String    @map("party_b_contact_id") @db.Uuid
+  /// suggested, drafted, made, meeting_held, closed
+  status          String
+  /// manual, detected (Fireflies title scan), ai_suggested
+  source          String
+  /// Free text or enum: what came of it.
+  outcome         String?
+  madeOn          DateTime? @map("made_on") @db.Date
+  /// If the intro advanced a specific project.
+  projectId       String?   @map("project_id") @db.Uuid
+  notes           String    @default("")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  partyA       Contact      @relation("IntroPartyA", fields: [partyAContactId], references: [id])
+  partyB       Contact      @relation("IntroPartyB", fields: [partyBContactId], references: [id])
+  project      Project?     @relation(fields: [projectId], references: [id])
+
+  @@index([orgId])
+  @@index([partyAContactId])
+  @@index([partyBContactId])
+  @@index([projectId])
+  @@map("introductions")
+}
+
+/// Synced from Fireflies, or manually created (spec §3.9).
+model Meeting {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  /// Null for manual meetings; unique for sync idempotency.
+  firefliesId   String?  @unique @map("fireflies_id")
+  title         String
+  heldAt        DateTime @map("held_at") @db.Timestamptz(6)
+  summary       String?
+  transcriptUrl String?  @map("transcript_url")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  attendees    MeetingAttendee[]
+  actionItems  ActionItem[]
+
+  @@index([orgId])
+  @@index([orgId, heldAt(sort: Desc)])
+  // Composite-FK target for meeting_attendees (id, org_id).
+  @@unique([id, orgId])
+  @@map("meetings")
+}
+
+/// Junction with match provenance (spec §3.10). Low-confidence matches are
+/// surfaced for human confirmation, never silently merged.
+/// Carries org_id (beyond the spec's literal column list) per cardinal rule #1;
+/// ratified. The item-3 migration adds composite FKs to prevent cross-org links:
+///   (org_id, meeting_id) -> meetings(org_id, id)
+///   (org_id, contact_id) -> contacts(org_id, id)
+model MeetingAttendee {
+  orgId       String  @map("org_id") @db.Uuid
+  meetingId   String  @map("meeting_id") @db.Uuid
+  contactId   String  @map("contact_id") @db.Uuid
+  /// email, domain, display_name, surname, manual
+  matchMethod String  @map("match_method")
+  /// 0–1; surface < threshold for confirmation.
+  confidence  Float
+  /// Human-verified match.
+  confirmed   Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FKs include org_id so an attendee's meeting and contact must be
+  // in the SAME org — a cross-org attendee row cannot exist.
+  meeting      Meeting      @relation(fields: [meetingId, orgId], references: [id, orgId], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@id([meetingId, contactId])
+  @@index([orgId])
+  @@index([contactId])
+  @@map("meeting_attendees")
+}
+
+/// Commitments, from meetings or manual entry (spec §3.11). Polymorphic owner:
+/// exactly one of owner_user_id ("we owe") / owner_contact_id ("they owe").
+/// The XOR is enforced by a CHECK constraint added via raw SQL in the migration
+/// (Prisma schema cannot express CHECK constraints) — see build-order item 3.
+model ActionItem {
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  /// Null for manually created items.
+  meetingId      String?   @map("meeting_id") @db.Uuid
+  text           String
+  /// open, done, dropped
+  status         String    @default("open")
+  dueDate        DateTime? @map("due_date") @db.Date
+  /// Staff-owned ("we owe").
+  ownerUserId    String?   @map("owner_user_id") @db.Uuid
+  /// Network-owned ("they owe").
+  ownerContactId String?   @map("owner_contact_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  meeting      Meeting?     @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  ownerUser    User?        @relation("ActionItemOwnerUser", fields: [ownerUserId], references: [id])
+  ownerContact Contact?     @relation("ActionItemOwnerContact", fields: [ownerContactId], references: [id])
+
+  @@index([orgId])
+  @@index([orgId, status, dueDate])
+  @@map("action_items")
+}
+
+/// QuickBooks-shaped (spec §3.12). A payment schedule = multiple invoices
+/// sharing a parent. "paid"/"partial" is derived from payments, never a flag.
+model Invoice {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  companyId       String   @map("company_id") @db.Uuid
+  /// Org-visible number; unique per org.
+  invoiceNumber   String   @map("invoice_number")
+  /// Links affiliated/installment invoices.
+  parentInvoiceId String?  @map("parent_invoice_id") @db.Uuid
+  amount          Decimal  @db.Decimal(14, 2)
+  issuedOn        DateTime @map("issued_on") @db.Date
+  dueOn           DateTime @map("due_on") @db.Date
+  /// draft, sent, partial, paid, void — partial/paid derived from payments.
+  status          String   @default("draft")
+  /// Future QuickBooks sync.
+  quickbooksId    String?  @map("quickbooks_id")
+  notes           String   @default("")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent       Invoice?     @relation("InvoiceSchedule", fields: [parentInvoiceId], references: [id])
+  children     Invoice[]    @relation("InvoiceSchedule")
+  payments     Payment[]
+
+  @@unique([orgId, invoiceNumber])
+  @@index([orgId])
+  @@index([companyId])
+  @@index([parentInvoiceId])
+  @@map("invoices")
+}
+
+/// Actual money received against an invoice (spec §3.13).
+model Payment {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  invoiceId    String   @map("invoice_id") @db.Uuid
+  amount       Decimal  @db.Decimal(14, 2)
+  receivedOn   DateTime @map("received_on") @db.Date
+  /// check, ach, card, …
+  method       String?
+  /// Future QuickBooks sync.
+  quickbooksId String?  @map("quickbooks_id")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+/// Persisted News Intelligence — localStorage in the demo (spec §3.14).
+model NewsItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  companyId  String   @map("company_id") @db.Uuid
+  headline   String
+  url        String
+  summary    String?
+  capturedAt DateTime @map("captured_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([companyId])
+  @@map("news_items")
+}
+
+/// Unified timeline — everything that happens to a company lands here (spec §3.15).
+model Activity {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  /// Null for system-generated events.
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  /// note_added, intro_made, meeting_held, invoice_sent, status_changed, …
+  type        String
+  /// Type-specific detail.
+  payload     Json     @default("{}")
+  occurredAt  DateTime @map("occurred_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  actor        User?        @relation("ActivityActor", fields: [actorUserId], references: [id])
+
+  @@index([orgId])
+  @@index([companyId, occurredAt(sort: Desc)])
+  @@map("activities")
+}
+
+/// Per-org OAuth tokens, encrypted at rest (spec §3.16). Encryption happens at
+/// the application layer before storage — the DB only ever sees ciphertext.
+model IntegrationCredential {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  /// fireflies, gmail, gcal, later quickbooks
+  provider        String
+  accessTokenEnc  Bytes     @map("access_token_enc")
+  refreshTokenEnc Bytes?    @map("refresh_token_enc")
+  scopes          String[]
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, provider])
+  @@index([orgId])
+  @@map("integration_credentials")
+}
