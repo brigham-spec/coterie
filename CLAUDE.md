@@ -23,6 +23,24 @@ The authoritative schema and build order live in `coterie-v1-schema-spec.md` in 
 4. **No secrets in client code.** API keys, OAuth tokens, and credentials live in server environment variables or encrypted database columns only.
 5. **Identity is platform-level; data is not.** One human = one Clerk user, potentially belonging to multiple orgs via org_memberships. Each org's data about that person stays inside that org's tenant.
 
+## How tenant isolation is enforced (item 3 — do not weaken)
+
+- **Two DB roles.** The app connects as `app_user` (NOBYPASSRLS) via `DATABASE_URL`;
+  Prisma migrations/admin use the owner via `DIRECT_URL`. Neon's owner has BYPASSRLS,
+  so it must never be the runtime connection or RLS becomes inert. Recreate the app
+  role with `scripts/bootstrap-app-role.mjs` (idempotent; password from `APP_DB_PASSWORD`).
+- **RLS.** Every tenant table has RLS ENABLED + FORCED with a `tenant_isolation` policy
+  keyed to the transaction-local GUC `app.org_id` (see `*_tenant_rls` migration).
+- **`withOrg(orgId, tx => …)`** (`src/lib/tenant.ts`) is the ONLY sanctioned way to touch
+  tenant tables: it opens a transaction, sets `app.org_id`, and hands you a scoped client.
+  Never query tenant tables off the bare `prisma` client — with no org context RLS returns
+  nothing (fail-closed). Platform tables (organizations/users/org_memberships) have no RLS.
+- **Structural guards (Prisma-managed, in schema):** `@@unique([id, orgId])` on
+  companies/projects/meetings/contacts + composite FKs from the junctions so a link can't
+  straddle orgs. Owner-XOR on action_items is a raw-SQL CHECK (Prisma can't express it).
+- **Tests:** `test/isolation.test.ts` (Vitest) seeds two tenants and asserts no leakage;
+  runs in CI against an ephemeral Postgres as `app_user`. `npm test` runs it locally.
+
 ## Key schema decisions (rationale in the spec)
 
 - Companies and contacts are separate tables. Relationship attributes (status, tier, temperature, annual_value) live on the company.
@@ -49,16 +67,18 @@ The authoritative schema and build order live in `coterie-v1-schema-spec.md` in 
 - `npm run start` — serve the production build
 - `npm run lint` — ESLint (enforces `no-explicit-any`)
 - `npm run typecheck` — `tsc --noEmit`
-- CI runs lint + typecheck + build on every push/PR (`.github/workflows/ci.yml`).
-- (Coming with later build-order items: `npm test`, `npx prisma migrate dev`.)
+- `npm test` — Vitest isolation suite (needs a reachable DB via `DATABASE_URL`).
+- `npx prisma migrate dev` — create/apply a migration (uses `DIRECT_URL`, the owner role).
+- CI runs lint + typecheck + migrate + isolation tests + build on every push/PR
+  (`.github/workflows/ci.yml`, against an ephemeral Postgres).
 
 ## Current build phase
 
 Foundation (spec §8). Working through items in order:
 1. ✅ Repo + Next.js (16, App Router) + TypeScript (strict, no-any) + CI
-2. ⬅ NEXT: Clerk + Neon + Prisma schema from spec
-3. RLS policies + seeded fake tenants + isolation test suite
-4. Core CRUD: companies, contacts, projects, introductions
+2. ✅ Clerk scaffold + Prisma schema from spec; migrations applied to Neon
+3. ✅ RLS + composite FKs + owner CHECK + two-role model + isolation tests (in CI)
+4. ⬅ NEXT: Core CRUD: companies, contacts, projects, introductions
 5. Server-side Anthropic proxy + daily brief
 6. Fireflies OAuth + Inngest sync
 7. Invoices + payments + revenue view

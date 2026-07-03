@@ -8,13 +8,47 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+
+    # Ephemeral Postgres so the tenant-isolation suite runs on every change
+    # (CLAUDE.md cardinal rule #3). No secrets: the DB is thrown away after.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: coterie_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Migrations/admin run as the superuser; the app + tests run as the
+      # restricted app_user (NOBYPASSRLS) so RLS is genuinely enforced. A
+      # superuser runtime connection would bypass RLS and pass the isolation
+      # tests for the wrong reason.
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/coterie_test
+      DATABASE_URL: postgresql://app_user:ci_app_password@localhost:5432/coterie_test
+      APP_DB_PASSWORD: ci_app_password
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      - run: npm ci # postinstall runs `prisma generate`
       - run: npm run lint
       - run: npm run typecheck
+      - run: npx prisma migrate deploy # applies schema as the owner (DIRECT_URL)
+      - run: node scripts/bootstrap-app-role.mjs # create app_user + grants
+      - run: npm test # isolation suite, connected as app_user
       - run: npm run build
+        env:
+          # Placeholder so ClerkProvider can render during static prerender.
+          # No network calls happen at build; real keys are set in Vercel.
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+          CLERK_SECRET_KEY: sk_test_ci_build_placeholder
