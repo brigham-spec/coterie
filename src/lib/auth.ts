@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
 
 import { prisma } from "@/lib/prisma";
@@ -34,6 +36,8 @@ export class NoActiveOrgError extends Error {
 export type OrgContext = {
   /// Our Organization.id (uuid) — the value fed to withOrg / app.org_id.
   orgId: string;
+  /// The tenant's display name (for the app shell).
+  orgName: string;
   /// Our User.id (uuid).
   userId: string;
   clerkOrgId: string;
@@ -45,31 +49,37 @@ export type OrgContext = {
 /// Resolve the current request's tenant context, provisioning platform rows on
 /// first sight. Throws UnauthenticatedError (no session) or NoActiveOrgError
 /// (signed in but no active organization) so callers fail closed.
-export async function requireOrgContext(): Promise<OrgContext> {
-  const { userId: clerkUserId, orgId: clerkOrgId, orgRole } = await auth();
-  if (!clerkUserId) throw new UnauthenticatedError();
-  if (!clerkOrgId) throw new NoActiveOrgError();
+///
+/// Wrapped in React `cache` so the layout and the page it wraps share a single
+/// resolution (and one round of provisioning) per request.
+export const requireOrgContext = cache(
+  async (): Promise<OrgContext> => {
+    const { userId: clerkUserId, orgId: clerkOrgId, orgRole } = await auth();
+    if (!clerkUserId) throw new UnauthenticatedError();
+    if (!clerkOrgId) throw new NoActiveOrgError();
 
-  const [user, org] = await Promise.all([
-    provisionUser(clerkUserId),
-    provisionOrg(clerkOrgId),
-  ]);
+    const [user, org] = await Promise.all([
+      provisionUser(clerkUserId),
+      provisionOrg(clerkOrgId),
+    ]);
 
-  const role = orgRole === "org:admin" ? "admin" : "staff";
-  await prisma.orgMembership.upsert({
-    where: { orgId_userId: { orgId: org.id, userId: user.id } },
-    create: { orgId: org.id, userId: user.id, role },
-    update: { role },
-  });
+    const role = orgRole === "org:admin" ? "admin" : "staff";
+    await prisma.orgMembership.upsert({
+      where: { orgId_userId: { orgId: org.id, userId: user.id } },
+      create: { orgId: org.id, userId: user.id, role },
+      update: { role },
+    });
 
-  return {
-    orgId: org.id,
-    userId: user.id,
-    clerkOrgId,
-    clerkUserId,
-    role,
-  };
-}
+    return {
+      orgId: org.id,
+      orgName: org.name,
+      userId: user.id,
+      clerkOrgId,
+      clerkUserId,
+      role,
+    };
+  },
+);
 
 async function provisionUser(clerkUserId: string) {
   const cu = await currentUser();

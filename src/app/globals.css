@@ -1,26 +1,72 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Design tokens — ported verbatim from the Coterie prototype's :root (warm
+   editorial / "quiet luxury": cream canvas, near-black ink, gold accent, with
+   teal/slate/red/amber/purple semantics). Declared in @theme so Tailwind v4
+   emits both utilities (bg-canvas, text-ink, border-line, text-gold, font-serif,
+   rounded-md, shadow-card…) and the raw CSS vars on :root. */
+@theme {
+  --color-canvas: #f4f1eb;
+  --color-surface: #ffffff;
+  --color-surface-2: #f8f6f1;
+  --color-surface-3: #efece4;
+
+  --color-line: #e4dfd4;
+  --color-line-2: #ccc8be;
+
+  --color-ink: #18170f;
+  --color-ink-2: #6a6659;
+  --color-ink-3: #a09c92;
+
+  --color-gold: #8a6d1b;
+  --color-gold-line: #d4a843;
+  --color-gold-bg: #fdf4dc;
+  --color-gold-ink: #6b5115;
+
+  --color-teal: #0d6652;
+  --color-teal-bg: #e0f2ec;
+  --color-teal-ink: #084d3c;
+  --color-teal-line: #7bbfab;
+
+  --color-slate: #2d4a6e;
+  --color-slate-bg: #e8eef7;
+  --color-slate-ink: #1e3451;
+
+  --color-red: #8b2020;
+  --color-red-bg: #fceaea;
+  --color-red-ink: #6b1818;
+  --color-red-line: #e8a0a0;
+
+  --color-amber: #7a4d0c;
+  --color-amber-bg: #fef0d4;
+  --color-amber-ink: #5c3908;
+
+  --color-purple: #4a2d72;
+  --color-purple-bg: #f0eaf8;
+  --color-purple-ink: #3a2059;
+
+  /* Playfair Display for display/serif; DM Sans for UI. Vars set by next/font. */
+  --font-serif: var(--font-playfair), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
+
+  --radius-sm: 6px; /* prototype --r  */
+  --radius-md: 10px; /* prototype --rl */
+  --radius-lg: 14px; /* prototype --rxl */
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
