@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import {
@@ -105,7 +107,14 @@ export default async function CompaniesPage() {
           >
             {companies.map((c) => (
               <Tr key={c.id}>
-                <Td className="font-medium">{c.name}</Td>
+                <Td className="font-medium">
+                  <Link
+                    href={`/dashboard/companies/${c.id}`}
+                    className="hover:text-gold hover:underline"
+                  >
+                    {c.name}
+                  </Link>
+                </Td>
                 <Td>
                   <StatusBadge status={c.status} />
                 </Td>
