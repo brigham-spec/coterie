@@ -19,7 +19,7 @@ const groups: NavGroup[] = [
     items: [
       { label: "Companies", href: "/dashboard/companies" },
       { label: "Contacts", href: "/dashboard/contacts" },
-      { label: "Projects" },
+      { label: "Projects", href: "/dashboard/projects" },
       { label: "Introductions" },
     ],
   },
@@ -41,7 +41,10 @@ export function Nav() {
           </div>
           <ul className="flex flex-col gap-0.5">
             {group.items.map((item) => {
-              const active = item.href != null && pathname === item.href;
+              const active =
+                item.href != null &&
+                (pathname === item.href ||
+                  pathname.startsWith(`${item.href}/`));
               const base =
                 "block rounded-sm border-l-2 px-3 py-1.5 text-[13px] transition-colors";
 
