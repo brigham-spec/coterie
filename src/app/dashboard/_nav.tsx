@@ -20,7 +20,7 @@ const groups: NavGroup[] = [
       { label: "Companies", href: "/dashboard/companies" },
       { label: "Contacts", href: "/dashboard/contacts" },
       { label: "Projects", href: "/dashboard/projects" },
-      { label: "Introductions" },
+      { label: "Introductions", href: "/dashboard/introductions" },
     ],
   },
   {
