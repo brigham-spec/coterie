@@ -14,6 +14,8 @@ import {
   Tr,
 } from "@/components/ui";
 
+import { CompanyBrief } from "./_brief";
+
 // Company detail — the central relationship's home, and the future seat of the
 // AI brief (item 5), news/activities (item 6), and invoices (item 7). For now it
 // surfaces the company's own fields plus the relations we already have: contacts
@@ -98,6 +100,8 @@ export default async function CompanyDetailPage({
           </div>
         ) : null}
       </Card>
+
+      <CompanyBrief companyId={company.id} />
 
       <Card>
         <CardHeader title="Contacts" />
