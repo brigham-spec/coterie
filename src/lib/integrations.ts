@@ -77,6 +77,21 @@ export async function getCredential(
   };
 }
 
+// Whether a credential exists, without decrypting it — for connection-state UI
+// that only needs a yes/no and should never touch the plaintext token.
+export async function hasCredential(
+  orgId: string,
+  provider: Provider,
+): Promise<boolean> {
+  const row = await withOrg(orgId, (tx) =>
+    tx.integrationCredential.findUnique({
+      where: { orgId_provider: { orgId, provider } },
+      select: { provider: true },
+    }),
+  );
+  return row != null;
+}
+
 export async function deleteCredential(
   orgId: string,
   provider: Provider,
