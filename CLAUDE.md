@@ -80,8 +80,8 @@ Foundation (spec §8). Working through items in order:
 3. ✅ RLS + composite FKs + owner CHECK + two-role model + isolation tests (in CI)
 4. ✅ Core CRUD: companies, contacts, projects, introductions
 5. ✅ Server-side Anthropic proxy + on-demand company AI brief
-6. ⬅ IN PROGRESS: Fireflies + Inngest sync (slice 1 done: app-layer credential encryption)
-7. Invoices + payments + revenue view
+6. ✅ Fireflies + Inngest sync (credential encryption, sync job + attendee matching, Meetings UI; action-item rows deferred — see below)
+7. ⬅ NEXT: Invoices + payments + revenue view
 8. HVEDC demo data migration (spec §6)
 9. External security review
 10. HVEDC pilot
