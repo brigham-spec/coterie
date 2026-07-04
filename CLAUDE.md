@@ -78,9 +78,9 @@ Foundation (spec §8). Working through items in order:
 1. ✅ Repo + Next.js (16, App Router) + TypeScript (strict, no-any) + CI
 2. ✅ Clerk scaffold + Prisma schema from spec; migrations applied to Neon
 3. ✅ RLS + composite FKs + owner CHECK + two-role model + isolation tests (in CI)
-4. ⬅ NEXT: Core CRUD: companies, contacts, projects, introductions
-5. Server-side Anthropic proxy + daily brief
-6. Fireflies OAuth + Inngest sync
+4. ✅ Core CRUD: companies, contacts, projects, introductions
+5. ✅ Server-side Anthropic proxy + on-demand company AI brief
+6. ⬅ IN PROGRESS: Fireflies + Inngest sync (slice 1 done: app-layer credential encryption)
 7. Invoices + payments + revenue view
 8. HVEDC demo data migration (spec §6)
 9. External security review
