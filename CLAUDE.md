@@ -81,8 +81,8 @@ Foundation (spec §8). Working through items in order:
 4. ✅ Core CRUD: companies, contacts, projects, introductions
 5. ✅ Server-side Anthropic proxy + on-demand company AI brief
 6. ✅ Fireflies + Inngest sync (credential encryption, sync job + attendee matching, Meetings UI; action-item rows deferred — see below)
-7. ⬅ NEXT: Invoices + payments + revenue view
-8. HVEDC demo data migration (spec §6)
+7. ✅ Invoices + payments: ledger at /dashboard/invoices with revenue KPIs (Billed/Collected/Outstanding), invoice detail with payment history + void; paid/partial derived from payments via @/lib/invoice-status (unit-tested), never stored
+8. ⬅ NEXT: HVEDC demo data migration (spec §6)
 9. External security review
 10. HVEDC pilot
 

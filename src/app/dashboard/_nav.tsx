@@ -27,7 +27,7 @@ const groups: NavGroup[] = [
     label: "Operations",
     items: [
       { label: "Meetings", href: "/dashboard/meetings" },
-      { label: "Invoices" },
+      { label: "Invoices", href: "/dashboard/invoices" },
     ],
   },
 ];
