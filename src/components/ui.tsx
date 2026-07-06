@@ -177,12 +177,19 @@ export function Td({
   );
 }
 
-// ── Status badge (company lifecycle → semantic color) ───────────────────────
+// ── Status badge (lifecycle / billing → semantic color) ─────────────────────
 const statusStyles: Record<string, string> = {
+  // Company lifecycle.
   prospect: "bg-slate-bg text-slate-ink",
   member: "bg-teal-bg text-teal-ink",
   strategic_partner: "border border-gold-line bg-gold-bg text-gold-ink",
   former: "bg-surface-3 text-ink-2",
+  // Invoice billing (derived — see @/lib/invoice-status).
+  draft: "bg-surface-3 text-ink-2",
+  sent: "bg-slate-bg text-slate-ink",
+  partial: "bg-amber-bg text-amber-ink",
+  paid: "bg-teal-bg text-teal-ink",
+  void: "bg-red-bg text-red-ink",
 };
 
 export function StatusBadge({ status }: { status: string }) {
