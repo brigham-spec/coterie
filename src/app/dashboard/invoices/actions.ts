@@ -50,3 +50,60 @@ export async function createInvoice(formData: FormData): Promise<void> {
 
   revalidatePath("/dashboard/invoices");
 }
+
+// Record money received against an invoice. invoiceId is a PLAIN FK on
+// invoices.id, and Postgres FK checks bypass RLS, so we re-verify the invoice
+// belongs to THIS org inside the same withOrg tx (foreign id → null → throw)
+// before creating the payment. "paid"/"partial" stay derived — recording a
+// payment never flips a stored status flag.
+export async function recordPayment(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const invoiceId = String(formData.get("invoiceId") ?? "").trim();
+  const amountRaw = String(formData.get("amount") ?? "").trim();
+  const receivedOnRaw = String(formData.get("receivedOn") ?? "").trim();
+  const method = String(formData.get("method") ?? "").trim();
+
+  if (!invoiceId) throw new Error("an invoice is required");
+  if (amountRaw === "" || Number.isNaN(Number(amountRaw)) || Number(amountRaw) <= 0)
+    throw new Error("amount must be a positive number");
+  if (!receivedOnRaw) throw new Error("a received date is required");
+
+  await withOrg(orgId, async (tx) => {
+    const invoice = await tx.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new Error("invoice not found in this organization");
+
+    await tx.payment.create({
+      data: {
+        orgId,
+        invoiceId,
+        amount: amountRaw,
+        receivedOn: new Date(receivedOnRaw),
+        method: method === "" ? null : method,
+      },
+    });
+  });
+
+  revalidatePath(`/dashboard/invoices/${invoiceId}`);
+  revalidatePath("/dashboard/invoices");
+}
+
+// Void an invoice — a bill that was never owed. updateMany is RLS-scoped, so a
+// foreign id simply matches no row. "void" then trumps any payment in the
+// derived status (see @/lib/invoice-status).
+export async function voidInvoice(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const invoiceId = String(formData.get("invoiceId") ?? "").trim();
+  if (!invoiceId) throw new Error("an invoice is required");
+
+  await withOrg(orgId, (tx) =>
+    tx.invoice.updateMany({
+      where: { id: invoiceId },
+      data: { status: "void" },
+    }),
+  );
+
+  revalidatePath(`/dashboard/invoices/${invoiceId}`);
+  revalidatePath("/dashboard/invoices");
+}
