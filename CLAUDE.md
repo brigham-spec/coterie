@@ -82,8 +82,8 @@ Foundation (spec §8). Working through items in order:
 5. ✅ Server-side Anthropic proxy + on-demand company AI brief
 6. ✅ Fireflies + Inngest sync (credential encryption, sync job + attendee matching, Meetings UI; action-item rows deferred — see below)
 7. ✅ Invoices + payments: ledger at /dashboard/invoices with revenue KPIs (Billed/Collected/Outstanding), invoice detail with payment history + void; paid/partial derived from payments via @/lib/invoice-status (unit-tested), never stored
-8. ⬅ NEXT: HVEDC demo data migration (spec §6)
-9. External security review
+8. ✅ HVEDC demo data migration (spec §6): scripts/migrate-hvedc.mjs ports the prototype localStorage backup into a dedicated seed org (fixed UUID, clerkId null) via SQL-level withOrg (set_config app.org_id) as app_user; dry-run by default, `--apply` for the idempotent single-transaction load. Applied to Neon (158 companies, 268 contacts, 27 projects, 24 links, 75 invoices, 27 payments, 22 intros, 146 meetings, 212 attendees). Deferred: articles→NewsItem, deliverables→ActionItem (owner-XOR), events, email threads.
+9. ⬅ NEXT: External security review
 10. HVEDC pilot
 
 Update this section as items complete.
