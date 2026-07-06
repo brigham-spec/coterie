@@ -93,7 +93,7 @@ cross-tenant write — but unwanted job execution and external API calls).
 **Recommendation:** document both keys in `.env.example`; make signing-key
 presence a startup/deploy requirement; confirm production sets it.
 
-### M1 — No role-based authorization enforcement (Medium)
+### M1 — No role-based authorization enforcement (Medium) — ACCEPTED (flat for pilot)
 `requireOrgContext()` resolves a role (`admin` | `staff`) from Clerk's org role,
 but **no server action checks it**. Every authenticated org member can void
 invoices, disconnect/replace integration credentials, and create/delete records
@@ -101,9 +101,13 @@ equally. Horizontal isolation (between orgs) is intact via RLS; what's missing i
 the *vertical* privilege distinction the role field implies.
 **Impact:** broken-access-control within a tenant if the product intends
 admin-only operations (e.g., voiding invoices, managing integrations).
-**Recommendation:** decide which actions are admin-only and gate them
-(`if (ctx.role !== "admin") throw ...`). If the pilot is intentionally flat,
-document that the role field is not yet an authorization boundary.
+**Decision (2026-07-06):** for the HVEDC pilot, access is intentionally **flat** —
+every org member has equal permissions. Pilot orgs are small, trusted teams, so
+the mistake/blast-radius risk is accepted. The `role` field (admin/staff) is
+resolved and stored but is **NOT yet an authorization boundary**. Revisit before
+broader/less-trusted access: gate sensitive actions with
+`if (ctx.role !== "admin") throw ...` (candidates: void invoice, connect/disconnect
+integrations, destructive deletes).
 
 ### M3 — Open tenant self-provisioning (Medium)
 `requireOrgContext` JIT-creates an `Organization` the first time it sees any Clerk
