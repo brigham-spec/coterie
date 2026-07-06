@@ -109,12 +109,18 @@ broader/less-trusted access: gate sensitive actions with
 `if (ctx.role !== "admin") throw ...` (candidates: void invoice, connect/disconnect
 integrations, destructive deletes).
 
-### M3 — Open tenant self-provisioning (Medium)
+### M3 — Open tenant self-provisioning (Medium) — ACCEPTED (open, gated by Clerk sign-up)
 `requireOrgContext` JIT-creates an `Organization` the first time it sees any Clerk
 org id, trusting Clerk. Any Clerk user who can create/join an org automatically
 spins up a live, isolated tenant.
 **Impact:** for a controlled pilot this may be undesirable (uncontrolled tenant
 creation, unbounded resource/PII footprint).
+**Decision (2026-07-06):** leave app-side provisioning **open** for the pilot. The
+effective gate is upstream in Clerk — who can create an account + an org. This is
+acceptable ONLY while Clerk sign-up is restricted (invite-only / not public). If
+Clerk sign-up is ever opened to the public, revisit: add an allowlist check before
+`provisionOrg` creates a row, or restrict org creation to admins in Clerk. Action:
+confirm the Clerk dashboard Sign-up + Organizations settings match this intent.
 **Recommendation:** gate org creation in the Clerk dashboard (admin-created orgs
 only) or add an allowlist check before `provisionOrg` creates a row.
 
