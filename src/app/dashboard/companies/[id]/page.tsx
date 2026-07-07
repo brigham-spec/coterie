@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { getTagDef } from "@/lib/tags";
 import {
   Card,
   CardHeader,
   PageTitle,
   StatusBadge,
+  TagBadge,
   Table,
   Td,
   Th,
@@ -16,11 +18,12 @@ import {
 
 import { CompanyBrief } from "./_brief";
 
-// Company detail — the central relationship's home, and the future seat of the
-// AI brief (item 5), news/activities (item 6), and invoices (item 7). For now it
-// surfaces the company's own fields plus the relations we already have: contacts
-// at the firm and the projects it participates in. Read withOrg-scoped; a lookup
-// that returns null (not ours, or absent) is a 404.
+// Company detail — the central relationship's home. Surfaces the company's own
+// fields (including the slice-11.0 relationship attributes: what it's looking
+// for / can offer, counties, deal size, network tags, owner, member-since) plus
+// the relations we already have: contacts at the firm and the projects it
+// participates in. Read withOrg-scoped; a lookup that returns null (not ours,
+// or absent) is a 404.
 
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -40,6 +43,7 @@ export default async function CompanyDetailPage({
     tx.company.findUnique({
       where: { id },
       include: {
+        owner: { select: { name: true } },
         contacts: { orderBy: { name: "asc" } },
         projectLinks: {
           include: { project: { select: { id: true, name: true, stage: true } } },
@@ -54,15 +58,33 @@ export default async function CompanyDetailPage({
   const facts: Array<{ label: string; value: string | null }> = [
     { label: "Industry", value: company.industry },
     { label: "Tier", value: company.tier },
+    { label: "Owner", value: company.owner?.name ?? null },
     { label: "Annual value", value: currency.format(Number(company.annualValue)) },
     {
       label: "Temperature",
-      value: company.temperature == null ? null : String(company.temperature),
+      value: company.temperature == null ? null : `${company.temperature}%`,
+    },
+    {
+      label: "Member since",
+      value: company.memberSince == null ? null : String(company.memberSince),
+    },
+    { label: "Deal size", value: company.dealSize },
+    {
+      label: "Counties",
+      value: company.counties.length ? company.counties.join(", ") : null,
     },
     { label: "Source", value: company.source },
     { label: "Email domain", value: company.emailDomain },
     { label: "Website", value: company.website },
   ];
+
+  // Free-text relationship narrative — drives the intro engine downstream.
+  const narrative: Array<{ label: string; value: string | null }> = [
+    { label: "Looking for", value: company.lookingFor },
+    { label: "Can offer", value: company.canOffer },
+    { label: "Agency contacts", value: company.agencyContacts },
+  ];
+  const hasNarrative = narrative.some((n) => n.value);
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -77,6 +99,21 @@ export default async function CompanyDetailPage({
           <PageTitle title={company.name} />
           <StatusBadge status={company.status} />
         </div>
+        {company.networkTags.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {company.networkTags.map((key) => {
+              const def = getTagDef(key);
+              return (
+                <TagBadge
+                  key={key}
+                  label={def.label}
+                  tone={def.tone}
+                  title={def.desc}
+                />
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       <Card>
@@ -91,6 +128,22 @@ export default async function CompanyDetailPage({
             </div>
           ))}
         </dl>
+        {hasNarrative ? (
+          <div className="grid gap-4 border-t border-line px-4 py-3 sm:grid-cols-3">
+            {narrative.map((n) =>
+              n.value ? (
+                <div key={n.label}>
+                  <div className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
+                    {n.label}
+                  </div>
+                  <p className="text-xs whitespace-pre-wrap text-ink-2">
+                    {n.value}
+                  </p>
+                </div>
+              ) : null,
+            )}
+          </div>
+        ) : null}
         {company.notes ? (
           <div className="border-t border-line px-4 py-3">
             <div className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
@@ -120,7 +173,7 @@ export default async function CompanyDetailPage({
                 <Th>Name</Th>
                 <Th>Title</Th>
                 <Th>Email</Th>
-                <Th>Phone</Th>
+                <Th>Tags</Th>
               </>
             }
           >
@@ -133,10 +186,38 @@ export default async function CompanyDetailPage({
                       Primary
                     </span>
                   ) : null}
+                  {c.linkedin ? (
+                    <a
+                      href={c.linkedin}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-2 text-[10px] text-ink-3 hover:text-gold hover:underline"
+                    >
+                      LinkedIn
+                    </a>
+                  ) : null}
                 </Td>
                 <Td>{c.title ?? "—"}</Td>
                 <Td>{c.email ?? "—"}</Td>
-                <Td>{c.phone ?? "—"}</Td>
+                <Td>
+                  {c.tags.length === 0 ? (
+                    <span className="text-ink-3">—</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {c.tags.map((key) => {
+                        const def = getTagDef(key);
+                        return (
+                          <TagBadge
+                            key={key}
+                            label={def.label}
+                            tone={def.tone}
+                            title={def.desc}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </Td>
               </Tr>
             ))}
           </Table>

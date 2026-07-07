@@ -204,3 +204,37 @@ export function StatusBadge({ status }: { status: string }) {
     </span>
   );
 }
+
+// ── Tag badge (network tag → semantic tone) ────────────────────────────────
+// Tone comes from the tag vocabulary (@/lib/tags); Tailwind's JIT needs full
+// literal class strings, so tones map to a static Record — never build the
+// class name dynamically.
+const tagToneStyles: Record<string, string> = {
+  teal: "border border-teal-line bg-teal-bg text-teal-ink",
+  gold: "border border-gold-line bg-gold-bg text-gold-ink",
+  purple: "border border-purple-line bg-purple-bg text-purple-ink",
+  red: "border border-red-line bg-red-bg text-red-ink",
+  slate: "border border-line-2 bg-surface-2 text-ink-2",
+};
+
+export function TagBadge({
+  label,
+  tone,
+  title,
+}: {
+  label: string;
+  tone: string;
+  title?: string;
+}) {
+  return (
+    <span
+      title={title}
+      className={cn(
+        "inline-flex rounded-full px-2 py-0.5 text-[9.5px] font-medium whitespace-nowrap",
+        tagToneStyles[tone] ?? tagToneStyles.slate,
+      )}
+    >
+      {label}
+    </span>
+  );
+}

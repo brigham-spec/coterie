@@ -44,6 +44,7 @@
   --color-purple: #4a2d72;
   --color-purple-bg: #f0eaf8;
   --color-purple-ink: #3a2059;
+  --color-purple-line: #b79cd6;
 
   /* Playfair Display for display/serif; DM Sans for UI. Vars set by next/font. */
   --font-serif: var(--font-playfair), Georgia, "Times New Roman", serif;
