@@ -2,6 +2,8 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 
+import { extractJsonArray } from "@/lib/json-extract";
+
 // Introduction engine (slices 11.4b/c, ported from the prototype's doIntroForMember
 // and doProactiveAlertScan). Two modes over the same terse company profiles:
 //   • PER-MEMBER (11.4b): given a FOCUS company + a candidate pool, score which
@@ -94,15 +96,6 @@ export function prioritizeCandidates(
         a.name.localeCompare(b.name),
     )
     .slice(0, limit);
-}
-
-/// PURE: extract the first top-level JSON array from a model response, tolerating
-/// stray prose or markdown fences around it. Returns null if none is present.
-function extractJsonArray(raw: string): string | null {
-  const start = raw.indexOf("[");
-  const end = raw.lastIndexOf("]");
-  if (start === -1 || end === -1 || end <= start) return null;
-  return raw.slice(start, end + 1);
 }
 
 function coerceSuggestion(

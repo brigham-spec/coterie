@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
-import { PROJECT_STAGES } from "@/lib/project-stages";
+import { PROJECT_STAGES, TERMINAL_STAGES } from "@/lib/project-stages";
+import { openRoles } from "@/lib/disciplines";
 import {
   Button,
   Card,
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui";
 
 import { linkCompany, updateStage } from "../actions";
+import { OpenRoles } from "./_open-roles";
 
 // Project detail — the seat of company participation. project_links carries
 // composite FKs to projects(id, org_id) and companies(id, org_id), so a link can
@@ -75,6 +77,11 @@ export default async function ProjectDetailPage({
 
   const linkedIds = new Set(project.projectLinks.map((l) => l.companyId));
   const linkable = companies.filter((c) => !linkedIds.has(c.id));
+
+  // Open roles = disciplines not yet staffed on the team. Only meaningful while the
+  // project is live — a completed / on-hold project isn't hiring.
+  const isActive = !TERMINAL_STAGES.includes(project.stage);
+  const unfilledRoles = openRoles(project.projectLinks.map((l) => l.role));
 
   const facts: Array<{ label: string; value: string | null }> = [
     { label: "Type", value: project.type },
@@ -178,6 +185,10 @@ export default async function ProjectDetailPage({
           </Table>
         )}
       </Card>
+
+      {isActive && unfilledRoles.length > 0 ? (
+        <OpenRoles projectId={project.id} roles={unfilledRoles} />
+      ) : null}
 
       <Card>
         <CardHeader title="Link a company" />
