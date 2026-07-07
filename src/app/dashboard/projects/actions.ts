@@ -14,12 +14,17 @@ export async function createProject(formData: FormData): Promise<void> {
   const name = String(formData.get("name") ?? "").trim();
   const stage = String(formData.get("stage") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
+  const type = String(formData.get("type") ?? "").trim();
+  const county = String(formData.get("county") ?? "").trim();
+  const unitsRaw = String(formData.get("units") ?? "").trim();
   const targetDateRaw = String(formData.get("targetDate") ?? "").trim();
   const valueRaw = String(formData.get("value") ?? "").trim();
 
   if (!name || !stage) throw new Error("name and stage are required");
   if (valueRaw !== "" && Number.isNaN(Number(valueRaw)))
     throw new Error("value must be a number");
+  if (unitsRaw !== "" && !Number.isInteger(Number(unitsRaw)))
+    throw new Error("units must be a whole number");
 
   await withOrg(orgId, (tx) =>
     tx.project.create({
@@ -28,6 +33,9 @@ export async function createProject(formData: FormData): Promise<void> {
         name,
         stage,
         description,
+        type: type === "" ? null : type,
+        county: county === "" ? null : county,
+        units: unitsRaw === "" ? null : Number(unitsRaw),
         targetDate: targetDateRaw === "" ? null : new Date(targetDateRaw),
         value: valueRaw === "" ? null : valueRaw,
       },
@@ -35,6 +43,45 @@ export async function createProject(formData: FormData): Promise<void> {
   );
 
   revalidatePath("/dashboard/projects");
+}
+
+// Advance (or correct) a project's pipeline stage. The stage change is recorded
+// in stage_history alongside the write so the funnel keeps its trail — the same
+// JSON the board vocabulary was recovered from. The findUnique runs inside withOrg
+// (RLS-scoped), so a foreign projectId resolves to null and is refused; the
+// subsequent update is likewise scoped, needing no separate ownership re-check.
+export async function updateStage(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const stage = String(formData.get("stage") ?? "").trim();
+  if (!projectId || !stage) throw new Error("project and stage are required");
+
+  await withOrg(orgId, async (tx) => {
+    const project = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { stage: true, stageHistory: true },
+    });
+    if (!project) throw new Error("project not found");
+    if (project.stage === stage) return;
+
+    const history = Array.isArray(project.stageHistory)
+      ? project.stageHistory
+      : [];
+    const entry = {
+      stage,
+      date: new Date().toISOString().slice(0, 10),
+      ts: Date.now(),
+    };
+
+    await tx.project.update({
+      where: { id: projectId },
+      data: { stage, stageHistory: [...history, entry] },
+    });
+  });
+
+  revalidatePath("/dashboard/projects");
+  revalidatePath(`/dashboard/projects/${projectId}`);
 }
 
 // Link a company to a project. Unlike contacts.company_id, project_links carries

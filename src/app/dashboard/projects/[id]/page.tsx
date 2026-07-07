@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { PROJECT_STAGES } from "@/lib/project-stages";
 import {
   Button,
   Card,
@@ -16,7 +17,7 @@ import {
   Tr,
 } from "@/components/ui";
 
-import { linkCompany } from "../actions";
+import { linkCompany, updateStage } from "../actions";
 
 // Project detail — the seat of company participation. project_links carries
 // composite FKs to projects(id, org_id) and companies(id, org_id), so a link can
@@ -75,6 +76,31 @@ export default async function ProjectDetailPage({
   const linkedIds = new Set(project.projectLinks.map((l) => l.companyId));
   const linkable = companies.filter((c) => !linkedIds.has(c.id));
 
+  const facts: Array<{ label: string; value: string | null }> = [
+    { label: "Type", value: project.type },
+    { label: "County", value: project.county },
+    {
+      label: "Units / keys",
+      value: project.units == null ? null : String(project.units),
+    },
+    {
+      label: "Value",
+      value: project.value == null ? null : currency.format(Number(project.value)),
+    },
+    {
+      label: "Realized value",
+      value:
+        project.realizedValue == null
+          ? null
+          : currency.format(Number(project.realizedValue)),
+    },
+    { label: "Prospect lead", value: project.prospectLead },
+    {
+      label: "Target date",
+      value: project.targetDate == null ? null : dateFmt.format(project.targetDate),
+    },
+  ];
+
   return (
     <div className="mx-auto w-full max-w-5xl">
       <div className="mb-6">
@@ -95,24 +121,35 @@ export default async function ProjectDetailPage({
 
       <Card>
         <CardHeader title="Details" />
-        <dl className="grid grid-cols-2 gap-4 p-4 text-xs">
-          <div>
-            <dt className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
-              Value
-            </dt>
-            <dd className="text-ink">
-              {project.value == null ? "—" : currency.format(Number(project.value))}
-            </dd>
-          </div>
-          <div>
-            <dt className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
-              Target date
-            </dt>
-            <dd className="text-ink">
-              {project.targetDate == null ? "—" : dateFmt.format(project.targetDate)}
-            </dd>
-          </div>
+        <dl className="grid grid-cols-2 gap-4 p-4 text-xs sm:grid-cols-3">
+          {facts.map((f) => (
+            <div key={f.label}>
+              <dt className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
+                {f.label}
+              </dt>
+              <dd className="text-ink">{f.value ?? "—"}</dd>
+            </div>
+          ))}
         </dl>
+        <form
+          action={updateStage}
+          className="flex flex-wrap items-end gap-3 border-t border-line px-4 py-3"
+        >
+          <input type="hidden" name="projectId" value={project.id} />
+          <SelectField
+            name="stage"
+            label="Advance stage"
+            defaultValue={project.stage}
+            className="min-w-[200px]"
+          >
+            {PROJECT_STAGES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </SelectField>
+          <Button type="submit">Update stage</Button>
+        </form>
       </Card>
 
       <Card>

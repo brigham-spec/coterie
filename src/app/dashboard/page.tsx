@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { deriveInvoiceBalance, sumPayments } from "@/lib/invoice-status";
+import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
@@ -57,7 +58,7 @@ export default async function DashboardPage() {
           },
         }),
         tx.project.findMany({
-          where: { stage: { notIn: ["won", "lost", "completed", "cancelled"] } },
+          where: { stage: { notIn: [...TERMINAL_STAGES] } },
           orderBy: { updatedAt: "desc" },
           select: {
             id: true,

@@ -190,6 +190,17 @@ const statusStyles: Record<string, string> = {
   partial: "bg-amber-bg text-amber-ink",
   paid: "bg-teal-bg text-teal-ink",
   void: "bg-red-bg text-red-ink",
+  // Project pipeline stages (see @/lib/project-stages).
+  concept: "bg-slate-bg text-slate-ink",
+  pre_development: "bg-purple-bg text-purple-ink",
+  entitlements: "bg-amber-bg text-amber-ink",
+  planning_board: "bg-amber-bg text-amber-ink",
+  capital_raise: "border border-gold-line bg-gold-bg text-gold-ink",
+  construction_docs: "bg-teal-bg text-teal-ink",
+  under_construction: "bg-teal-bg text-teal-ink",
+  stabilization: "bg-teal-bg text-teal-ink",
+  completed: "bg-teal-bg text-teal-ink",
+  on_hold: "bg-red-bg text-red-ink",
 };
 
 export function StatusBadge({ status }: { status: string }) {
