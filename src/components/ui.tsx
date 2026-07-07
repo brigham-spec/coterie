@@ -201,6 +201,15 @@ const statusStyles: Record<string, string> = {
   stabilization: "bg-teal-bg text-teal-ink",
   completed: "bg-teal-bg text-teal-ink",
   on_hold: "bg-red-bg text-red-ink",
+  // Introduction lifecycle stages (see @/lib/intro-stages).
+  suggested: "bg-slate-bg text-slate-ink",
+  drafted: "bg-purple-bg text-purple-ink",
+  made: "bg-amber-bg text-amber-ink",
+  connected: "bg-amber-bg text-amber-ink",
+  meeting_set: "border border-gold-line bg-gold-bg text-gold-ink",
+  collaborating: "bg-teal-bg text-teal-ink",
+  value_created: "bg-teal-bg text-teal-ink",
+  dormant: "bg-red-bg text-red-ink",
 };
 
 export function StatusBadge({ status }: { status: string }) {

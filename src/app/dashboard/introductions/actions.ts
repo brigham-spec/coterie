@@ -57,3 +57,28 @@ export async function createIntroduction(formData: FormData): Promise<void> {
 
   revalidatePath("/dashboard/introductions");
 }
+
+// Advance an introduction along the lifecycle (slice 11.4a) and optionally record
+// an outcome note. The row is re-loaded withOrg-scoped from the id in the form
+// (RLS → a foreign id resolves null → refused), never trusting client-passed
+// ownership. An emptied outcome clears the field.
+export async function updateIntroduction(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const introId = String(formData.get("introId") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  const outcome = String(formData.get("outcome") ?? "").trim();
+  if (!introId || !status) throw new Error("introduction and status are required");
+
+  await withOrg(orgId, async (tx) => {
+    const intro = await tx.introduction.findUnique({ where: { id: introId } });
+    if (!intro) throw new Error("introduction not found in this organization");
+
+    await tx.introduction.update({
+      where: { id: introId },
+      data: { status, outcome: outcome === "" ? null : outcome },
+    });
+  });
+
+  revalidatePath("/dashboard/introductions");
+}

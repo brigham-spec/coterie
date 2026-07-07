@@ -3,6 +3,11 @@ import Link from "next/link";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import {
+  INTRO_STAGES,
+  TERMINAL_INTRO_STAGES,
+  introStageRank,
+} from "@/lib/intro-stages";
+import {
   Button,
   Card,
   CardHeader,
@@ -16,13 +21,15 @@ import {
   Tr,
 } from "@/components/ui";
 
-import { createIntroduction } from "./actions";
+import { createIntroduction, updateIntroduction } from "./actions";
 
-// Introductions — who was connected to whom, toward what (build item 4). Party A
-// and B are contacts; an intro may advance a project. Contacts, projects, and the
-// intro list are all read through withOrg in one tx, so nothing foreign appears.
-// An intro needs two distinct contacts, so we require at least two before showing
-// the form.
+// Introductions — who was connected to whom, toward what (build item 4; ledger
+// lifecycle rebuilt in slice 11.4a). Party A and B are contacts; an intro may
+// advance a project and progresses along a canonical lifecycle
+// (@/lib/intro-stages): suggested → drafted → made → connected → meeting_set →
+// collaborating → value_created / dormant. Contacts, projects, and the intro list
+// are all read through withOrg in one tx, so nothing foreign appears. An intro
+// needs two distinct contacts, so we require at least two before showing the form.
 
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
@@ -30,14 +37,9 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
 });
 
-// Evolvable vocabulary (status is a field, not a table) — see schema §3.8.
-const statusOptions = [
-  { value: "suggested", label: "Suggested" },
-  { value: "drafted", label: "Drafted" },
-  { value: "made", label: "Made" },
-  { value: "meeting_held", label: "Meeting held" },
-  { value: "closed", label: "Closed" },
-];
+// Pre-intro states seed the create form; the full vocabulary drives the per-row
+// advance control below.
+const createStatusOptions = INTRO_STAGES;
 
 export default async function IntroductionsPage() {
   const ctx = await requireOrgContext();
@@ -55,13 +57,21 @@ export default async function IntroductionsPage() {
       tx.introduction.findMany({
         orderBy: { createdAt: "desc" },
         include: {
-          partyA: { select: { name: true } },
-          partyB: { select: { name: true } },
+          partyA: { select: { name: true, company: { select: { name: true } } } },
+          partyB: { select: { name: true, company: { select: { name: true } } } },
           project: { select: { name: true } },
         },
       }),
     ]),
   );
+
+  const valueCreated = introductions.filter(
+    (i) => i.status === "value_created",
+  ).length;
+  const inFlight = introductions.filter(
+    (i) => introStageRank(i.status) >= introStageRank("made") &&
+      !TERMINAL_INTRO_STAGES.includes(i.status),
+  ).length;
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -71,6 +81,14 @@ export default async function IntroductionsPage() {
           subtitle={`${introductions.length} made across ${ctx.orgName}'s network`}
         />
       </div>
+
+      {introductions.length > 0 ? (
+        <div className="mb-4 grid grid-cols-3 gap-4">
+          <Metric label="Total intros" value={String(introductions.length)} />
+          <Metric label="In flight" value={String(inFlight)} />
+          <Metric label="Value created" value={String(valueCreated)} />
+        </div>
+      ) : null}
 
       {contacts.length < 2 ? (
         <Card>
@@ -118,7 +136,7 @@ export default async function IntroductionsPage() {
               ))}
             </SelectField>
             <SelectField name="status" label="Status" defaultValue="suggested">
-              {statusOptions.map((o) => (
+              {createStatusOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -153,30 +171,81 @@ export default async function IntroductionsPage() {
           <Table
             head={
               <>
-                <Th>Party A</Th>
-                <Th>Party B</Th>
-                <Th>Status</Th>
-                <Th>Source</Th>
+                <Th>Parties</Th>
+                <Th>Stage</Th>
                 <Th>Project</Th>
                 <Th>Made on</Th>
+                <Th>Advance</Th>
               </>
             }
           >
             {introductions.map((i) => (
               <Tr key={i.id}>
-                <Td className="font-medium">{i.partyA.name}</Td>
-                <Td className="font-medium">{i.partyB.name}</Td>
+                <Td>
+                  <div className="font-medium text-ink">
+                    {i.partyA.name}
+                    <span className="text-ink-3"> · {i.partyA.company.name}</span>
+                  </div>
+                  <div className="font-medium text-ink">
+                    {i.partyB.name}
+                    <span className="text-ink-3"> · {i.partyB.company.name}</span>
+                  </div>
+                  {i.outcome ? (
+                    <div className="mt-1 text-[10px] text-ink-3 italic">
+                      {i.outcome}
+                    </div>
+                  ) : null}
+                </Td>
                 <Td>
                   <StatusBadge status={i.status} />
                 </Td>
-                <Td className="capitalize">{i.source.replace(/_/g, " ")}</Td>
                 <Td>{i.project?.name ?? "—"}</Td>
                 <Td>{i.madeOn == null ? "—" : dateFmt.format(i.madeOn)}</Td>
+                <Td>
+                  <form
+                    action={updateIntroduction}
+                    className="flex flex-col gap-1.5"
+                  >
+                    <input type="hidden" name="introId" value={i.id} />
+                    <select
+                      name="status"
+                      defaultValue={i.status}
+                      className="w-full rounded-sm border border-line-2 bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-gold-line"
+                    >
+                      {INTRO_STAGES.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      name="outcome"
+                      defaultValue={i.outcome ?? ""}
+                      placeholder="Outcome note…"
+                      className="w-full rounded-sm border border-line-2 bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-gold-line"
+                    />
+                    <Button type="submit" className="justify-center">
+                      Save
+                    </Button>
+                  </form>
+                </Td>
               </Tr>
             ))}
           </Table>
         )}
       </Card>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-line bg-surface px-4 py-3 shadow-card">
+      <div className="font-serif text-[18px] text-ink">{value}</div>
+      <div className="mt-0.5 text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
+        {label}
+      </div>
     </div>
   );
 }
