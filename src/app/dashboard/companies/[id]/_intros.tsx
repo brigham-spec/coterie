@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState, useTransition } from "react";
 
 import { Button, Card, CardHeader } from "@/components/ui";
 
-import { suggestIntros, type IntroSuggestState } from "./actions";
+import { dismissIntro, suggestIntros, type IntroSuggestState } from "./actions";
 import type { IntroSuggestion } from "@/lib/intro-engine";
 
 // Client shell for per-member intro suggestions (slice 11.4b). Like the AI brief,
@@ -20,6 +20,14 @@ export function IntroSuggestions({ companyId }: { companyId: string }) {
     suggestIntros,
     initialState,
   );
+  // Locally hide dismissed cards from the current list. The dismissal is also
+  // persisted (dismissIntro) so a later Refresh — which re-queries the DB —
+  // already excludes it; a stale id here is harmless (it won't be in the new list).
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  const visible =
+    state.status === "ok"
+      ? state.suggestions.filter((s) => !dismissed.has(s.companyId))
+      : [];
 
   return (
     <Card>
@@ -42,14 +50,21 @@ export function IntroSuggestions({ companyId }: { companyId: string }) {
         {state.status === "error" ? (
           <p className="text-xs text-red-600">{state.message}</p>
         ) : state.status === "ok" ? (
-          state.suggestions.length === 0 ? (
+          visible.length === 0 ? (
             <p className="text-xs text-ink-3">
               No strong introductions surfaced from the current network.
             </p>
           ) : (
             <ul className="flex flex-col gap-3">
-              {state.suggestions.map((s) => (
-                <SuggestionCard key={s.companyId} s={s} />
+              {visible.map((s) => (
+                <SuggestionCard
+                  key={s.companyId}
+                  s={s}
+                  focusId={companyId}
+                  onDismiss={(id) =>
+                    setDismissed((prev) => new Set(prev).add(id))
+                  }
+                />
               ))}
             </ul>
           )
@@ -64,7 +79,26 @@ export function IntroSuggestions({ companyId }: { companyId: string }) {
   );
 }
 
-function SuggestionCard({ s }: { s: IntroSuggestion }) {
+function SuggestionCard({
+  s,
+  focusId,
+  onDismiss,
+}: {
+  s: IntroSuggestion;
+  focusId: string;
+  onDismiss: (candidateId: string) => void;
+}) {
+  const [isDismissing, startDismiss] = useTransition();
+
+  function dismiss() {
+    // Optimistically hide, then persist. If the write fails the card stays
+    // hidden for this session but simply reappears on the next Refresh.
+    onDismiss(s.companyId);
+    startDismiss(async () => {
+      await dismissIntro(focusId, s.companyId);
+    });
+  }
+
   return (
     <li className="rounded-md border border-line bg-surface px-4 py-3 shadow-card">
       <div className="flex items-start justify-between gap-3">
@@ -88,6 +122,11 @@ function SuggestionCard({ s }: { s: IntroSuggestion }) {
           ))}
         </ul>
       ) : null}
+      <div className="mt-3 flex justify-end">
+        <Button type="button" onClick={dismiss} disabled={isDismissing}>
+          {isDismissing ? "Dismissing…" : "Dismiss"}
+        </Button>
+      </div>
     </li>
   );
 }

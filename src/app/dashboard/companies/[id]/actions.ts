@@ -167,24 +167,37 @@ export async function suggestIntros(
         partyB: { select: { companyId: true } },
       },
     });
-    return { focus, companies, intros };
+    // Durable dismissals touching the focus, either orientation (slice 11.4c) —
+    // a pairing the user has waved off should not resurface on the next scan.
+    const dismissals = await tx.introDismissal.findMany({
+      where: {
+        OR: [{ focusCompanyId: companyId }, { candidateCompanyId: companyId }],
+      },
+      select: { focusCompanyId: true, candidateCompanyId: true },
+    });
+    return { focus, companies, intros, dismissals };
   });
 
   if (data == null)
     return { status: "error", message: "company not found in this organization" };
 
-  // Companies already introduced to the focus (either direction, any contact pair).
-  const introduced = new Set<string>();
+  // Companies excluded from the pool: already introduced to the focus (either
+  // direction, any contact pair) OR dismissed against it (either orientation).
+  const excluded = new Set<string>();
   for (const i of data.intros) {
-    if (i.partyA.companyId === companyId) introduced.add(i.partyB.companyId);
-    if (i.partyB.companyId === companyId) introduced.add(i.partyA.companyId);
+    if (i.partyA.companyId === companyId) excluded.add(i.partyB.companyId);
+    if (i.partyB.companyId === companyId) excluded.add(i.partyA.companyId);
+  }
+  for (const d of data.dismissals) {
+    if (d.focusCompanyId === companyId) excluded.add(d.candidateCompanyId);
+    if (d.candidateCompanyId === companyId) excluded.add(d.focusCompanyId);
   }
 
   const eligible = new Set(
     eligibleCandidateIds(
       companyId,
       data.companies.map((c) => c.id),
-      introduced,
+      excluded,
     ),
   );
   const candidates = data.companies
@@ -205,4 +218,40 @@ export async function suggestIntros(
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not generate suggestions. Try again." };
   }
+}
+
+// Persist a "don't suggest this pairing again" decision (slice 11.4c). The pair is
+// stored directionally (focus → candidate); suggestIntros excludes either
+// orientation on the next scan. Both companies are re-verified withOrg-scoped
+// (RLS → a foreign id resolves null → refused) before writing, and the write is an
+// idempotent upsert on the unique pair so re-dismissing is a no-op.
+export async function dismissIntro(
+  focusCompanyId: string,
+  candidateCompanyId: string,
+): Promise<void> {
+  const focus = String(focusCompanyId ?? "").trim();
+  const candidate = String(candidateCompanyId ?? "").trim();
+  if (!focus || !candidate || focus === candidate) return;
+
+  const { orgId } = await requireOrgContext();
+
+  await withOrg(orgId, async (tx) => {
+    const [f, c] = await Promise.all([
+      tx.company.findUnique({ where: { id: focus }, select: { id: true } }),
+      tx.company.findUnique({ where: { id: candidate }, select: { id: true } }),
+    ]);
+    if (!f || !c) throw new Error("company not found in this organization");
+
+    await tx.introDismissal.upsert({
+      where: {
+        orgId_focusCompanyId_candidateCompanyId: {
+          orgId,
+          focusCompanyId: focus,
+          candidateCompanyId: candidate,
+        },
+      },
+      create: { orgId, focusCompanyId: focus, candidateCompanyId: candidate },
+      update: {},
+    });
+  });
 }

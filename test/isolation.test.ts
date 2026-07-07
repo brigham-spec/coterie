@@ -155,3 +155,50 @@ describe("tenant isolation (slice 11.0 tables)", () => {
     ).rejects.toThrow();
   });
 });
+
+// Slice 11.4c — the intro-dismissal ledger must uphold the same guarantees.
+describe("tenant isolation (slice 11.4c intro_dismissals)", () => {
+  test("RLS scopes lists and fail-closes the org-less client", async () => {
+    // A legitimate same-org dismissal in A (focus + candidate both in A). Reuse
+    // company A as focus; create a second A company as the candidate.
+    const candidateAId = (
+      await withOrg(orgA.id, (tx) =>
+        tx.company.create({ data: { orgId: orgA.id, name: "Cand (A)", ...baseCompany } }),
+      )
+    ).id;
+
+    const dismissalAId = (
+      await withOrg(orgA.id, (tx) =>
+        tx.introDismissal.create({
+          data: {
+            orgId: orgA.id,
+            focusCompanyId: companyAId,
+            candidateCompanyId: candidateAId,
+          },
+        }),
+      )
+    ).id;
+
+    const seenByB = await withOrg(orgB.id, (tx) => tx.introDismissal.findMany());
+    expect(seenByB.map((d) => d.id)).not.toContain(dismissalAId);
+
+    const bare = await prisma.introDismissal.findMany({ where: { id: dismissalAId } });
+    expect(bare).toEqual([]);
+  });
+
+  test("composite FK forbids dismissing a candidate from another org", async () => {
+    // Org A tries to dismiss B's company. The composite FK
+    // (candidate_company_id, org_id) -> companies(id, org_id) has no parent in A.
+    await expect(
+      withOrg(orgA.id, (tx) =>
+        tx.introDismissal.create({
+          data: {
+            orgId: orgA.id,
+            focusCompanyId: companyAId,
+            candidateCompanyId: companyBId,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+});

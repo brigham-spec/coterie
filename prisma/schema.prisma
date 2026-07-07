@@ -61,6 +61,7 @@ model Organization {
   events                 Event[]
   eventInvitees          EventInvitee[]
   membershipProposals    MembershipProposal[]
+  introDismissals        IntroDismissal[]
 
   @@map("organizations")
 }
@@ -154,14 +155,16 @@ model Company {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization        Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  owner               User?                @relation("CompanyOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
-  contacts            Contact[]
-  projectLinks        ProjectLink[]
-  invoices            Invoice[]
-  newsItems           NewsItem[]
-  activities          Activity[]
-  membershipProposals MembershipProposal[]
+  organization          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  owner                 User?                @relation("CompanyOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  contacts              Contact[]
+  projectLinks          ProjectLink[]
+  invoices              Invoice[]
+  newsItems             NewsItem[]
+  activities            Activity[]
+  membershipProposals   MembershipProposal[]
+  dismissalsAsFocus     IntroDismissal[]     @relation("IntroDismissalFocus")
+  dismissalsAsCandidate IntroDismissal[]     @relation("IntroDismissalCandidate")
 
   // Composite-FK target so tenant junctions (project_links) can reference
   // (id, org_id) and never point at a company in another org.
@@ -638,4 +641,39 @@ model MembershipProposal {
   @@index([companyId])
   @@index([orgId, status])
   @@map("membership_proposals")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slice 11.4c new tenant-scoped table (full tenant treatment: org_id + RLS
+// ENABLE/FORCE + tenant_isolation policy, added in the 11.4c migration).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Durable "don't suggest this pairing again" ledger for the introduction engine
+/// (slice 11.4c; demo DISMISSED_KEY). When a user dismisses a suggested intro
+/// between a FOCUS company and a CANDIDATE, we persist the directional pair plus a
+/// reason so future per-member / proactive scans exclude it. Directional (focus →
+/// candidate) mirrors how the per-member scan is run from one company's viewpoint;
+/// the scan excludes both stored orientations to keep pairs from reappearing.
+model IntroDismissal {
+  id                 String @id @default(uuid()) @db.Uuid
+  orgId              String @map("org_id") @db.Uuid
+  focusCompanyId     String @map("focus_company_id") @db.Uuid
+  candidateCompanyId String @map("candidate_company_id") @db.Uuid
+  /// not_relevant, already_connected, competitor, wrong_timing (demo skip reasons)
+  reason             String @default("not_relevant")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FKs include org_id so both companies must be in the SAME org — a
+  // dismissal can never reference a company in another tenant.
+  focus        Company      @relation("IntroDismissalFocus", fields: [focusCompanyId, orgId], references: [id, orgId], onDelete: Cascade)
+  candidate    Company      @relation("IntroDismissalCandidate", fields: [candidateCompanyId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  // One dismissal per directional pair — re-dismissing is an idempotent upsert.
+  @@unique([orgId, focusCompanyId, candidateCompanyId])
+  @@index([orgId])
+  @@index([orgId, focusCompanyId])
+  @@map("intro_dismissals")
 }
