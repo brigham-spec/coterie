@@ -95,3 +95,63 @@ describe("tenant isolation (composite FKs)", () => {
     ).rejects.toThrow();
   });
 });
+
+// Slice 11.0 — the three new tenant tables must uphold the same guarantees.
+describe("tenant isolation (slice 11.0 tables)", () => {
+  test("events: RLS scopes lists, cross-reads, and WITH CHECK writes", async () => {
+    const eventAId = (
+      await withOrg(orgA.id, (tx) =>
+        tx.event.create({ data: { orgId: orgA.id, name: "Dinner (A)", type: "member_dinner" } }),
+      )
+    ).id;
+
+    const seenByB = await withOrg(orgB.id, (tx) => tx.event.findMany());
+    expect(seenByB.map((e) => e.id)).not.toContain(eventAId);
+
+    const crossRead = await withOrg(orgB.id, (tx) =>
+      tx.event.findUnique({ where: { id: eventAId } }),
+    );
+    expect(crossRead).toBeNull();
+
+    // Cannot stamp a row with another org's id (WITH CHECK).
+    await expect(
+      withOrg(orgA.id, (tx) =>
+        tx.event.create({ data: { orgId: orgB.id, name: "smuggled", type: "other" } }),
+      ),
+    ).rejects.toThrow();
+
+    // Bare (org-less) client sees nothing — fail-closed.
+    const bare = await prisma.event.findMany({ where: { id: eventAId } });
+    expect(bare).toEqual([]);
+  });
+
+  test("event_invitees: composite FK forbids an event from another org", async () => {
+    const eventAId = (
+      await withOrg(orgA.id, (tx) =>
+        tx.event.create({ data: { orgId: orgA.id, name: "Panel (A)", type: "panel" } }),
+      )
+    ).id;
+
+    // Org B tries to invite a guest to org A's event. The composite FK
+    // (event_id, org_id) -> events(id, org_id) has no matching parent in B's scope.
+    await expect(
+      withOrg(orgB.id, (tx) =>
+        tx.eventInvitee.create({
+          data: { orgId: orgB.id, eventId: eventAId, externalName: "smuggled" },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  test("membership_proposals: composite FK forbids a company from another org", async () => {
+    // Org A proposes membership to org B's company. The composite FK
+    // (company_id, org_id) -> companies(id, org_id) has no matching parent row.
+    await expect(
+      withOrg(orgA.id, (tx) =>
+        tx.membershipProposal.create({
+          data: { orgId: orgA.id, companyId: companyBId, tier: "Director Level" },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+});

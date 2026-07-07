@@ -29,7 +29,7 @@ datasource db {
 
 /// The tenant. One row per client org (spec §3.1). Not itself tenant-scoped.
 model Organization {
-  id       String @id @default(uuid()) @db.Uuid
+  id       String  @id @default(uuid()) @db.Uuid
   /// Clerk organization id (org_…) — the bridge from a signed-in session's
   /// active org to our tenant uuid (fed into app.org_id / withOrg). Mirrors
   /// users.clerk_id. Nullable + unique: seeded test tenants and the HVEDC data
@@ -37,9 +37,9 @@ model Organization {
   clerkId  String? @unique @map("clerk_id")
   name     String
   /// Label only in v1: edc, chamber, council, ria (no workflow branching yet).
-  orgType  String @map("org_type")
+  orgType  String  @map("org_type")
   /// Feature flags, sync windows, branding.
-  settings Json   @default("{}")
+  settings Json    @default("{}")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -58,6 +58,9 @@ model Organization {
   newsItems              NewsItem[]
   activities             Activity[]
   integrationCredentials IntegrationCredential[]
+  events                 Event[]
+  eventInvitees          EventInvitee[]
+  membershipProposals    MembershipProposal[]
 
   @@map("organizations")
 }
@@ -76,6 +79,7 @@ model User {
   memberships      OrgMembership[]
   ownedActionItems ActionItem[]    @relation("ActionItemOwnerUser")
   activities       Activity[]      @relation("ActivityActor")
+  ownedCompanies   Company[]       @relation("CompanyOwner")
 
   @@map("users")
 }
@@ -124,22 +128,47 @@ model Company {
   source      String?
   notes       String  @default("")
 
+  // ── Slice 11.0 additive expansion (all nullable / defaulted; backfilled) ──
+  /// HV counties served (demo `counties`). Filter bars.
+  counties       String[]  @default([])
+  /// Typical deal size, free text (demo `dealSize`).
+  dealSize       String?   @map("deal_size")
+  /// What they need from the network — drives the intro engine (demo `lookingFor`).
+  lookingFor     String?   @map("looking_for")
+  /// What they bring — drives the intro engine (demo `canOffer`).
+  canOffer       String?   @map("can_offer")
+  /// Gov/agency relationships (demo `agencyContacts`).
+  agencyContacts String?   @map("agency_contacts")
+  /// Org tags: seeking_equity, ida_active, … (demo `networkTags`). Filter bars.
+  networkTags    String[]  @default([]) @map("network_tags")
+  /// Relationship owner. Plain FK to users.id — app-layer boundary-checked
+  /// inside withOrg (users is platform-level, so no composite-FK guard applies).
+  ownerUserId    String?   @map("owner_user_id") @db.Uuid
+  /// Year joined (demo `memberSince`). Matches invoice installment logic.
+  memberSince    Int?      @map("member_since")
+  /// Newest note/meeting touch — powers the Needs-a-Call panel. App-maintained.
+  lastContactAt  DateTime? @map("last_contact_at") @db.Timestamptz(6)
+  /// Nested/evolving service tracking: { ida:{…}, capital:{…} }.
+  services       Json      @default("{}")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  contacts     Contact[]
-  projectLinks ProjectLink[]
-  invoices     Invoice[]
-  newsItems    NewsItem[]
-  activities   Activity[]
+  organization        Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  owner               User?                @relation("CompanyOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  contacts            Contact[]
+  projectLinks        ProjectLink[]
+  invoices            Invoice[]
+  newsItems           NewsItem[]
+  activities          Activity[]
+  membershipProposals MembershipProposal[]
 
-  @@index([orgId])
-  @@index([orgId, status])
-  @@index([orgId, emailDomain])
   // Composite-FK target so tenant junctions (project_links) can reference
   // (id, org_id) and never point at a company in another org.
   @@unique([id, orgId])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([orgId, emailDomain])
   @@map("companies")
 }
 
@@ -158,6 +187,12 @@ model Contact {
   isPrimary Boolean @default(false) @map("is_primary")
   notes     String  @default("")
 
+  // ── Slice 11.0 additive expansion ──
+  /// Profile URL (demo `linkedin`).
+  linkedin String?
+  /// Contact tags: decision_maker, hnw, family_office, … (demo `tags`).
+  tags     String[] @default([])
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -167,12 +202,13 @@ model Contact {
   introsAsPartyB   Introduction[]    @relation("IntroPartyB")
   meetingAttendees MeetingAttendee[]
   ownedActionItems ActionItem[]      @relation("ActionItemOwnerContact")
+  eventInvitees    EventInvitee[]
 
+  // Composite-FK target for meeting_attendees (id, org_id).
+  @@unique([id, orgId])
   @@index([orgId])
   @@index([companyId])
   @@index([orgId, email])
-  // Composite-FK target for meeting_attendees (id, org_id).
-  @@unique([id, orgId])
   @@map("contacts")
 }
 
@@ -181,11 +217,33 @@ model Project {
   id          String    @id @default(uuid()) @db.Uuid
   orgId       String    @map("org_id") @db.Uuid
   name        String
-  /// Pipeline stage — enum defined per product needs.
+  /// Pipeline stage — enum defined per product needs. Vocabulary (demo's board):
+  /// concept, pre_development, entitlements, planning_board, capital_raise,
+  /// construction_docs, under_construction, stabilization, completed, on_hold.
   stage       String
   description String    @default("")
   targetDate  DateTime? @map("target_date") @db.Date
   value       Decimal?  @db.Decimal(14, 2)
+
+  // ── Slice 11.0 additive expansion (all nullable / defaulted; backfilled) ──
+  /// Project type / industry (demo `type`).
+  type           String?
+  /// Location (demo `county`).
+  county         String?
+  /// Units / keys — pipeline metric (demo `units`).
+  units          Int?
+  /// Value actually realized — powers Value Created (demo `realizedValue`).
+  realizedValue  Decimal? @map("realized_value") @db.Decimal(14, 2)
+  /// Lead org/name if not yet a member (demo `prospectLead`).
+  prospectLead   String?  @map("prospect_lead")
+  /// { permanentJobs, constructionJobs, constructionCost, taxAbatement, grants[] }.
+  economicImpact Json     @default("{}") @map("economic_impact")
+  /// { capitalSourcing, idaNavigation, realEstateSales, grantCfa }.
+  hvServices     Json     @default("{}") @map("hv_services")
+  /// [{ name, amount, status }] — funding sources (demo `fundingSources`).
+  fundingSources Json     @default("[]") @map("funding_sources")
+  /// [{ stage, date }] — stage transitions (Activity is company-scoped, not project).
+  stageHistory   Json     @default("[]") @map("stage_history")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -193,10 +251,11 @@ model Project {
   organization  Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   projectLinks  ProjectLink[]
   introductions Introduction[]
+  events        Event[]
 
-  @@index([orgId])
   // Composite-FK target for project_links (id, org_id).
   @@unique([id, orgId])
+  @@index([orgId])
   @@map("projects")
 }
 
@@ -210,7 +269,13 @@ model ProjectLink {
   orgId     String @map("org_id") @db.Uuid
   projectId String @map("project_id") @db.Uuid
   companyId String @map("company_id") @db.Uuid
-  /// developer, lender, site_host, agency, advisor, …
+  /// Team role. Base vocab: developer, lender, site_host, agency, advisor.
+  /// Slice 11.0 expands to the demo's 20 disciplines (architect, civil_engineer,
+  /// land_use_attorney, bridge_lender, general_contractor, interior_designer,
+  /// owners_rep, environmental, landscape_architect, design_architect,
+  /// structural_engineer, mep_engineer, historic_preservation, equity_partner,
+  /// tax_credit_consultant, hospitality_operator, surveyor, traffic_engineer,
+  /// permitting_consultant, …). Open-role detection = disciplines with no link.
   role      String
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -277,10 +342,10 @@ model Meeting {
   attendees    MeetingAttendee[]
   actionItems  ActionItem[]
 
-  @@index([orgId])
-  @@index([orgId, heldAt(sort: Desc)])
   // Composite-FK target for meeting_attendees (id, org_id).
   @@unique([id, orgId])
+  @@index([orgId])
+  @@index([orgId, heldAt(sort: Desc)])
   @@map("meetings")
 }
 
@@ -471,4 +536,106 @@ model IntegrationCredential {
   @@unique([orgId, provider])
   @@index([orgId])
   @@map("integration_credentials")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slice 11.0 new tenant-scoped tables (full tenant treatment: org_id + RLS
+// ENABLE/FORCE + tenant_isolation policy, added in the item-11.0 migration).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Member dinners, roundtables, panels, site visits (demo `hvedc_events`).
+model Event {
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  name        String
+  /// member_dinner, roundtable, panel, site_visit, conference, social, other
+  type        String
+  /// planning, invitations_sent, confirmed, completed, cancelled
+  stage       String    @default("planning")
+  date        DateTime? @db.Timestamptz(6)
+  venue       String?
+  capacity    Int?
+  theme       String?
+  description String    @default("")
+  notes       String    @default("")
+  cost        Decimal?  @db.Decimal(14, 2)
+  /// Optional tie to a project (e.g. a site visit). Plain FK to projects.id
+  /// (a composite FK would force SetNull to null the required org_id) —
+  /// app-layer re-checked inside withOrg on write, like introductions.projectId.
+  projectId   String?   @map("project_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project      Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  invitees     EventInvitee[]
+
+  // Composite-FK target for event_invitees (id, org_id).
+  @@unique([id, orgId])
+  @@index([orgId])
+  @@index([orgId, date(sort: Desc)])
+  @@index([projectId])
+  @@map("events")
+}
+
+/// Guest list for an event — a CRM contact or an external (non-member) guest
+/// (demo eventModal guest list). Composite FKs so an invitee can't straddle orgs.
+model EventInvitee {
+  // Synthetic PK: contactId is nullable (external guests), so it can't be part
+  // of a composite PK — and one event may have several external guests.
+  id           String  @id @default(uuid()) @db.Uuid
+  orgId        String  @map("org_id") @db.Uuid
+  eventId      String  @map("event_id") @db.Uuid
+  /// Null when the guest is external (not in the CRM). Plain FK to contacts.id
+  /// (a composite FK would force SetNull to null the required org_id) —
+  /// app-layer re-checked inside withOrg on write, like contacts.companyId.
+  contactId    String? @map("contact_id") @db.Uuid
+  externalName String? @map("external_name")
+  externalOrg  String? @map("external_org")
+  /// invited, confirmed, declined, attended, no_show
+  rsvp         String  @default("invited")
+  notes        String  @default("")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Event is a required parent → composite FK keeps the invitee in the event's org.
+  event        Event        @relation(fields: [eventId, orgId], references: [id, orgId], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([eventId])
+  @@index([contactId])
+  @@map("event_invitees")
+}
+
+/// Membership proposals sent to companies (demo `hvedc_membership_proposals`).
+/// Powers the dashboard "Proposals Sent" panel + revenue proposal pipeline.
+model MembershipProposal {
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  /// Proposed tier (Director Level, Advisory Level, …).
+  tier           String
+  amount         Decimal?  @db.Decimal(14, 2)
+  /// draft, sent, negotiating, won, lost
+  status         String    @default("draft")
+  sentOn         DateTime? @map("sent_on") @db.Date
+  lastFollowUpAt DateTime? @map("last_follow_up_at") @db.Timestamptz(6)
+  driveUrl       String?   @map("drive_url")
+  notes          String    @default("")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FK includes org_id so a proposal's company must be in the SAME org.
+  company      Company      @relation(fields: [companyId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([companyId])
+  @@index([orgId, status])
+  @@map("membership_proposals")
 }
