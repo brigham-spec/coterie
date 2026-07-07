@@ -5,6 +5,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { generateCompanyBrief } from "@/lib/anthropic";
+import {
+  eligibleCandidateIds,
+  generateIntroSuggestions,
+  type IntroCompanyProfile,
+  type IntroSuggestion,
+} from "@/lib/intro-engine";
 
 // AI company brief (build item 5). The company is re-loaded withOrg-scoped from
 // the id in the form (never trusting a client-passed payload), so a foreign id
@@ -74,5 +80,129 @@ export async function generateBrief(
     if (err instanceof Anthropic.RateLimitError)
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not generate a brief. Try again." };
+  }
+}
+
+// Per-member intro suggestions (slice 11.4b). The focus company and the candidate
+// pool are re-loaded withOrg-scoped from the id in the form (never trusting a
+// client payload), so a foreign id resolves null and no other tenant's network is
+// scanned. Companies already introduced to the focus (via any contact pair) are
+// excluded before the model sees the pool. Ephemeral — nothing is persisted.
+
+const introProfileInclude = {
+  contacts: {
+    orderBy: { name: "asc" },
+    select: { name: true, title: true, isPrimary: true },
+  },
+  projectLinks: {
+    orderBy: { role: "asc" },
+    include: { project: { select: { name: true, stage: true } } },
+  },
+} as const;
+
+type CompanyWithProfile = {
+  id: string;
+  name: string;
+  status: string;
+  industry: string | null;
+  tier: string | null;
+  lookingFor: string | null;
+  canOffer: string | null;
+  networkTags: string[];
+  counties: string[];
+  contacts: Array<{ name: string; title: string | null; isPrimary: boolean }>;
+  projectLinks: Array<{ role: string; project: { name: string; stage: string } }>;
+};
+
+function toIntroProfile(c: CompanyWithProfile): IntroCompanyProfile {
+  const primary = c.contacts.find((p) => p.isPrimary) ?? c.contacts[0] ?? null;
+  return {
+    id: c.id,
+    name: c.name,
+    status: c.status,
+    industry: c.industry,
+    tier: c.tier,
+    lookingFor: c.lookingFor,
+    canOffer: c.canOffer,
+    networkTags: c.networkTags,
+    counties: c.counties,
+    primaryContact: primary
+      ? { name: primary.name, title: primary.title }
+      : null,
+    projects: c.projectLinks.map((l) => ({
+      name: l.project.name,
+      stage: l.project.stage,
+      role: l.role,
+    })),
+  };
+}
+
+export type IntroSuggestState =
+  | { status: "idle" }
+  | { status: "ok"; suggestions: IntroSuggestion[] }
+  | { status: "error"; message: string };
+
+export async function suggestIntros(
+  _prev: IntroSuggestState,
+  formData: FormData,
+): Promise<IntroSuggestState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const { orgId } = await requireOrgContext();
+
+  const data = await withOrg(orgId, async (tx) => {
+    const focus = await tx.company.findUnique({
+      where: { id: companyId },
+      include: introProfileInclude,
+    });
+    if (focus == null) return null;
+
+    const companies = await tx.company.findMany({
+      include: introProfileInclude,
+    });
+    const intros = await tx.introduction.findMany({
+      select: {
+        partyA: { select: { companyId: true } },
+        partyB: { select: { companyId: true } },
+      },
+    });
+    return { focus, companies, intros };
+  });
+
+  if (data == null)
+    return { status: "error", message: "company not found in this organization" };
+
+  // Companies already introduced to the focus (either direction, any contact pair).
+  const introduced = new Set<string>();
+  for (const i of data.intros) {
+    if (i.partyA.companyId === companyId) introduced.add(i.partyB.companyId);
+    if (i.partyB.companyId === companyId) introduced.add(i.partyA.companyId);
+  }
+
+  const eligible = new Set(
+    eligibleCandidateIds(
+      companyId,
+      data.companies.map((c) => c.id),
+      introduced,
+    ),
+  );
+  const candidates = data.companies
+    .filter((c) => eligible.has(c.id))
+    .map(toIntroProfile);
+
+  try {
+    const suggestions = await generateIntroSuggestions(
+      toIntroProfile(data.focus),
+      candidates,
+    );
+    return { status: "ok", suggestions };
+  } catch (err) {
+    console.error("intro suggestions failed", err);
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not generate suggestions. Try again." };
   }
 }

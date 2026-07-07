@@ -17,6 +17,7 @@ import {
 } from "@/components/ui";
 
 import { CompanyBrief } from "./_brief";
+import { IntroSuggestions } from "./_intros";
 
 // Company detail — the central relationship's home. Surfaces the company's own
 // fields (including the slice-11.0 relationship attributes: what it's looking
@@ -155,6 +156,8 @@ export default async function CompanyDetailPage({
       </Card>
 
       <CompanyBrief companyId={company.id} />
+
+      <IntroSuggestions companyId={company.id} />
 
       <Card>
         <CardHeader title="Contacts" />
