@@ -40,6 +40,8 @@ export type OrgContext = {
   orgName: string;
   /// Our User.id (uuid).
   userId: string;
+  /// The signed-in user's display name (for greetings).
+  userName: string;
   clerkOrgId: string;
   clerkUserId: string;
   /// admin | staff (our vocabulary, mapped from Clerk's org role).
@@ -74,6 +76,7 @@ export const requireOrgContext = cache(
       orgId: org.id,
       orgName: org.name,
       userId: user.id,
+      userName: user.name,
       clerkOrgId,
       clerkUserId,
       role,

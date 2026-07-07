@@ -15,6 +15,13 @@ type NavGroup = { label: string; items: NavItem[] };
 
 const groups: NavGroup[] = [
   {
+    label: "Overview",
+    items: [
+      { label: "Dashboard", href: "/dashboard" },
+      { label: "Revenue" },
+    ],
+  },
+  {
     label: "Network",
     items: [
       { label: "Companies", href: "/dashboard/companies" },
@@ -46,8 +53,11 @@ export function Nav() {
             {group.items.map((item) => {
               const active =
                 item.href != null &&
+                // The dashboard root only lights on an exact match; every other
+                // section stays lit on its detail sub-routes too.
                 (pathname === item.href ||
-                  pathname.startsWith(`${item.href}/`));
+                  (item.href !== "/dashboard" &&
+                    pathname.startsWith(`${item.href}/`)));
               const base =
                 "block rounded-sm border-l-2 px-3 py-1.5 text-[13px] transition-colors";
 
