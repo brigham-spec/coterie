@@ -31,6 +31,10 @@ const groups: NavGroup[] = [
     ],
   },
   {
+    label: "Intelligence",
+    items: [{ label: "Network Search", href: "/dashboard/network-search" }],
+  },
+  {
     label: "Operations",
     items: [
       { label: "Meetings", href: "/dashboard/meetings" },
