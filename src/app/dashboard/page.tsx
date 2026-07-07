@@ -8,6 +8,7 @@ import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
+import { IntroScan } from "./_intro-scan";
 
 // Dashboard overview (slice 11.1) — the operator's morning surface. Six KPI
 // pills over three rows of at-a-glance cards: pipeline (projects/events/cold
@@ -174,6 +175,9 @@ export default async function DashboardPage() {
           <Pill n={coldMembers.length} label="Need a call" href="/dashboard/companies" />
         </div>
       </div>
+
+      {/* Layer-0 — proactive introduction scanner */}
+      <IntroScan />
 
       {/* ROW 3 — Active Projects | Upcoming Events | Needs a Call */}
       <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">

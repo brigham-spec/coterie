@@ -9,6 +9,19 @@ const eslintConfig = defineConfig([
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
+      // Honor the codebase-wide `_`-prefix convention for intentionally-unused
+      // bindings. Required for framework-imposed signatures such as a
+      // useActionState form action that consumes neither `prevState` nor
+      // `formData` — the `after-used` default only forgives leading unused args,
+      // not a signature where every arg is unused.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
     },
   },
   // Override default ignores of eslint-config-next.

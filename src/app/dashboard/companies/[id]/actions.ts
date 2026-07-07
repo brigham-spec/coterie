@@ -8,9 +8,9 @@ import { generateCompanyBrief } from "@/lib/anthropic";
 import {
   eligibleCandidateIds,
   generateIntroSuggestions,
-  type IntroCompanyProfile,
   type IntroSuggestion,
 } from "@/lib/intro-engine";
+import { introProfileInclude, toIntroProfile } from "@/lib/intro-profile";
 
 // AI company brief (build item 5). The company is re-loaded withOrg-scoped from
 // the id in the form (never trusting a client-passed payload), so a foreign id
@@ -88,54 +88,8 @@ export async function generateBrief(
 // client payload), so a foreign id resolves null and no other tenant's network is
 // scanned. Companies already introduced to the focus (via any contact pair) are
 // excluded before the model sees the pool. Ephemeral — nothing is persisted.
-
-const introProfileInclude = {
-  contacts: {
-    orderBy: { name: "asc" },
-    select: { name: true, title: true, isPrimary: true },
-  },
-  projectLinks: {
-    orderBy: { role: "asc" },
-    include: { project: { select: { name: true, stage: true } } },
-  },
-} as const;
-
-type CompanyWithProfile = {
-  id: string;
-  name: string;
-  status: string;
-  industry: string | null;
-  tier: string | null;
-  lookingFor: string | null;
-  canOffer: string | null;
-  networkTags: string[];
-  counties: string[];
-  contacts: Array<{ name: string; title: string | null; isPrimary: boolean }>;
-  projectLinks: Array<{ role: string; project: { name: string; stage: string } }>;
-};
-
-function toIntroProfile(c: CompanyWithProfile): IntroCompanyProfile {
-  const primary = c.contacts.find((p) => p.isPrimary) ?? c.contacts[0] ?? null;
-  return {
-    id: c.id,
-    name: c.name,
-    status: c.status,
-    industry: c.industry,
-    tier: c.tier,
-    lookingFor: c.lookingFor,
-    canOffer: c.canOffer,
-    networkTags: c.networkTags,
-    counties: c.counties,
-    primaryContact: primary
-      ? { name: primary.name, title: primary.title }
-      : null,
-    projects: c.projectLinks.map((l) => ({
-      name: l.project.name,
-      stage: l.project.stage,
-      role: l.role,
-    })),
-  };
-}
+// The profile shaping (introProfileInclude / toIntroProfile) is shared with the
+// dashboard's proactive scan via @/lib/intro-profile.
 
 export type IntroSuggestState =
   | { status: "idle" }

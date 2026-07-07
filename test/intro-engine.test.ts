@@ -5,6 +5,8 @@ import {
   candidateSignalScore,
   prioritizeCandidates,
   parseSuggestions,
+  pairKey,
+  parseProactivePairings,
   type IntroCompanyProfile,
 } from "@/lib/intro-engine";
 
@@ -135,5 +137,81 @@ describe("parseSuggestions", () => {
       { companyId: "a", companyName: "A", score: "oops" },
     ]);
     expect(parseSuggestions(raw, valid)).toEqual([]);
+  });
+});
+
+describe("pairKey", () => {
+  it("is orientation-independent", () => {
+    expect(pairKey("a", "b")).toBe(pairKey("b", "a"));
+    expect(pairKey("a", "b")).toBe("a|b");
+  });
+});
+
+describe("parseProactivePairings", () => {
+  const valid = new Set(["a", "b", "c"]);
+  const noExclusions = new Set<string>();
+
+  function pairing(over: Record<string, unknown>) {
+    return {
+      companyAId: "a",
+      companyAName: "A",
+      companyBId: "b",
+      companyBName: "B",
+      score: 4,
+      ...over,
+    };
+  }
+
+  it("parses valid pairings and sorts by score desc", () => {
+    const raw = JSON.stringify([
+      pairing({ companyAId: "a", companyBId: "b", score: 3 }),
+      pairing({ companyAId: "b", companyBId: "c", score: 5 }),
+    ]);
+    const out = parseProactivePairings(raw, valid, noExclusions);
+    expect(out.map((p) => p.score)).toEqual([5, 3]);
+  });
+
+  it("drops pairings with a hallucinated, self, or duplicate-of-self id", () => {
+    const raw = JSON.stringify([
+      pairing({ companyAId: "a", companyBId: "ghost" }),
+      pairing({ companyAId: "a", companyBId: "a" }),
+    ]);
+    expect(parseProactivePairings(raw, valid, noExclusions)).toEqual([]);
+  });
+
+  it("excludes already-made / dismissed pairs regardless of orientation", () => {
+    const excluded = new Set([pairKey("a", "b")]);
+    const raw = JSON.stringify([
+      pairing({ companyAId: "b", companyBId: "a", score: 5 }),
+      pairing({ companyAId: "a", companyBId: "c", score: 4 }),
+    ]);
+    const out = parseProactivePairings(raw, valid, excluded);
+    expect(out.map((p) => pairKey(p.companyAId, p.companyBId))).toEqual([
+      pairKey("a", "c"),
+    ]);
+  });
+
+  it("de-duplicates a repeated pair, keeping the higher score", () => {
+    const raw = JSON.stringify([
+      pairing({ companyAId: "a", companyBId: "b", score: 3 }),
+      pairing({ companyAId: "b", companyBId: "a", score: 5 }),
+    ]);
+    const out = parseProactivePairings(raw, valid, noExclusions);
+    expect(out).toHaveLength(1);
+    expect(out[0].score).toBe(5);
+  });
+
+  it("clamps score and trims talking points to 3", () => {
+    const raw = JSON.stringify([
+      pairing({ score: 9, talkingPoints: ["1", " ", "2", "3", "4"] }),
+    ]);
+    const [p] = parseProactivePairings(raw, valid, noExclusions);
+    expect(p.score).toBe(5);
+    expect(p.talkingPoints).toEqual(["1", "2", "3"]);
+  });
+
+  it("returns [] for non-JSON or non-array input", () => {
+    expect(parseProactivePairings("nope", valid, noExclusions)).toEqual([]);
+    expect(parseProactivePairings("{}", valid, noExclusions)).toEqual([]);
   });
 });

@@ -2,14 +2,17 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 
-// Per-member introduction engine (slice 11.4b, ported from the prototype's
-// doIntroForMember). Given a FOCUS company in the network and a pool of candidate
-// companies, the model scores which candidates the focus should be introduced to
-// and why. Like the company brief (@/lib/anthropic), this is the single server-
-// only seam to Anthropic for this feature: the prompt, model choice, and output
-// shape live here, so tenant data never leaves except through a shape we control
-// and the API key never reaches the browser. Suggestions are EPHEMERAL — nothing
-// is persisted; they are regenerated on demand.
+// Introduction engine (slices 11.4b/c, ported from the prototype's doIntroForMember
+// and doProactiveAlertScan). Two modes over the same terse company profiles:
+//   • PER-MEMBER (11.4b): given a FOCUS company + a candidate pool, score which
+//     candidates the focus should be introduced to and why.
+//   • PROACTIVE (11.4c): given the whole network, surface the highest-value NEW
+//     pairings to make right now (symmetric — two companies, no single focus).
+// Like the company brief (@/lib/anthropic), this is the single server-only seam to
+// Anthropic for the feature: the prompts, model choice, and output shapes live
+// here, so tenant data never leaves except through a shape we control and the API
+// key never reaches the browser. Results are EPHEMERAL — regenerated on demand;
+// only user dismissals are persisted (intro_dismissals), fed in as exclusions.
 
 // A company reduced to the signals the model reasons over. Kept terse and factual
 // so the model matches rather than embellishes.
@@ -34,6 +37,20 @@ export type IntroSuggestion = {
   connectionType: string;
   headline: string;
   whatItAdvances: string;
+  whyNow: string;
+  talkingPoints: string[];
+};
+
+// A proactive pairing (slice 11.4c) is symmetric — it names TWO companies the
+// network should connect right now, rather than scoring candidates for one focus.
+export type ProactivePairing = {
+  companyAId: string;
+  companyAName: string;
+  companyBId: string;
+  companyBName: string;
+  score: number;
+  connectionType: string;
+  headline: string;
   whyNow: string;
   talkingPoints: string[];
 };
@@ -192,4 +209,133 @@ export async function generateIntroSuggestions(
 
   const validIds = new Set(pool.map((c) => c.id));
   return parseSuggestions(text, validIds);
+}
+
+// ── Proactive network scan (slice 11.4c) ─────────────────────────────────────
+
+/// PURE: a canonical, ORIENTATION-INDEPENDENT key for a company pair. An intro
+/// A→B is the same relationship as B→A, so both the already-introduced set and
+/// the dismissal ledger are keyed this way to exclude a pair no matter which side
+/// the model puts first.
+export function pairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+function coercePairing(
+  item: unknown,
+  validIds: ReadonlySet<string>,
+  excludedPairs: ReadonlySet<string>,
+): ProactivePairing | null {
+  if (typeof item !== "object" || item === null) return null;
+  const o = item as Record<string, unknown>;
+  const aId = typeof o.companyAId === "string" ? o.companyAId : "";
+  const bId = typeof o.companyBId === "string" ? o.companyBId : "";
+  // Both sides must be real network companies, distinct, and not an existing or
+  // dismissed pairing.
+  if (!validIds.has(aId) || !validIds.has(bId)) return null;
+  if (aId === bId) return null;
+  if (excludedPairs.has(pairKey(aId, bId))) return null;
+
+  const scoreRaw = typeof o.score === "number" ? o.score : Number(o.score);
+  if (!Number.isFinite(scoreRaw)) return null;
+  const score = Math.max(2, Math.min(5, Math.round(scoreRaw)));
+
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const talkingPoints = Array.isArray(o.talkingPoints)
+    ? o.talkingPoints
+        .filter((t): t is string => typeof t === "string" && t.trim() !== "")
+        .map((t) => t.trim())
+        .slice(0, 3)
+    : [];
+
+  return {
+    companyAId: aId,
+    companyAName: str(o.companyAName),
+    companyBId: bId,
+    companyBName: str(o.companyBName),
+    score,
+    connectionType: str(o.connectionType),
+    headline: str(o.headline),
+    whyNow: str(o.whyNow),
+    talkingPoints,
+  };
+}
+
+/// PURE: parse + validate the model's JSON array into pairings — dropping entries
+/// with a hallucinated/duplicate/self id or an already-made/dismissed pair, and
+/// de-duplicating on the canonical pair key (keeping the higher score). Sorted by
+/// score (desc). Robust to non-JSON / non-array responses.
+export function parseProactivePairings(
+  raw: string,
+  validIds: ReadonlySet<string>,
+  excludedPairs: ReadonlySet<string>,
+): ProactivePairing[] {
+  const json = extractJsonArray(raw);
+  if (json === null) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  const byPair = new Map<string, ProactivePairing>();
+  for (const item of parsed) {
+    const p = coercePairing(item, validIds, excludedPairs);
+    if (!p) continue;
+    const k = pairKey(p.companyAId, p.companyBId);
+    const existing = byPair.get(k);
+    if (!existing || p.score > existing.score) byPair.set(k, p);
+  }
+  return [...byPair.values()].sort((a, b) => b.score - a.score);
+}
+
+const MAX_PROACTIVE_POOL = 30;
+
+const PROACTIVE_SYSTEM_PROMPT = `You are an introduction strategist for an economic-development organization that connects the companies in its network. Given the whole NETWORK (a pool of companies), identify the highest-value NEW introductions to make right now — each between a pair of DIFFERENT companies in the pool.
+
+Score each pairing you include, 5 down to 3:
+5 — the introduction removes a named barrier or fills a specific open project role for one side.
+4 — a specific needed capability on one side, matched by the other, with concrete evidence in the supplied data.
+3 — a complementary fit: each has something the other is looking for.
+Only include pairings scoring 3 or higher. Return fewer, stronger pairings rather than padding; do not repeat a pair.
+
+Ground every claim in the supplied data — do not invent needs, projects, people, capabilities, or history that is not present. Reference each company by what the data actually says (lookingFor, canOffer, networkTags, projects).
+
+Return ONLY a JSON array (no prose, no markdown code fences). Each element:
+{"companyAId": "<one of the company ids>", "companyAName": "<name>", "companyBId": "<a different company id>", "companyBName": "<name>", "score": <5|4|3>, "connectionType": "<short label, e.g. 'Capital ↔ Project'>", "headline": "<one line>", "whyNow": "<the current trigger>", "talkingPoints": ["<up to 3 short concrete openers>"]}
+Both ids MUST be from the supplied companies and different. If no pairing scores 3 or higher, return [].`;
+
+/// Proactive network-wide scan: bound the pool to the highest-signal companies,
+/// ask the model for the best new pairings, and validate against the pool + the
+/// caller's excluded-pair set (already introduced + dismissed). Ephemeral.
+export async function generateProactivePairings(
+  companies: IntroCompanyProfile[],
+  excludedPairs: ReadonlySet<string>,
+): Promise<ProactivePairing[]> {
+  const pool = prioritizeCandidates(companies, MAX_PROACTIVE_POOL);
+  if (pool.length < 2) return [];
+
+  const client = new Anthropic();
+  const response = await client.messages.create({
+    model: "claude-opus-4-6",
+    max_tokens: 2048,
+    system: PROACTIVE_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user",
+        content: `NETWORK:\n${JSON.stringify(pool, null, 2)}`,
+      },
+    ],
+  });
+
+  const text = response.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("")
+    .trim();
+
+  const validIds = new Set(pool.map((c) => c.id));
+  return parseProactivePairings(text, validIds, excludedPairs);
 }
