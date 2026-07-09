@@ -24,6 +24,10 @@
 .DS_Store
 *.pem
 
+# local reference screenshots (parity captures — not code, kept out of the repo
+# and out of Vercel deploys; see .vercelignore)
+/New Folder With Items/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
