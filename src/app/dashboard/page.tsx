@@ -49,7 +49,12 @@ export default async function DashboardPage() {
   const d30 = new Date(now.getTime() - 30 * DAY);
   const d60 = new Date(now.getTime() - 60 * DAY);
 
-  const [
+  // A Prisma interactive transaction holds a SINGLE pooled connection, so its
+  // reads must run sequentially: issuing them concurrently (Promise.all) makes
+  // pg execute overlapping queries on one client, which serializes under
+  // contention and can stall the RSC fetch a Link prefetch depends on. RLS
+  // forces every tenant read inside this one tx, so we await them in order.
+  const {
     companies,
     projects,
     events,
@@ -58,86 +63,94 @@ export default async function DashboardPage() {
     invoices,
     unmatched,
     pendingIntros,
-  ] = await withOrg(ctx.orgId, (tx) =>
-      Promise.all([
-        tx.company.findMany({
-          select: {
-            id: true,
-            name: true,
-            status: true,
-            tier: true,
-            industry: true,
-            lastContactAt: true,
-          },
-        }),
-        tx.project.findMany({
-          where: { stage: { notIn: [...TERMINAL_STAGES] } },
-          orderBy: { updatedAt: "desc" },
-          select: {
-            id: true,
-            name: true,
-            stage: true,
-            _count: { select: { projectLinks: true } },
-          },
-        }),
-        tx.event.findMany({
-          where: {
-            date: { gte: startOfToday },
-            stage: { notIn: ["completed", "cancelled"] },
-          },
-          orderBy: { date: "asc" },
-          take: 5,
-          select: { id: true, name: true, type: true, venue: true, date: true },
-        }),
-        tx.introduction.findMany({
-          orderBy: { createdAt: "desc" },
-          take: 20,
-          select: {
-            id: true,
-            status: true,
-            createdAt: true,
-            partyA: { select: { company: { select: { name: true } } } },
-            partyB: { select: { company: { select: { name: true } } } },
-          },
-        }),
-        tx.membershipProposal.findMany({
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            tier: true,
-            amount: true,
-            status: true,
-            createdAt: true,
-            companyId: true,
-            company: { select: { name: true } },
-          },
-        }),
-        tx.invoice.findMany({
-          select: {
-            status: true,
-            amount: true,
-            dueOn: true,
-            companyId: true,
-            payments: { select: { amount: true } },
-          },
-        }),
-        tx.unmatchedAttendee.findMany({
-          where: { dismissedAt: null },
-          orderBy: { seenCount: "desc" },
-          select: {
-            id: true,
-            email: true,
-            domain: true,
-            inferredName: true,
-            inferredOrg: true,
-            seenCount: true,
-            lastMeetingTitle: true,
-          },
-        }),
-        // Fireflies-evidenced intro-stage advances awaiting confirmation.
-        loadPendingIntroDetections(tx),
-      ]),
-    );
+  } = await withOrg(ctx.orgId, async (tx) => {
+    const companies = await tx.company.findMany({
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        tier: true,
+        industry: true,
+        lastContactAt: true,
+      },
+    });
+    const projects = await tx.project.findMany({
+      where: { stage: { notIn: [...TERMINAL_STAGES] } },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        stage: true,
+        _count: { select: { projectLinks: true } },
+      },
+    });
+    const events = await tx.event.findMany({
+      where: {
+        date: { gte: startOfToday },
+        stage: { notIn: ["completed", "cancelled"] },
+      },
+      orderBy: { date: "asc" },
+      take: 5,
+      select: { id: true, name: true, type: true, venue: true, date: true },
+    });
+    const intros = await tx.introduction.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        partyA: { select: { company: { select: { name: true } } } },
+        partyB: { select: { company: { select: { name: true } } } },
+      },
+    });
+    const proposals = await tx.membershipProposal.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        tier: true,
+        amount: true,
+        status: true,
+        createdAt: true,
+        companyId: true,
+        company: { select: { name: true } },
+      },
+    });
+    const invoices = await tx.invoice.findMany({
+      select: {
+        status: true,
+        amount: true,
+        dueOn: true,
+        companyId: true,
+        payments: { select: { amount: true } },
+      },
+    });
+    const unmatched = await tx.unmatchedAttendee.findMany({
+      where: { dismissedAt: null },
+      orderBy: { seenCount: "desc" },
+      select: {
+        id: true,
+        email: true,
+        domain: true,
+        inferredName: true,
+        inferredOrg: true,
+        seenCount: true,
+        lastMeetingTitle: true,
+      },
+    });
+    // Fireflies-evidenced intro-stage advances awaiting confirmation.
+    const pendingIntros = await loadPendingIntroDetections(tx);
+    return {
+      companies,
+      projects,
+      events,
+      intros,
+      proposals,
+      invoices,
+      unmatched,
+      pendingIntros,
+    };
+  });
 
   const recentPendingIntros = pendingIntros.slice(0, 5);
 

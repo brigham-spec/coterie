@@ -51,44 +51,46 @@ export default async function CompanyDetailPage({
   const { id } = await params;
   const ctx = await requireOrgContext();
 
-  const [company, introductions, pendingIntros] = await withOrg(
+  // Reads share one pooled connection inside the tx, so run them in sequence —
+  // concurrent queries on a single pg client serialize and can stall the load.
+  const { company, introductions, pendingIntros } = await withOrg(
     ctx.orgId,
-    (tx) =>
-      Promise.all([
-        tx.company.findUnique({
-          where: { id },
-          include: {
-            owner: { select: { name: true } },
-            contacts: { orderBy: { name: "asc" } },
-            projectLinks: {
-              include: {
-                project: { select: { id: true, name: true, stage: true } },
-              },
-              orderBy: { role: "asc" },
+    async (tx) => {
+      const company = await tx.company.findUnique({
+        where: { id },
+        include: {
+          owner: { select: { name: true } },
+          contacts: { orderBy: { name: "asc" } },
+          projectLinks: {
+            include: {
+              project: { select: { id: true, name: true, stage: true } },
             },
+            orderBy: { role: "asc" },
           },
-        }),
-        // This company's introductions from the ledger, either party.
-        tx.introduction.findMany({
-          where: {
-            OR: [{ partyA: { companyId: id } }, { partyB: { companyId: id } }],
+        },
+      });
+      // This company's introductions from the ledger, either party.
+      const introductions = await tx.introduction.findMany({
+        where: {
+          OR: [{ partyA: { companyId: id } }, { partyB: { companyId: id } }],
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          status: true,
+          outcome: true,
+          partyA: {
+            select: { name: true, company: { select: { id: true, name: true } } },
           },
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            status: true,
-            outcome: true,
-            partyA: {
-              select: { name: true, company: { select: { id: true, name: true } } },
-            },
-            partyB: {
-              select: { name: true, company: { select: { id: true, name: true } } },
-            },
+          partyB: {
+            select: { name: true, company: { select: { id: true, name: true } } },
           },
-        }),
-        // Fireflies-evidenced stage advances awaiting confirmation for this company.
-        loadPendingIntroDetections(tx, id),
-      ]),
+        },
+      });
+      // Fireflies-evidenced stage advances awaiting confirmation for this company.
+      const pendingIntros = await loadPendingIntroDetections(tx, id);
+      return { company, introductions, pendingIntros };
+    },
   );
 
   if (company == null) notFound();

@@ -44,21 +44,21 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
 export default async function InvoicesPage() {
   const ctx = await requireOrgContext();
 
-  const [companies, invoices] = await withOrg(ctx.orgId, (tx) =>
-    Promise.all([
-      tx.company.findMany({
-        orderBy: { name: "asc" },
-        select: { id: true, name: true },
-      }),
-      tx.invoice.findMany({
-        orderBy: { issuedOn: "desc" },
-        include: {
-          company: { select: { name: true } },
-          payments: { select: { amount: true } },
-        },
-      }),
-    ]),
-  );
+  // Sequential reads: one pooled connection per tx, so no concurrent queries.
+  const { companies, invoices } = await withOrg(ctx.orgId, async (tx) => {
+    const companies = await tx.company.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+    const invoices = await tx.invoice.findMany({
+      orderBy: { issuedOn: "desc" },
+      include: {
+        company: { select: { name: true } },
+        payments: { select: { amount: true } },
+      },
+    });
+    return { companies, invoices };
+  });
 
   // Derive each row's live state once, then roll the money up. Void invoices are
   // excluded from every total — they represent bills that were never owed.

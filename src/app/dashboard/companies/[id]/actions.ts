@@ -193,10 +193,9 @@ export async function dismissIntro(
   const { orgId } = await requireOrgContext();
 
   await withOrg(orgId, async (tx) => {
-    const [f, c] = await Promise.all([
-      tx.company.findUnique({ where: { id: focus }, select: { id: true } }),
-      tx.company.findUnique({ where: { id: candidate }, select: { id: true } }),
-    ]);
+    // Sequential: one pooled connection per tx, so no concurrent queries.
+    const f = await tx.company.findUnique({ where: { id: focus }, select: { id: true } });
+    const c = await tx.company.findUnique({ where: { id: candidate }, select: { id: true } });
     if (!f || !c) throw new Error("company not found in this organization");
 
     await tx.introDismissal.upsert({

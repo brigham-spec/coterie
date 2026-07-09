@@ -44,25 +44,28 @@ const createStatusOptions = INTRO_STAGES;
 export default async function IntroductionsPage() {
   const ctx = await requireOrgContext();
 
-  const [contacts, projects, introductions] = await withOrg(ctx.orgId, (tx) =>
-    Promise.all([
-      tx.contact.findMany({
+  // Sequential reads: one pooled connection per tx, so no concurrent queries.
+  const { contacts, projects, introductions } = await withOrg(
+    ctx.orgId,
+    async (tx) => {
+      const contacts = await tx.contact.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true, company: { select: { name: true } } },
-      }),
-      tx.project.findMany({
+      });
+      const projects = await tx.project.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true },
-      }),
-      tx.introduction.findMany({
+      });
+      const introductions = await tx.introduction.findMany({
         orderBy: { createdAt: "desc" },
         include: {
           partyA: { select: { name: true, company: { select: { name: true } } } },
           partyB: { select: { name: true, company: { select: { name: true } } } },
           project: { select: { name: true } },
         },
-      }),
-    ]),
+      });
+      return { contacts, projects, introductions };
+    },
   );
 
   const valueCreated = introductions.filter(

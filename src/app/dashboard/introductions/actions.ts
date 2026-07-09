@@ -33,10 +33,9 @@ export async function createIntroduction(formData: FormData): Promise<void> {
     throw new Error("the two parties must be different contacts");
 
   await withOrg(orgId, async (tx) => {
-    const [a, b] = await Promise.all([
-      tx.contact.findUnique({ where: { id: partyAContactId } }),
-      tx.contact.findUnique({ where: { id: partyBContactId } }),
-    ]);
+    // Sequential: one pooled connection per tx, so no concurrent queries.
+    const a = await tx.contact.findUnique({ where: { id: partyAContactId } });
+    const b = await tx.contact.findUnique({ where: { id: partyBContactId } });
     if (!a || !b) throw new Error("contact not found in this organization");
 
     if (projectId !== "") {

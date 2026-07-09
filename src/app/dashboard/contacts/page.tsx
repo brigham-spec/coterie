@@ -25,18 +25,18 @@ import { createContact } from "./actions";
 export default async function ContactsPage() {
   const ctx = await requireOrgContext();
 
-  const [companies, contacts] = await withOrg(ctx.orgId, (tx) =>
-    Promise.all([
-      tx.company.findMany({
-        orderBy: { name: "asc" },
-        select: { id: true, name: true },
-      }),
-      tx.contact.findMany({
-        orderBy: { name: "asc" },
-        include: { company: { select: { name: true } } },
-      }),
-    ]),
-  );
+  // Sequential reads: one pooled connection per tx, so no concurrent queries.
+  const { companies, contacts } = await withOrg(ctx.orgId, async (tx) => {
+    const companies = await tx.company.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+    const contacts = await tx.contact.findMany({
+      orderBy: { name: "asc" },
+      include: { company: { select: { name: true } } },
+    });
+    return { companies, contacts };
+  });
 
   return (
     <div className="mx-auto w-full max-w-5xl">
