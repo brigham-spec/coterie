@@ -8,10 +8,16 @@ missing, to catch anything else the numbered 11.x roadmap under-counted.
 
 Legend: ✅ built · ⚠️ partial · ❌ missing
 
+**Last reconciled 2026-07-09 (v2).** Since v1, five items flipped ❌→✅:
+New Connections Detected (`new-connections.ts`), meeting action-item extraction
+(`action-items.ts`), pre-meeting brief (`meeting-prep.ts`), pending intro
+detections (`intro-detection.ts` + dashboard card), and Event suggestions
+(`event-ideas.ts`). The Fireflies-data cluster (A) is complete.
+
 ## Verification basis
 Built surface enumerated from `src/app/dashboard/**/page.tsx` (15 routes),
-`src/lib/*.ts` (23 engines), and `prisma/schema.prisma` (20 models). Each row below
-was checked against the actual route/engine, not assumed from the roadmap.
+`src/lib/*.ts` (30 engines), and `prisma/schema.prisma` (20 models). Each row below
+was checked against the actual route/engine on 2026-07-09, not assumed from the roadmap.
 
 ---
 
@@ -27,7 +33,7 @@ was checked against the actual route/engine, not assumed from the roadmap.
 | Introductions engine | `14566` | ✅ | member / open-roles / network-scan modes + Layer-0 proactive panel + lifecycle stages. |
 | Network Search | `15094` | ✅ | NL search over profiles. |
 | Prospect Finder | `15215` | ✅ | External discovery via web_search, 2 modes. |
-| Events | `7324` | ⚠️ | Event modal + RSVP + guest brief AI built. Event Intelligence **suggestions** panel + outreach-email draft missing — see §3. |
+| Events | `7324` | ⚠️ | Event modal + RSVP + guest brief AI + **event-ideas suggestions** (`event-ideas.ts`) built. Only outreach-email draft still missing — see §3. |
 | Value Created | `16185` | ✅ | Facilitated value + economic-impact rollups. |
 | Commitments | `12617` | ❌ | = slice **11.10**. Merge deliverables + manual obligations, group-by-member, scan-meetings button. |
 | News Intelligence | `10966` | ❌ | = slice **11.9**. RSS quick-scan + AI scan; `NewsItem` table exists, no ingest/UI. |
@@ -36,22 +42,21 @@ was checked against the actual route/engine, not assumed from the roadmap.
 
 ## 2. Dashboard notification-card family (the under-counted cluster)
 
-The prototype dashboard renders seven notification cards. The roadmap tracked the
-big views but under-counted these. Built 2 of 7:
+The prototype dashboard renders seven notification cards. Built 3 of 7:
 
 | Card | Ref | Status | Notes |
 |---|---|---|---|
 | Intro suggestions ("Possible Introductions") | `2985` | ✅ | `_intro-scan.tsx`, manual Scan button. |
-| **New Connections Detected** | `2589`/`3262` | ❌ | Fireflies attendees not matched to any member/contact, grouped by email domain → create prospect / attach to existing member / dismiss. **Sync currently DROPS unmatched attendees** (`src/lib/inngest.ts:101` `if (match == null) continue;`). Needs a durable store + surface. |
-| Pending intro detections from Fireflies | `3181` | ❌ | "N intro updates detected from meetings" — mines transcripts for intro-stage evidence and proposes advancing the intro ledger. |
-| Daily Focus (AI Today/Week/Month) | `3106`/`19582`/`19454` | ❌ | `generateFocusSynthesis` prioritized task list. Explicitly deferred (`page.tsx:19-21`). |
-| Proposal follow-up nudge | `3041` | ❌ | Reminds on sent-but-unanswered membership proposals. |
+| New Connections Detected | `2589`/`3262` | ✅ | `_new-connections.tsx` + `new-connections.ts`. Unmatched Fireflies attendees now stored (`UnmatchedAttendee`) + triaged (create prospect / attach / dismiss). |
+| Pending intro detections from Fireflies | `3181` | ✅ | Dashboard "Pending Introductions" card + per-company section (`intro-detection.ts`). Proposes advancing the ledger from a later meeting where both parties met. |
+| **Daily Focus (AI Today/Week/Month)** | `3106`/`19582`/`19454` | ❌ | `generateFocusSynthesis` prioritized task list. **Still missing** — no lib, no dashboard card. |
+| Proposal follow-up nudge | `3041` | ❌ | "Membership Proposals" panel exists, but not the nudge that flags sent-but-unanswered proposals. |
 | Enrichment nudge | `3066` | ❌ | Prompts to fill thin member profiles. |
 | Fireflies sync status | `3116` | ❌ | Last-sync / connection health surface on dashboard. |
 
 ## 3. AI features (catalog cross-check)
 
-Pattern for all = server-only lib + `"use server"` action + client. Built 6 of ~22:
+Pattern for all = server-only lib + `"use server"` action + client. Built 10 of ~22:
 
 | AI feature | Ref | Status |
 |---|---|---|
@@ -62,12 +67,12 @@ Pattern for all = server-only lib + `"use server"` action + client. Built 6 of ~
 | Per-member intro | `18919` | ✅ (`intro-engine.ts`) |
 | Open-roles scan | `13714` | ✅ (`open-roles-engine.ts`) |
 | Prospect finder (recs + targeted) | `14961` | ✅ (`prospect-finder.ts`) |
-| **Meeting action-item extraction** | `5344` | ❌ `ActionItem` table exists but **nothing populates it**. |
-| **Pre-meeting brief** | `17267` | ❌ |
+| Meeting action-item extraction | `5344` | ✅ (`action-items.ts`) |
+| Pre-meeting brief | `17267` | ✅ (`meeting-prep.ts`) |
+| Event suggestions | `7174` | ✅ (`event-ideas.ts`) |
 | **Daily Focus synthesis** | `19498` | ❌ |
 | **AI news scan** (+web) | `10475` | ❌ (11.9) |
 | **Commitments scan** | `11513` | ❌ (11.10) |
-| **Event suggestions** | `13783` | ❌ |
 | **Event outreach email draft** | `7773` | ❌ |
 | **Draft intro email** | `16432` | ❌ (engine emits `draftHook` text, no email action) |
 | Enrich-from-meetings | `8066` | ❌ |
@@ -96,27 +101,24 @@ tier views collapsed to Companies.
 
 ---
 
-## Proposed re-sequenced roadmap (off the complete list)
+## Remaining work (re-sequenced, current as of 2026-07-09 v2)
 
-Cluster by data dependency rather than the old numeric order:
+**A. Fireflies-data cluster — ✅ COMPLETE** (New Connections, action-item
+extraction, pending intro detections, pre-meeting brief all shipped).
 
-**A. Fireflies-data cluster** (all depend on synced transcripts already flowing):
-- New Connections Detected (store unmatched attendees + triage surface)
-- Meeting action-item extraction → populate `ActionItem`
-- Pending intro detections from Fireflies (dashboard card)
-- Pre-meeting brief
+**B. Dashboard completion (NEXT):**
+- **Daily Focus synthesis** — AI Today/Week/Month prioritized task list. The most
+  visible remaining dashboard gap.
+- Proposal follow-up nudge · Enrichment nudge · Fireflies sync-status card.
 
-**B. Dashboard completion:**
-- Daily Focus synthesis
-- Proposal follow-up nudge · Enrichment nudge · Fireflies sync-status card
+**C. Remaining major views:**
+- 11.9 News · 11.10 Commitments · 11.11 Rich Revenue · 11.12 Email.
 
-**C. Remaining major views (existing roadmap):**
-- 11.9 News · 11.10 Commitments · 11.11 Rich Revenue · 11.12 Email
-
-**D. Events polish:** Event Intelligence suggestions + outreach email draft.
+**D. Events polish:** only the outreach email draft remains (suggestions shipped).
 
 **E. Micro AI helpers** (low priority, ship opportunistically): why-join pitch,
-LinkedIn parse, quick capture, PDF analyze, enrich-from-meetings, draft-intro-email.
+LinkedIn parse, quick capture, PDF analyze, enrich-from-meetings, draft-intro-email,
+batch profile synth.
 
 **F. Known divergence to decide (not a build task yet):** member Director/Advisory
 tier data was lost in migration — either backfill tier from a source of truth or
