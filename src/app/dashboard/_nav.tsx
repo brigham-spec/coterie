@@ -43,6 +43,7 @@ const groups: NavGroup[] = [
       { label: "Events", href: "/dashboard/events" },
       { label: "Meetings", href: "/dashboard/meetings" },
       { label: "Invoices", href: "/dashboard/invoices" },
+      { label: "Value Created", href: "/dashboard/value-created" },
     ],
   },
 ];
