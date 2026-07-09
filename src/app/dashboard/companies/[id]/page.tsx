@@ -4,7 +4,10 @@ import { notFound } from "next/navigation";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
+import { getIntroStageDef } from "@/lib/intro-stages";
+import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import {
+  Button,
   Card,
   CardHeader,
   PageTitle,
@@ -19,6 +22,7 @@ import {
 import { CompanyBrief } from "./_brief";
 import { MeetingPrep } from "./_meeting-prep";
 import { IntroSuggestions } from "./_intros";
+import { confirmIntroAdvance } from "./actions";
 
 // Company detail — the central relationship's home. Surfaces the company's own
 // fields (including the slice-11.0 relationship attributes: what it's looking
@@ -33,6 +37,12 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+const dateFmt = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
 export default async function CompanyDetailPage({
   params,
 }: {
@@ -41,18 +51,44 @@ export default async function CompanyDetailPage({
   const { id } = await params;
   const ctx = await requireOrgContext();
 
-  const company = await withOrg(ctx.orgId, (tx) =>
-    tx.company.findUnique({
-      where: { id },
-      include: {
-        owner: { select: { name: true } },
-        contacts: { orderBy: { name: "asc" } },
-        projectLinks: {
-          include: { project: { select: { id: true, name: true, stage: true } } },
-          orderBy: { role: "asc" },
-        },
-      },
-    }),
+  const [company, introductions, pendingIntros] = await withOrg(
+    ctx.orgId,
+    (tx) =>
+      Promise.all([
+        tx.company.findUnique({
+          where: { id },
+          include: {
+            owner: { select: { name: true } },
+            contacts: { orderBy: { name: "asc" } },
+            projectLinks: {
+              include: {
+                project: { select: { id: true, name: true, stage: true } },
+              },
+              orderBy: { role: "asc" },
+            },
+          },
+        }),
+        // This company's introductions from the ledger, either party.
+        tx.introduction.findMany({
+          where: {
+            OR: [{ partyA: { companyId: id } }, { partyB: { companyId: id } }],
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            status: true,
+            outcome: true,
+            partyA: {
+              select: { name: true, company: { select: { id: true, name: true } } },
+            },
+            partyB: {
+              select: { name: true, company: { select: { id: true, name: true } } },
+            },
+          },
+        }),
+        // Fireflies-evidenced stage advances awaiting confirmation for this company.
+        loadPendingIntroDetections(tx, id),
+      ]),
   );
 
   if (company == null) notFound();
@@ -161,6 +197,95 @@ export default async function CompanyDetailPage({
       <CompanyBrief companyId={company.id} />
 
       <IntroSuggestions companyId={company.id} />
+
+      <Card>
+        <CardHeader
+          title="Introductions"
+          action={
+            pendingIntros.length > 0 ? (
+              <span className="rounded-full bg-teal-bg px-2 py-0.5 text-[10px] font-semibold text-teal-ink">
+                {pendingIntros.length} pending
+              </span>
+            ) : null
+          }
+        />
+        {pendingIntros.length > 0 ? (
+          <div className="border-b border-line bg-teal-bg/30 px-4 py-3">
+            <div className="mb-2 text-[10px] font-semibold tracking-[0.06em] text-teal-ink uppercase">
+              Detected from meetings
+            </div>
+            <div className="flex flex-col gap-2">
+              {pendingIntros.map((d) => (
+                <form
+                  key={d.introId}
+                  action={confirmIntroAdvance}
+                  className="flex flex-wrap items-center gap-2"
+                >
+                  <input type="hidden" name="introId" value={d.introId} />
+                  <input type="hidden" name="status" value={d.suggestedStage} />
+                  <input type="hidden" name="companyId" value={company.id} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11.5px] font-medium text-ink">
+                      {d.partyALabel}{" "}
+                      <span className="text-ink-3">&#8596;</span>{" "}
+                      {d.partyBLabel}
+                      <span className="ml-1.5 text-[10px] text-teal-ink">
+                        &#8594; {getIntroStageDef(d.suggestedStage).label}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-ink-3">
+                      Detected: {d.meetingTitle} &middot;{" "}
+                      {dateFmt.format(d.meetingDate)}
+                    </div>
+                  </div>
+                  <Button type="submit">Confirm</Button>
+                </form>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {introductions.length === 0 ? (
+          <p className="px-4 py-6 text-xs text-ink-3">
+            No introductions involving this company yet. Record one on the{" "}
+            <Link href="/dashboard/introductions" className="text-gold underline">
+              introductions
+            </Link>{" "}
+            page.
+          </p>
+        ) : (
+          <Table
+            head={
+              <>
+                <Th>Parties</Th>
+                <Th>Stage</Th>
+              </>
+            }
+          >
+            {introductions.map((i) => (
+              <Tr key={i.id}>
+                <Td>
+                  <div className="font-medium text-ink">
+                    {i.partyA.name}
+                    <span className="text-ink-3"> · {i.partyA.company.name}</span>
+                  </div>
+                  <div className="font-medium text-ink">
+                    {i.partyB.name}
+                    <span className="text-ink-3"> · {i.partyB.company.name}</span>
+                  </div>
+                  {i.outcome ? (
+                    <div className="mt-1 text-[10px] text-ink-3 italic">
+                      {i.outcome}
+                    </div>
+                  ) : null}
+                </Td>
+                <Td>
+                  <StatusBadge status={i.status} />
+                </Td>
+              </Tr>
+            ))}
+          </Table>
+        )}
+      </Card>
 
       <Card>
         <CardHeader title="Contacts" />

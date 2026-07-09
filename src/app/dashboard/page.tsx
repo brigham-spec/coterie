@@ -6,6 +6,8 @@ import { withOrg } from "@/lib/tenant";
 import { deriveInvoiceBalance, sumPayments } from "@/lib/invoice-status";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { groupConnections } from "@/lib/new-connections";
+import { getIntroStageDef } from "@/lib/intro-stages";
+import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
@@ -47,8 +49,16 @@ export default async function DashboardPage() {
   const d30 = new Date(now.getTime() - 30 * DAY);
   const d60 = new Date(now.getTime() - 60 * DAY);
 
-  const [companies, projects, events, intros, proposals, invoices, unmatched] =
-    await withOrg(ctx.orgId, (tx) =>
+  const [
+    companies,
+    projects,
+    events,
+    intros,
+    proposals,
+    invoices,
+    unmatched,
+    pendingIntros,
+  ] = await withOrg(ctx.orgId, (tx) =>
       Promise.all([
         tx.company.findMany({
           select: {
@@ -124,8 +134,12 @@ export default async function DashboardPage() {
             lastMeetingTitle: true,
           },
         }),
+        // Fireflies-evidenced intro-stage advances awaiting confirmation.
+        loadPendingIntroDetections(tx),
       ]),
     );
+
+  const recentPendingIntros = pendingIntros.slice(0, 5);
 
   // New Connections Detected — cluster unmatched meeting attendees by domain.
   const connectionGroups = groupConnections(unmatched);
@@ -197,6 +211,43 @@ export default async function DashboardPage() {
 
       {/* Layer-0 — proactive introduction scanner */}
       <IntroScan />
+
+      {/* Pending Introductions — meetings evidence an intro advanced; confirm on
+          the company profile or the ledger before the stage moves. */}
+      {recentPendingIntros.length > 0 ? (
+        <div className="mb-4 overflow-hidden rounded-md border border-teal-line bg-surface shadow-card">
+          <div className="flex items-center justify-between border-b border-line bg-teal-bg/40 px-4 py-2.5">
+            <span className="text-[10px] font-medium tracking-[0.07em] text-teal-ink uppercase">
+              Pending Introductions
+            </span>
+            <Link
+              href="/dashboard/introductions"
+              className="text-[10px] font-semibold text-teal-ink hover:underline"
+            >
+              View all
+            </Link>
+          </div>
+          <div className="py-1">
+            {recentPendingIntros.map((d) => (
+              <RowLink key={d.introId} href="/dashboard/introductions">
+                <Dot />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[11.5px] text-ink">
+                    {d.partyALabel} <span className="text-ink-3">&#8596;</span>{" "}
+                    {d.partyBLabel}
+                    <span className="ml-1.5 text-[10px] text-teal-ink">
+                      &#8594; {getIntroStageDef(d.suggestedStage).label}
+                    </span>
+                  </div>
+                  <div className="truncate text-[10px] text-ink-3">
+                    {d.meetingTitle} &middot; {relTime(now, d.meetingDate)}
+                  </div>
+                </div>
+              </RowLink>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* New Connections Detected — Fireflies attendees not yet in the CRM */}
       <NewConnections groups={connectionGroups} companies={companyOptions} />

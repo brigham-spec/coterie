@@ -1,9 +1,11 @@
 "use server";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { isIntroStage } from "@/lib/intro-stages";
 import { generateCompanyBrief } from "@/lib/anthropic";
 import { generateMeetingPrep, type PrepCommitment } from "@/lib/meeting-prep";
 import {
@@ -329,4 +331,32 @@ export async function generateMeetingPrepAction(
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not prepare a brief. Try again." };
   }
+}
+
+// Confirm a pending intro-advance detection from a company profile (gap-audit
+// cluster A). The proposal is only evidence a meeting happened; the stage never
+// moves until a human confirms here. The introduction is re-loaded withOrg-scoped
+// from the id in the form (RLS → a foreign id resolves null → refused), and only
+// its status advances — an existing outcome note is left untouched (unlike the
+// ledger's updateIntroduction). Both the ledger and this company page are
+// revalidated so the pending count and lists refresh.
+export async function confirmIntroAdvance(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const introId = String(formData.get("introId") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!introId || !status)
+    throw new Error("introduction and status are required");
+  if (!isIntroStage(status)) throw new Error("invalid introduction status");
+
+  await withOrg(orgId, async (tx) => {
+    const intro = await tx.introduction.findUnique({ where: { id: introId } });
+    if (!intro) throw new Error("introduction not found in this organization");
+
+    await tx.introduction.update({ where: { id: introId }, data: { status } });
+  });
+
+  revalidatePath("/dashboard/introductions");
+  if (companyId) revalidatePath(`/dashboard/companies/${companyId}`);
 }
