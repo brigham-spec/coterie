@@ -1,5 +1,6 @@
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { prisma } from "@/lib/prisma";
 import { hasCredential } from "@/lib/integrations";
 import { Button, Card, CardHeader, Field, PageTitle } from "@/components/ui";
 
@@ -10,6 +11,10 @@ import {
   confirmAttendee,
   rejectAttendee,
 } from "./actions";
+import {
+  MeetingActionItems,
+  type OwnerOption,
+} from "./_action-items";
 
 // Meetings — synced from Fireflies (build item 6). Connect a per-org API key,
 // pull transcripts into Meeting rows on demand, and confirm the attendee matches
@@ -34,7 +39,7 @@ const methodLabel: Record<string, string> = {
 export default async function MeetingsPage() {
   const ctx = await requireOrgContext();
 
-  const [connected, meetings] = await Promise.all([
+  const [connected, meetings, staffRows] = await Promise.all([
     hasCredential(ctx.orgId, "fireflies"),
     withOrg(ctx.orgId, (tx) =>
       tx.meeting.findMany({
@@ -48,10 +53,27 @@ export default async function MeetingsPage() {
               },
             },
           },
+          actionItems: {
+            orderBy: { createdAt: "asc" },
+            include: {
+              ownerUser: { select: { name: true } },
+              ownerContact: { select: { name: true } },
+            },
+          },
         },
       }),
     ),
+    // Org staff = org members (platform table, no RLS — read off bare prisma).
+    prisma.orgMembership.findMany({
+      where: { orgId: ctx.orgId },
+      select: { user: { select: { id: true, name: true } } },
+    }),
   ]);
+
+  const staffOptions: OwnerOption[] = staffRows.map((r) => ({
+    id: r.user.id,
+    name: r.user.name,
+  }));
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -207,6 +229,21 @@ export default async function MeetingsPage() {
                   ))}
                 </ul>
               )}
+
+              <MeetingActionItems
+                meetingId={meeting.id}
+                staffOptions={staffOptions}
+                attendeeOptions={meeting.attendees.map((a) => ({
+                  id: a.contactId,
+                  name: a.contact.name,
+                }))}
+                items={meeting.actionItems.map((it) => ({
+                  id: it.id,
+                  text: it.text,
+                  status: it.status,
+                  owner: it.ownerUser?.name ?? it.ownerContact?.name ?? "—",
+                }))}
+              />
             </div>
           </Card>
         ))
