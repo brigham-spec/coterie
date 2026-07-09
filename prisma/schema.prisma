@@ -62,6 +62,7 @@ model Organization {
   eventInvitees          EventInvitee[]
   membershipProposals    MembershipProposal[]
   introDismissals        IntroDismissal[]
+  unmatchedAttendees     UnmatchedAttendee[]
 
   @@map("organizations")
 }
@@ -676,4 +677,45 @@ model IntroDismissal {
   @@index([orgId])
   @@index([orgId, focusCompanyId])
   @@map("intro_dismissals")
+}
+
+/// New Connections Detected — durable triage queue for Fireflies meeting attendees
+/// that matched NO contact (the prototype's UNMATCHED_KEY / "New Connections
+/// Detected" panel). The sync records org-affiliated strangers here instead of
+/// dropping them, so a human can promote one to a prospect or attach it to an
+/// existing company. Tenant-scoped: org_id + RLS. No company/contact FK — these
+/// rows are pre-CRM and reference nothing yet.
+model UnmatchedAttendee {
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  /// Lowercased email — the natural de-dup key within an org.
+  email            String
+  /// Domain slice of the email; groups people by inferred organization.
+  domain           String
+  /// Best-guess person name (attendee display name, else email prefix).
+  inferredName     String?   @map("inferred_name")
+  /// Best-guess org name derived from the domain.
+  inferredOrg      String?   @map("inferred_org")
+  /// Distinct meeting ids this person appeared in — the idempotency source of
+  /// truth: a re-sync only bumps seenCount when a NEW meeting id is added.
+  meetingIds       String[]  @default([]) @map("meeting_ids") @db.Uuid
+  /// = meetingIds.length, maintained on write so results can be ordered in SQL.
+  seenCount        Int       @default(1) @map("seen_count")
+  /// Title of the most recent meeting they appeared in (UI context).
+  lastMeetingTitle String?   @map("last_meeting_title")
+  /// Set when a human waves this person off — durable, survives re-sync.
+  dismissedAt      DateTime? @map("dismissed_at") @db.Timestamptz(6)
+
+  firstSeenAt DateTime @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  // One row per (org, email); the sync upserts on this key.
+  @@unique([orgId, email])
+  @@index([orgId])
+  @@index([orgId, domain])
+  @@map("unmatched_attendees")
 }

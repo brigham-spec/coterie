@@ -3,6 +3,13 @@ import { Inngest, NonRetriableError } from "inngest";
 import { getCredential } from "@/lib/integrations";
 import { listTranscripts } from "@/lib/fireflies";
 import { matchAttendee, CONFIRM_THRESHOLD } from "@/lib/attendee-match";
+import {
+  normalizeEmail,
+  extractDomain,
+  isGenericDomain,
+  inferOrgName,
+  inferPersonName,
+} from "@/lib/new-connections";
 import { withOrg } from "@/lib/tenant";
 
 // Inngest client + function registry (build item 6, spec §8). Inngest runs our
@@ -28,6 +35,13 @@ export const ping = inngest.createFunction(
 // fireflies_id, attendee rows upsert on (meeting, contact) and NEVER overwrite a
 // human's confirmation on re-sync. All writes are withOrg-scoped to the org from
 // the event payload — the job cannot touch another tenant.
+//
+// New Connections: an attendee that matches NO contact is no longer dropped — if
+// it carries an org email (not a personal mailbox) it is recorded in
+// unmatched_attendees so a human can promote it to a prospect or attach it to an
+// existing company (the prototype's "New Connections Detected"). This too is
+// idempotent: seenCount only bumps when a NEW meeting id is added, and a match
+// self-heals any stale unmatched row for that email.
 //
 // Action items: deferred by design. action_items carries a XOR CHECK (exactly
 // one of owner_user_id / owner_contact_id), but Fireflies delivers action items
@@ -64,6 +78,7 @@ export const syncFireflies = inngest.createFunction(
 
     let meetings = 0;
     let attendees = 0;
+    let newConnections = 0;
 
     for (const transcript of transcripts) {
       const heldAt =
@@ -98,7 +113,64 @@ export const syncFireflies = inngest.createFunction(
           contacts,
           companies,
         );
-        if (match == null) continue;
+        if (match == null) {
+          // Unmatched attendee: capture it for triage instead of dropping it.
+          // Personal mailboxes identify no organisation, so skip those.
+          const email = normalizeEmail(attendee.email);
+          const domain = extractDomain(email);
+          if (email === "" || domain === "" || isGenericDomain(domain)) continue;
+
+          const inferredName =
+            (attendee.displayName ?? attendee.name ?? "").trim() ||
+            inferPersonName(email);
+
+          const created = await withOrg(orgId, async (tx) => {
+            const existing = await tx.unmatchedAttendee.findUnique({
+              where: { orgId_email: { orgId, email } },
+              select: { id: true, meetingIds: true },
+            });
+            if (existing == null) {
+              await tx.unmatchedAttendee.create({
+                data: {
+                  orgId,
+                  email,
+                  domain,
+                  inferredName,
+                  inferredOrg: inferOrgName(domain),
+                  meetingIds: [meeting.id],
+                  seenCount: 1,
+                  lastMeetingTitle: title,
+                },
+              });
+              return true;
+            }
+            // Known stranger: only a NEW meeting bumps the count (a re-sync of
+            // the same meeting is a no-op — meeting.id is stable across syncs).
+            if (!existing.meetingIds.includes(meeting.id)) {
+              const meetingIds = [...existing.meetingIds, meeting.id].slice(-20);
+              await tx.unmatchedAttendee.update({
+                where: { id: existing.id },
+                data: {
+                  meetingIds,
+                  seenCount: meetingIds.length,
+                  lastMeetingTitle: title,
+                  lastSeenAt: new Date(),
+                },
+              });
+            }
+            return false;
+          });
+          if (created) newConnections++;
+          continue;
+        }
+
+        // Matched: self-heal any stale unmatched row for this email (e.g. the
+        // contact was added out-of-band since the last sync captured them).
+        const matchedEmail = normalizeEmail(attendee.email);
+        if (matchedEmail !== "")
+          await withOrg(orgId, (tx) =>
+            tx.unmatchedAttendee.deleteMany({ where: { email: matchedEmail } }),
+          );
 
         await withOrg(orgId, (tx) =>
           tx.meetingAttendee.upsert({
@@ -125,7 +197,7 @@ export const syncFireflies = inngest.createFunction(
       }
     }
 
-    return { meetings, attendees };
+    return { meetings, attendees, newConnections };
   },
 );
 

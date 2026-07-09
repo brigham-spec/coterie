@@ -5,10 +5,12 @@ import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { deriveInvoiceBalance, sumPayments } from "@/lib/invoice-status";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
+import { groupConnections } from "@/lib/new-connections";
 import { StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
 import { IntroScan } from "./_intro-scan";
+import { NewConnections } from "./_new-connections";
 
 // Dashboard overview (slice 11.1) — the operator's morning surface. Six KPI
 // pills over three rows of at-a-glance cards: pipeline (projects/events/cold
@@ -45,7 +47,7 @@ export default async function DashboardPage() {
   const d30 = new Date(now.getTime() - 30 * DAY);
   const d60 = new Date(now.getTime() - 60 * DAY);
 
-  const [companies, projects, events, intros, proposals, invoices] =
+  const [companies, projects, events, intros, proposals, invoices, unmatched] =
     await withOrg(ctx.orgId, (tx) =>
       Promise.all([
         tx.company.findMany({
@@ -109,8 +111,25 @@ export default async function DashboardPage() {
             payments: { select: { amount: true } },
           },
         }),
+        tx.unmatchedAttendee.findMany({
+          where: { dismissedAt: null },
+          orderBy: { seenCount: "desc" },
+          select: {
+            id: true,
+            email: true,
+            domain: true,
+            inferredName: true,
+            inferredOrg: true,
+            seenCount: true,
+            lastMeetingTitle: true,
+          },
+        }),
       ]),
     );
+
+  // New Connections Detected — cluster unmatched meeting attendees by domain.
+  const connectionGroups = groupConnections(unmatched);
+  const companyOptions = companies.map((c) => ({ id: c.id, name: c.name }));
 
   // ── KPI pill counts ────────────────────────────────────────────────────────
   const memberCount = companies.filter((c) => c.status === "member").length;
@@ -178,6 +197,9 @@ export default async function DashboardPage() {
 
       {/* Layer-0 — proactive introduction scanner */}
       <IntroScan />
+
+      {/* New Connections Detected — Fireflies attendees not yet in the CRM */}
+      <NewConnections groups={connectionGroups} companies={companyOptions} />
 
       {/* ROW 3 — Active Projects | Upcoming Events | Needs a Call */}
       <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
