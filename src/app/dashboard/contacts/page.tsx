@@ -122,7 +122,12 @@ export default async function ContactsPage() {
             {contacts.map((c) => (
               <Tr key={c.id}>
                 <Td className="font-medium">
-                  {c.name}
+                  <Link
+                    href={`/dashboard/contacts/${c.id}`}
+                    className="hover:text-gold hover:underline"
+                  >
+                    {c.name}
+                  </Link>
                   {c.isPrimary ? (
                     <span className="ml-2 text-[10px] font-medium tracking-[0.06em] text-gold uppercase">
                       Primary
