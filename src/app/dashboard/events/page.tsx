@@ -24,6 +24,7 @@ import {
 } from "@/components/ui";
 
 import { createEvent } from "./actions";
+import { EventIdeas } from "./_event-ideas";
 
 // Events — the gatherings surface (slice 11.7). Stage and type are the canonical
 // vocabulary (@/lib/event-stages). One withOrg pass loads every event with its
@@ -130,6 +131,8 @@ export default async function EventsPage() {
           </form>
         </details>
       </Card>
+
+      <EventIdeas />
 
       {events.length === 0 ? (
         <Card>

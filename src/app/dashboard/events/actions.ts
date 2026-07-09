@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
+import { TERMINAL_STAGES } from "@/lib/project-stages";
 import {
   isAttending,
   isEventType,
@@ -17,6 +18,11 @@ import {
   type GuestBrief,
   type GuestContext,
 } from "@/lib/event-brief";
+import {
+  generateEventIdeas,
+  type EventIdea,
+  type IdeaMember,
+} from "@/lib/event-ideas";
 
 // Events and their guest lists (slice 11.7). org_id is stamped from context on
 // every write (RLS WITH CHECK backstops it). event_invitees carries a composite FK
@@ -276,5 +282,121 @@ export async function generateBrief(
     if (err instanceof Anthropic.RateLimitError)
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not write guest briefs. Try again." };
+  }
+}
+
+// Event suggestions (gap-audit cluster D, ported from the prototype's
+// doGenerateEventSuggestions). In ONE withOrg tx (RLS-scoped) it assembles the
+// tenant's network context — its non-former companies (flagging which have never
+// appeared on any guest list), active projects, recent meetings, and past events
+// — and hands it to the engine, which proposes distinct events grounded in that
+// activity. Like the other AI features it's a useActionState action returning
+// state (not throwing); results are EPHEMERAL — nothing is stored.
+
+export type EventIdeasState =
+  | { status: "idle" }
+  | { status: "ok"; ideas: EventIdea[] }
+  | { status: "empty" }
+  | { status: "error"; message: string };
+
+export async function suggestEvents(
+  _prev: EventIdeasState,
+  _formData: FormData,
+): Promise<EventIdeasState> {
+  const { orgId, orgName } = await requireOrgContext();
+
+  const data = await withOrg(orgId, async (tx) => {
+    const companies = await tx.company.findMany({
+      where: { status: { not: "former" } },
+      select: {
+        id: true,
+        name: true,
+        industry: true,
+        status: true,
+        networkTags: true,
+        canOffer: true,
+        lookingFor: true,
+      },
+    });
+    // Every company that has ever appeared on a guest list (via a CRM contact) —
+    // its complement is the "never invited" set the engine prioritises.
+    const invited = await tx.eventInvitee.findMany({
+      where: { contactId: { not: null } },
+      select: { contact: { select: { companyId: true } } },
+    });
+    const projects = await tx.project.findMany({
+      where: { stage: { notIn: [...TERMINAL_STAGES] } },
+      select: { name: true, stage: true, type: true, county: true },
+    });
+    const meetings = await tx.meeting.findMany({
+      orderBy: { heldAt: "desc" },
+      take: 8,
+      select: { title: true, heldAt: true, summary: true },
+    });
+    const events = await tx.event.findMany({
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      take: 15,
+      select: {
+        name: true,
+        type: true,
+        date: true,
+        theme: true,
+        invitees: { select: { rsvp: true } },
+      },
+    });
+    return { companies, invited, projects, meetings, events };
+  });
+
+  // No network to reason over → nothing to suggest.
+  if (data.companies.length === 0) return { status: "empty" };
+
+  const invitedCompanyIds = new Set(
+    data.invited
+      .map((i) => i.contact?.companyId)
+      .filter((id): id is string => id != null),
+  );
+
+  const members: IdeaMember[] = data.companies.map((c) => ({
+    companyId: c.id,
+    name: c.name,
+    industry: c.industry,
+    status: c.status,
+    tags: c.networkTags.map((k) => getTagDef(k).label).filter((l) => l.length > 0),
+    canOffer: c.canOffer,
+    lookingFor: c.lookingFor,
+    neverInvited: !invitedCompanyIds.has(c.id),
+  }));
+
+  try {
+    const ideas = await generateEventIdeas({
+      orgName,
+      members,
+      projects: data.projects.map((p) => ({
+        name: p.name,
+        stage: p.stage,
+        type: p.type,
+        county: p.county,
+      })),
+      recentMeetings: data.meetings.map((m) => ({
+        title: m.title,
+        date: dateFmt.format(m.heldAt),
+        summary: m.summary,
+      })),
+      eventHistory: data.events.map((e) => ({
+        name: e.name,
+        type: e.type,
+        date: e.date ? dateFmt.format(e.date) : null,
+        theme: e.theme,
+        attended: e.invitees.filter((i) => isAttending(i.rsvp)).length,
+      })),
+    });
+    return { status: "ok", ideas };
+  } catch (err) {
+    console.error("event suggestions failed", err);
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not suggest events. Try again." };
   }
 }
