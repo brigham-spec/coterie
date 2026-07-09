@@ -12,6 +12,7 @@ import {
   generateRoleCandidates,
   type RoleCandidate,
 } from "@/lib/open-roles-engine";
+import { isProjectStage } from "@/lib/project-stages";
 
 // Projects and their company participants (build item 4). org_id is stamped from
 // context on every write (RLS WITH CHECK backstops it).
@@ -29,6 +30,7 @@ export async function createProject(formData: FormData): Promise<void> {
   const valueRaw = String(formData.get("value") ?? "").trim();
 
   if (!name || !stage) throw new Error("name and stage are required");
+  if (!isProjectStage(stage)) throw new Error("invalid project stage");
   if (valueRaw !== "" && Number.isNaN(Number(valueRaw)))
     throw new Error("value must be a number");
   if (unitsRaw !== "" && !Number.isInteger(Number(unitsRaw)))
@@ -64,6 +66,7 @@ export async function updateStage(formData: FormData): Promise<void> {
   const projectId = String(formData.get("projectId") ?? "").trim();
   const stage = String(formData.get("stage") ?? "").trim();
   if (!projectId || !stage) throw new Error("project and stage are required");
+  if (!isProjectStage(stage)) throw new Error("invalid project stage");
 
   await withOrg(orgId, async (tx) => {
     const project = await tx.project.findUnique({

@@ -7,6 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
+import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import {
   generateProspectTargets,
   type ProspectFilters,
@@ -20,9 +21,6 @@ import {
 // chosen result as a prospect company (with its primary contact) — the only
 // durable effect; the search itself is ephemeral. Both are useActionState-style
 // (findProspects) / transition-called (addProspect) so failures render inline.
-
-// Firms already "in the network" for gap analysis.
-const NETWORK_STATUSES = ["member", "strategic_partner"];
 
 function readFilters(formData: FormData): ProspectFilters {
   const get = (k: string) => String(formData.get(k) ?? "").trim();

@@ -8,6 +8,9 @@ import {
   getEventType,
   getRsvpState,
   isAttending,
+  isEventType,
+  isEventStage,
+  isRsvpState,
 } from "@/lib/event-stages";
 
 // Unit test for the PURE event vocabulary (slice 11.7). Guards the resolvers the
@@ -47,6 +50,16 @@ describe("event vocabulary", () => {
     expect(TERMINAL_EVENT_STAGES).toContain("completed");
     expect(TERMINAL_EVENT_STAGES).toContain("cancelled");
     expect(TERMINAL_EVENT_STAGES).not.toContain("planning");
+  });
+
+  it("validates type/stage/rsvp membership for the write boundary", () => {
+    expect(isEventType("member_dinner")).toBe(true);
+    expect(isEventType("mystery")).toBe(false);
+    expect(isEventStage("planning")).toBe(true);
+    expect(isEventStage("mystery")).toBe(false);
+    expect(isRsvpState("confirmed")).toBe(true);
+    expect(isRsvpState("maybe")).toBe(false);
+    expect(isRsvpState("")).toBe(false);
   });
 
   it("exposes a stable, non-empty vocabulary", () => {

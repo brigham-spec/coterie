@@ -78,3 +78,17 @@ export function getRsvpState(value: string): RsvpDef {
 export function isAttending(value: string): boolean {
   return getRsvpState(value).attending;
 }
+
+// Write-boundary validators — reject forged/out-of-vocabulary values before they
+// persist (in normal use the client <select> already constrains these).
+export function isEventType(value: string): boolean {
+  return TYPE_BY_VALUE.has(value);
+}
+
+export function isEventStage(value: string): boolean {
+  return STAGE_BY_VALUE.has(value);
+}
+
+export function isRsvpState(value: string): boolean {
+  return RSVP_BY_VALUE.has(value);
+}

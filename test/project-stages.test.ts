@@ -6,6 +6,7 @@ import {
   BOARD_STAGES,
   getStageDef,
   stageRank,
+  isProjectStage,
 } from "@/lib/project-stages";
 
 // Unit test for the canonical project pipeline vocabulary (slice 11.3, spec §3.6).
@@ -64,5 +65,12 @@ describe("project stage vocabulary", () => {
   it("sorts unknown stages last", () => {
     expect(stageRank("mystery")).toBe(PROJECT_STAGES.length);
     expect(stageRank("mystery")).toBeGreaterThan(stageRank("on_hold"));
+  });
+
+  it("validates stage membership for the write boundary", () => {
+    expect(isProjectStage("concept")).toBe(true);
+    expect(isProjectStage("on_hold")).toBe(true);
+    expect(isProjectStage("mystery")).toBe(false);
+    expect(isProjectStage("")).toBe(false);
   });
 });

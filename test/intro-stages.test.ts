@@ -8,6 +8,7 @@ import {
   getIntroStageDef,
   introStageRank,
   normalizeIntroStatus,
+  isIntroStage,
 } from "@/lib/intro-stages";
 
 // Unit test for the canonical introduction lifecycle vocabulary (slice 11.4a).
@@ -58,6 +59,16 @@ describe("introduction lifecycle vocabulary", () => {
   it("sorts unknown stages last", () => {
     expect(introStageRank("mystery")).toBe(INTRO_STAGES.length);
     expect(introStageRank("mystery")).toBeGreaterThan(introStageRank("dormant"));
+  });
+
+  it("validates stage membership for the write boundary", () => {
+    expect(isIntroStage("suggested")).toBe(true);
+    expect(isIntroStage("value_created")).toBe(true);
+    expect(isIntroStage("mystery")).toBe(false);
+    expect(isIntroStage("")).toBe(false);
+    // Legacy values are not canonical → rejected at the boundary (callers
+    // normalize on read, but writes must use the canonical vocabulary).
+    expect(isIntroStage("meeting_held")).toBe(false);
   });
 
   it("normalizes legacy statuses and passes canonical ones through", () => {

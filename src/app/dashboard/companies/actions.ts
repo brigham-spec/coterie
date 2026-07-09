@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { isCompanyStatus } from "@/lib/company-statuses";
 
 // Create a company in the caller's tenant. org_id is stamped from the resolved
 // context, never from client input — RLS's WITH CHECK backstops that on write.
@@ -18,6 +19,8 @@ export async function createCompany(formData: FormData): Promise<void> {
 
   if (!name || !status || !industry)
     throw new Error("name, status, and industry are required");
+  // status is a closed vocabulary; reject anything the client shouldn't send.
+  if (!isCompanyStatus(status)) throw new Error("invalid company status");
 
   const annualValue = annualValueRaw === "" ? "0" : annualValueRaw;
   if (Number.isNaN(Number(annualValue)))

@@ -56,6 +56,12 @@ export function introStageRank(value: string): number {
   return i === -1 ? INTRO_STAGES.length : i;
 }
 
+/// Whether a value is a known intro stage. Used at the write boundary to reject
+/// forged/out-of-vocabulary values before they persist.
+export function isIntroStage(value: string): boolean {
+  return BY_VALUE.has(value);
+}
+
 /// Map a pre-11.4 status value to the canonical lifecycle. The old vocabulary
 /// was suggested/drafted/made/meeting_held/closed; meeting_held becomes the
 /// meeting_set stage and closed becomes dormant (concluded, no asserted value).

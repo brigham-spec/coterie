@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
+import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
 import {
   Button,
   Card,
@@ -35,12 +36,7 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-const statusOptions = [
-  { value: "prospect", label: "Prospect" },
-  { value: "member", label: "Member" },
-  { value: "strategic_partner", label: "Strategic partner" },
-  { value: "former", label: "Former" },
-];
+const statusOptions = COMPANY_STATUS_DEFS;
 
 type Segment = { key: string; label: string; match: (status: string) => boolean };
 

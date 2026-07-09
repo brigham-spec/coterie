@@ -6,7 +6,12 @@ import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
-import { isAttending } from "@/lib/event-stages";
+import {
+  isAttending,
+  isEventType,
+  isEventStage,
+  isRsvpState,
+} from "@/lib/event-stages";
 import {
   generateGuestBriefs,
   type GuestBrief,
@@ -32,6 +37,10 @@ export async function createEvent(formData: FormData): Promise<void> {
   const capacityRaw = String(formData.get("capacity") ?? "").trim();
 
   if (!name || !type) throw new Error("name and type are required");
+  if (!isEventType(type)) throw new Error("invalid event type");
+  // stage is optional (defaults to "planning"); if supplied it must be in vocabulary.
+  if (stage !== "" && !isEventStage(stage))
+    throw new Error("invalid event stage");
   if (capacityRaw !== "" && !Number.isInteger(Number(capacityRaw)))
     throw new Error("capacity must be a whole number");
 
@@ -63,6 +72,7 @@ export async function updateEventStage(formData: FormData): Promise<void> {
   const eventId = String(formData.get("eventId") ?? "").trim();
   const stage = String(formData.get("stage") ?? "").trim();
   if (!eventId || !stage) throw new Error("event and stage are required");
+  if (!isEventStage(stage)) throw new Error("invalid event stage");
 
   await withOrg(orgId, async (tx) => {
     const event = await tx.event.findUnique({
@@ -132,6 +142,7 @@ export async function updateInviteeRsvp(formData: FormData): Promise<void> {
   const eventId = String(formData.get("eventId") ?? "").trim();
   const rsvp = String(formData.get("rsvp") ?? "").trim();
   if (!inviteeId || !rsvp) throw new Error("invitee and rsvp are required");
+  if (!isRsvpState(rsvp)) throw new Error("invalid rsvp state");
 
   await withOrg(orgId, async (tx) => {
     const invitee = await tx.eventInvitee.findUnique({

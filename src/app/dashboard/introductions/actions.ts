@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { isIntroStage } from "@/lib/intro-stages";
 
 // Introductions — the product's core verb (build item 4). A human-created intro
 // is always source="manual" (detected/ai_suggested arrive later from Fireflies/
@@ -27,6 +28,7 @@ export async function createIntroduction(formData: FormData): Promise<void> {
   if (!partyAContactId || !partyBContactId)
     throw new Error("both parties are required");
   if (!status) throw new Error("status is required");
+  if (!isIntroStage(status)) throw new Error("invalid introduction status");
   if (partyAContactId === partyBContactId)
     throw new Error("the two parties must be different contacts");
 
@@ -69,6 +71,7 @@ export async function updateIntroduction(formData: FormData): Promise<void> {
   const status = String(formData.get("status") ?? "").trim();
   const outcome = String(formData.get("outcome") ?? "").trim();
   if (!introId || !status) throw new Error("introduction and status are required");
+  if (!isIntroStage(status)) throw new Error("invalid introduction status");
 
   await withOrg(orgId, async (tx) => {
     const intro = await tx.introduction.findUnique({ where: { id: introId } });

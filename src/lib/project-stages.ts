@@ -48,3 +48,9 @@ export function stageRank(value: string): number {
   const i = PROJECT_STAGES.findIndex((s) => s.value === value);
   return i === -1 ? PROJECT_STAGES.length : i;
 }
+
+/// Whether a value is a known project stage. Used at the write boundary to reject
+/// forged/out-of-vocabulary values before they persist.
+export function isProjectStage(value: string): boolean {
+  return BY_VALUE.has(value);
+}
