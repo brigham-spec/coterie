@@ -40,6 +40,7 @@ const groups: NavGroup[] = [
   {
     label: "Operations",
     items: [
+      { label: "Events", href: "/dashboard/events" },
       { label: "Meetings", href: "/dashboard/meetings" },
       { label: "Invoices", href: "/dashboard/invoices" },
     ],

@@ -201,6 +201,11 @@ const statusStyles: Record<string, string> = {
   stabilization: "bg-teal-bg text-teal-ink",
   completed: "bg-teal-bg text-teal-ink",
   on_hold: "bg-red-bg text-red-ink",
+  // Event stages (see @/lib/event-stages). `completed` reuses the teal above.
+  planning: "bg-slate-bg text-slate-ink",
+  invitations_sent: "bg-purple-bg text-purple-ink",
+  confirmed: "border border-gold-line bg-gold-bg text-gold-ink",
+  cancelled: "bg-red-bg text-red-ink",
   // Introduction lifecycle stages (see @/lib/intro-stages).
   suggested: "bg-slate-bg text-slate-ink",
   drafted: "bg-purple-bg text-purple-ink",
