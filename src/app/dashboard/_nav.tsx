@@ -32,7 +32,10 @@ const groups: NavGroup[] = [
   },
   {
     label: "Intelligence",
-    items: [{ label: "Network Search", href: "/dashboard/network-search" }],
+    items: [
+      { label: "Network Search", href: "/dashboard/network-search" },
+      { label: "Prospect Finder", href: "/dashboard/prospect-finder" },
+    ],
   },
   {
     label: "Operations",
