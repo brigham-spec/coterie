@@ -17,6 +17,7 @@ import {
 } from "@/components/ui";
 
 import { CompanyBrief } from "./_brief";
+import { MeetingPrep } from "./_meeting-prep";
 import { IntroSuggestions } from "./_intros";
 
 // Company detail — the central relationship's home. Surfaces the company's own
@@ -154,6 +155,8 @@ export default async function CompanyDetailPage({
           </div>
         ) : null}
       </Card>
+
+      <MeetingPrep companyId={company.id} />
 
       <CompanyBrief companyId={company.id} />
 

@@ -5,6 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { generateCompanyBrief } from "@/lib/anthropic";
+import { generateMeetingPrep, type PrepCommitment } from "@/lib/meeting-prep";
 import {
   eligibleCandidateIds,
   generateIntroSuggestions,
@@ -208,4 +209,124 @@ export async function dismissIntro(
       update: {},
     });
   });
+}
+
+// Pre-meeting brief (gap-audit cluster A). The company is re-loaded withOrg-scoped
+// from the id in the form (never a client payload), so a foreign id resolves null
+// and no other tenant's relationship is prepped. Around it we gather the meetings
+// this company's contacts attended and the still-open commitments on those
+// meetings — the grounding the two-sentence prep note is written from. The
+// Anthropic call runs server-side in @/lib/meeting-prep; the key never reaches the
+// browser. Ephemeral: nothing is persisted (no schema field for it).
+
+export type MeetingPrepState =
+  | { status: "idle" }
+  | { status: "ok"; prep: string }
+  | { status: "error"; message: string };
+
+export async function generateMeetingPrepAction(
+  _prev: MeetingPrepState,
+  formData: FormData,
+): Promise<MeetingPrepState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const { orgId, userName } = await requireOrgContext();
+
+  const data = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      include: {
+        contacts: {
+          select: { id: true, name: true, title: true },
+          orderBy: { name: "asc" },
+        },
+        projectLinks: {
+          orderBy: { role: "asc" },
+          include: { project: { select: { name: true, stage: true } } },
+        },
+      },
+    });
+    if (company == null) return null;
+
+    // Meetings this company's people attended — the freshest first — plus the
+    // open commitments recorded on those meetings. Both are scoped to this
+    // company's contacts, so the prep is grounded in this relationship only.
+    const contactIds = company.contacts.map((c) => c.id);
+    const attendances = contactIds.length
+      ? await tx.meetingAttendee.findMany({
+          where: { contactId: { in: contactIds } },
+          select: { meetingId: true },
+        })
+      : [];
+    const meetingIds = [...new Set(attendances.map((a) => a.meetingId))];
+
+    const recentMeetings = meetingIds.length
+      ? await tx.meeting.findMany({
+          where: { id: { in: meetingIds } },
+          orderBy: { heldAt: "desc" },
+          take: 3,
+          select: { title: true, heldAt: true, summary: true },
+        })
+      : [];
+
+    const openCommitments = meetingIds.length
+      ? await tx.actionItem.findMany({
+          where: { status: "open", meetingId: { in: meetingIds } },
+          orderBy: { createdAt: "desc" },
+          take: 8,
+          select: { text: true, ownerUserId: true, ownerContactId: true },
+        })
+      : [];
+
+    return { company, recentMeetings, openCommitments };
+  });
+
+  if (data == null)
+    return { status: "error", message: "company not found in this organization" };
+
+  const commitments: PrepCommitment[] = data.openCommitments.map((c) => ({
+    text: c.text,
+    // Staff-owned ("we owe") vs contact-owned ("they owe"); the owner-XOR CHECK
+    // guarantees exactly one is set, so a null ownerUserId means the contact owns it.
+    owedBy: c.ownerUserId != null ? "us" : "them",
+  }));
+
+  try {
+    const prep = await generateMeetingPrep({
+      userName,
+      company: {
+        name: data.company.name,
+        status: data.company.status,
+        industry: data.company.industry,
+        tier: data.company.tier,
+        lookingFor: data.company.lookingFor,
+        canOffer: data.company.canOffer,
+        notes: data.company.notes,
+        contacts: data.company.contacts.map((c) => ({
+          name: c.name,
+          title: c.title,
+        })),
+        projects: data.company.projectLinks.map((l) => ({
+          name: l.project.name,
+          stage: l.project.stage,
+          role: l.role,
+        })),
+      },
+      recentMeetings: data.recentMeetings.map((m) => ({
+        title: m.title,
+        heldAt: m.heldAt.toISOString().slice(0, 10),
+        summary: m.summary,
+      })),
+      openCommitments: commitments,
+    });
+    return { status: "ok", prep };
+  } catch (err) {
+    console.error("meeting prep failed", err);
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not prepare a brief. Try again." };
+  }
 }
