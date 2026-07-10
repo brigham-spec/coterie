@@ -11,6 +11,7 @@ import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
+import { DailyFocus } from "./_daily-focus";
 import { IntroScan } from "./_intro-scan";
 import { NewConnections } from "./_new-connections";
 
@@ -20,9 +21,10 @@ import { NewConnections } from "./_new-connections";
 // revenue snapshot. Everything is read in ONE withOrg pass so RLS scopes it to
 // this tenant and there is a single round-trip.
 //
-// The prototype's AI-driven cards (intro suggestions, Daily Focus synthesis)
-// are intentionally deferred to their own slices (11.4 Introduction Engine and
-// a later Daily Focus pass); this slice lays the structural, data-only surface.
+// The prototype's AI-driven cards ride on top of this data surface: the proactive
+// intro scan (IntroScan) and the Daily Focus briefing (DailyFocus) run their
+// Anthropic calls in their own on-demand server actions, so this page stays a
+// single data-only round-trip.
 
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -221,6 +223,10 @@ export default async function DashboardPage() {
           <Pill n={coldMembers.length} label="Need a call" href="/dashboard/companies" />
         </div>
       </div>
+
+      {/* Daily Focus — AI briefing over open commitments + upcoming events,
+          across Today / This Week / This Month horizons (on-demand). */}
+      <DailyFocus />
 
       {/* Layer-0 — proactive introduction scanner */}
       <IntroScan />
