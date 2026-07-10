@@ -22,6 +22,7 @@ import {
 
 import { createCompany } from "./actions";
 import { CompanyFilters } from "./_filters";
+import { LinkedInParse } from "./_linkedin-parse";
 
 // Companies — the network's central table (build item 4, enriched in slice 11.2).
 // The list is filtered and sorted entirely from the URL query string (segment /
@@ -202,6 +203,8 @@ export default async function CompaniesPage({
           </form>
         </details>
       </Card>
+
+      <LinkedInParse />
 
       <Card>
         <div className="flex flex-wrap items-center gap-1 border-b border-line bg-surface-2 px-3 py-2">
