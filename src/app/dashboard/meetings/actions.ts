@@ -201,11 +201,23 @@ export async function saveActionItems(formData: FormData): Promise<void> {
   }
   if (toCreate.length === 0) return;
 
-  await withOrg(orgId, (tx) =>
-    tx.actionItem.createMany({
+  await withOrg(orgId, async (tx) => {
+    // Re-verify the meeting belongs to THIS org before linking rows to it.
+    // action_items.meeting_id is a single-column FK to meetings(id) — RLS
+    // WITH CHECK only guards our own org_id, so without this a crafted request
+    // could attach an own-org item to another org's meeting id (an orphan that
+    // straddles tenants). A foreign id resolves to no row, so we refuse. This
+    // mirrors the parent-reload guard every other FK-write uses.
+    const meeting = await tx.meeting.findUnique({
+      where: { id: meetingId },
+      select: { id: true },
+    });
+    if (meeting === null)
+      throw new Error("meeting not found in this organization");
+    await tx.actionItem.createMany({
       data: toCreate.map((c) => ({ orgId, meetingId, ...c })),
-    }),
-  );
+    });
+  });
   revalidatePath("/dashboard/meetings");
 }
 
