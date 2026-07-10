@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { prisma } from "@/lib/prisma";
 import { storeCredential, deleteCredential } from "@/lib/integrations";
 import { inngest } from "@/lib/inngest";
@@ -145,9 +146,12 @@ export async function extractActionItems(
   ]);
 
   try {
+    await enforceAiRateLimit(orgId);
     const candidates = await generateActionItems(summary, staff, contacts);
     return { status: "ok", candidates };
-  } catch {
+  } catch (err) {
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
     return {
       status: "error",
       message: "Extraction failed — please try again.",

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { getTagDef } from "@/lib/tags";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
 import {
@@ -264,6 +265,7 @@ export async function generateBrief(
   if (guests.length === 0) return { status: "empty" };
 
   try {
+    await enforceAiRateLimit(orgId);
     const briefs = await generateGuestBriefs(
       {
         name: data.event.name,
@@ -277,6 +279,8 @@ export async function generateBrief(
     return { status: "ok", briefs };
   } catch (err) {
     console.error("guest brief failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
     if (err instanceof Anthropic.AuthenticationError)
       return { status: "error", message: "AI is not configured. Check the API key." };
     if (err instanceof Anthropic.RateLimitError)
@@ -368,6 +372,7 @@ export async function suggestEvents(
   }));
 
   try {
+    await enforceAiRateLimit(orgId);
     const ideas = await generateEventIdeas({
       orgName,
       members,
@@ -393,6 +398,8 @@ export async function suggestEvents(
     return { status: "ok", ideas };
   } catch (err) {
     console.error("event suggestions failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
     if (err instanceof Anthropic.AuthenticationError)
       return { status: "error", message: "AI is not configured. Check the API key." };
     if (err instanceof Anthropic.RateLimitError)

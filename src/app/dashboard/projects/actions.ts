@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { getDiscipline, companyMatchesDiscipline } from "@/lib/disciplines";
 import { prioritizeCandidates, type IntroCompanyProfile } from "@/lib/intro-engine";
 import { introProfileInclude, toIntroProfile } from "@/lib/intro-profile";
@@ -199,6 +200,7 @@ export async function scanOpenRole(
   );
 
   try {
+    await enforceAiRateLimit(orgId);
     const candidates = await generateRoleCandidates(
       {
         name: data.project.name,
@@ -220,6 +222,8 @@ export async function scanOpenRole(
     };
   } catch (err) {
     console.error("open-role scan failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
     if (err instanceof Anthropic.AuthenticationError)
       return { status: "error", message: "AI is not configured. Check the API key." };
     if (err instanceof Anthropic.RateLimitError)

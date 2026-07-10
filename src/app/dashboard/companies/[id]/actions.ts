@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
 import { generateCompanyBrief } from "@/lib/anthropic";
 import { generateMeetingPrep, type PrepCommitment } from "@/lib/meeting-prep";
@@ -55,6 +56,7 @@ export async function generateBrief(
     return { status: "error", message: "company not found in this organization" };
 
   try {
+    await enforceAiRateLimit(orgId);
     const brief = await generateCompanyBrief({
       name: company.name,
       status: company.status,
@@ -78,6 +80,8 @@ export async function generateBrief(
   } catch (err) {
     // Surface a friendly message; log the real cause server-side for triage.
     console.error("brief generation failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
     if (err instanceof Anthropic.AuthenticationError)
       return { status: "error", message: "AI is not configured. Check the API key." };
     if (err instanceof Anthropic.RateLimitError)
@@ -162,6 +166,7 @@ export async function suggestIntros(
     .map(toIntroProfile);
 
   try {
+    await enforceAiRateLimit(orgId);
     const suggestions = await generateIntroSuggestions(
       toIntroProfile(data.focus),
       candidates,
@@ -169,6 +174,8 @@ export async function suggestIntros(
     return { status: "ok", suggestions };
   } catch (err) {
     console.error("intro suggestions failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
     if (err instanceof Anthropic.AuthenticationError)
       return { status: "error", message: "AI is not configured. Check the API key." };
     if (err instanceof Anthropic.RateLimitError)
@@ -294,6 +301,7 @@ export async function generateMeetingPrepAction(
   }));
 
   try {
+    await enforceAiRateLimit(orgId);
     const prep = await generateMeetingPrep({
       userName,
       company: {
@@ -324,6 +332,8 @@ export async function generateMeetingPrepAction(
     return { status: "ok", prep };
   } catch (err) {
     console.error("meeting prep failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
     if (err instanceof Anthropic.AuthenticationError)
       return { status: "error", message: "AI is not configured. Check the API key." };
     if (err instanceof Anthropic.RateLimitError)

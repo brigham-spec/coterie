@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import {
   buildFocusItems,
   type FocusCommitment,
@@ -123,10 +124,13 @@ export async function generateDailyFocus(
   if (items.length === 0) return { status: "empty", horizon };
 
   try {
+    await enforceAiRateLimit(orgId);
     const synthesis = await generateFocusSynthesis(items, horizon, userName);
     return { status: "ok", horizon, synthesis, items };
   } catch (err) {
     console.error("daily focus synthesis failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
     if (err instanceof Anthropic.AuthenticationError)
       return { status: "error", message: "AI is not configured. Check the API key." };
     if (err instanceof Anthropic.RateLimitError)

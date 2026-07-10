@@ -63,6 +63,7 @@ model Organization {
   membershipProposals    MembershipProposal[]
   introDismissals        IntroDismissal[]
   unmatchedAttendees     UnmatchedAttendee[]
+  aiRateLimit            AiRateLimit?
 
   @@map("organizations")
 }
@@ -718,4 +719,27 @@ model UnmatchedAttendee {
   @@index([orgId])
   @@index([orgId, domain])
   @@map("unmatched_attendees")
+}
+
+/// Per-org fixed-window counter that caps on-demand AI spend (audit L5+). One row
+/// per tenant, keyed by org_id (no separate uuid PK — the org owns exactly one
+/// budget). Two self-resetting windows: a short burst window (minute) and a daily
+/// ceiling. Each permitted AI call bumps both counts; enforceAiRateLimit rolls a
+/// window whose start has elapsed and refuses once either cap is hit. RLS-scoped
+/// like every tenant table, so a tenant only ever reads/writes its own budget.
+model AiRateLimit {
+  orgId             String   @id @map("org_id") @db.Uuid
+  /// Start of the current burst window; count resets when it elapses.
+  minuteWindowStart DateTime @map("minute_window_start") @db.Timestamptz(6)
+  minuteCount       Int      @default(0) @map("minute_count")
+  /// Start of the current daily window; count resets when it elapses.
+  dayWindowStart    DateTime @map("day_window_start") @db.Timestamptz(6)
+  dayCount          Int      @default(0) @map("day_count")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@map("ai_rate_limits")
 }

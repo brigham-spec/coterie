@@ -6,6 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import {
@@ -77,6 +78,7 @@ export async function findProspects(
   const excludeOrgs = companies.map((c) => c.name);
 
   try {
+    await enforceAiRateLimit(orgId);
     const targets = await generateProspectTargets({
       mode,
       focusArea,
@@ -94,6 +96,8 @@ export async function findProspects(
     return { status: "ok", mode, targets };
   } catch (err) {
     console.error("prospect finder failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
     if (err instanceof Anthropic.AuthenticationError)
       return { status: "error", message: "AI is not configured. Check the API key." };
     if (err instanceof Anthropic.RateLimitError)

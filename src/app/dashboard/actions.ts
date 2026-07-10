@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import {
   generateProactivePairings,
   pairKey,
@@ -57,10 +58,13 @@ export async function scanNetworkIntros(
   const profiles = data.companies.map(toIntroProfile);
 
   try {
+    await enforceAiRateLimit(orgId);
     const pairings = await generateProactivePairings(profiles, excludedPairs);
     return { status: "ok", pairings };
   } catch (err) {
     console.error("proactive intro scan failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
     if (err instanceof Anthropic.AuthenticationError)
       return { status: "error", message: "AI is not configured. Check the API key." };
     if (err instanceof Anthropic.RateLimitError)
