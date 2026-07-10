@@ -6,6 +6,7 @@ import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
 import { getIntroStageDef } from "@/lib/intro-stages";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
+import { buildRelationshipTimeline } from "@/lib/relationship-timeline";
 import {
   Button,
   Card,
@@ -53,9 +54,8 @@ export default async function CompanyDetailPage({
 
   // Reads share one pooled connection inside the tx, so run them in sequence —
   // concurrent queries on a single pg client serialize and can stall the load.
-  const { company, introductions, pendingIntros } = await withOrg(
-    ctx.orgId,
-    async (tx) => {
+  const { company, introductions, pendingIntros, meetings, actionItems } =
+    await withOrg(ctx.orgId, async (tx) => {
       const company = await tx.company.findUnique({
         where: { id },
         include: {
@@ -69,7 +69,18 @@ export default async function CompanyDetailPage({
           },
         },
       });
-      // This company's introductions from the ledger, either party.
+      if (company == null) {
+        return {
+          company: null,
+          introductions: [],
+          pendingIntros: [],
+          meetings: [],
+          actionItems: [],
+        };
+      }
+      const contactIds = company.contacts.map((c) => c.id);
+      // This company's introductions from the ledger, either party. madeOn/
+      // createdAt drive the relationship-timeline date.
       const introductions = await tx.introduction.findMany({
         where: {
           OR: [{ partyA: { companyId: id } }, { partyB: { companyId: id } }],
@@ -79,6 +90,8 @@ export default async function CompanyDetailPage({
           id: true,
           status: true,
           outcome: true,
+          madeOn: true,
+          createdAt: true,
           partyA: {
             select: { name: true, company: { select: { id: true, name: true } } },
           },
@@ -89,11 +102,68 @@ export default async function CompanyDetailPage({
       });
       // Fireflies-evidenced stage advances awaiting confirmation for this company.
       const pendingIntros = await loadPendingIntroDetections(tx, id);
-      return { company, introductions, pendingIntros };
-    },
-  );
+      // Meetings any of this company's contacts attended (deduped by meeting).
+      const meetings = contactIds.length
+        ? await tx.meeting.findMany({
+            where: { attendees: { some: { contactId: { in: contactIds } } } },
+            orderBy: { heldAt: "desc" },
+            select: { id: true, title: true, heldAt: true },
+          })
+        : [];
+      // Commitments touching this company: items its contacts owe us
+      // (ownerContactId) plus items we owe on meetings its people attended.
+      const actionItems = contactIds.length
+        ? await tx.actionItem.findMany({
+            where: {
+              OR: [
+                { ownerContactId: { in: contactIds } },
+                {
+                  meeting: {
+                    attendees: { some: { contactId: { in: contactIds } } },
+                  },
+                },
+              ],
+            },
+            orderBy: { createdAt: "desc" },
+            select: {
+              id: true,
+              text: true,
+              status: true,
+              dueDate: true,
+              ownerUserId: true,
+              ownerContactId: true,
+              updatedAt: true,
+            },
+          })
+        : [];
+      return { company, introductions, pendingIntros, meetings, actionItems };
+    });
 
   if (company == null) notFound();
+
+  // Split open commitments by side; done items feed the relationship timeline.
+  const openCommitments = actionItems.filter((a) => a.status === "open");
+  const weOwe = openCommitments.filter((a) => a.ownerUserId != null);
+  const theyOwe = openCommitments.filter((a) => a.ownerUserId == null);
+
+  const timeline = buildRelationshipTimeline({
+    addedAt: company.createdAt,
+    meetings: meetings.map((m) => ({ title: m.title, heldAt: m.heldAt })),
+    intros: introductions.map((i) => ({
+      partyAName: i.partyA.name,
+      partyBName: i.partyB.name,
+      status: i.status,
+      outcome: i.outcome,
+      date: i.madeOn ?? i.createdAt,
+    })),
+    commitments: actionItems
+      .filter((a) => a.status === "done")
+      .map((a) => ({
+        text: a.text,
+        owedByUs: a.ownerUserId != null,
+        date: a.updatedAt,
+      })),
+  });
 
   const facts: Array<{ label: string; value: string | null }> = [
     { label: "Industry", value: company.industry },
@@ -391,6 +461,108 @@ export default async function CompanyDetailPage({
             ))}
           </Table>
         )}
+      </Card>
+
+      <Card>
+        <CardHeader title="Meetings" />
+        {meetings.length === 0 ? (
+          <p className="px-4 py-6 text-xs text-ink-3">
+            No meetings recorded with this company yet.
+          </p>
+        ) : (
+          <Table
+            head={
+              <>
+                <Th>Meeting</Th>
+                <Th>Date</Th>
+              </>
+            }
+          >
+            {meetings.map((m) => (
+              <Tr key={m.id}>
+                <Td className="font-medium">{m.title}</Td>
+                <Td>{dateFmt.format(m.heldAt)}</Td>
+              </Tr>
+            ))}
+          </Table>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader title="Commitments" />
+        {openCommitments.length === 0 ? (
+          <p className="px-4 py-6 text-xs text-ink-3">
+            No open commitments with this company.
+          </p>
+        ) : (
+          <div className="grid gap-4 p-4 sm:grid-cols-2">
+            <div>
+              <div className="mb-2 text-[10px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
+                We owe
+              </div>
+              {weOwe.length === 0 ? (
+                <p className="text-[11px] text-ink-3 italic">Nothing outstanding.</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {weOwe.map((a) => (
+                    <li key={a.id} className="text-xs text-ink-2">
+                      {a.text}
+                      {a.dueDate ? (
+                        <span className="ml-1.5 text-[10px] text-ink-3">
+                          · due {dateFmt.format(a.dueDate)}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <div className="mb-2 text-[10px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
+                They owe
+              </div>
+              {theyOwe.length === 0 ? (
+                <p className="text-[11px] text-ink-3 italic">Nothing outstanding.</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {theyOwe.map((a) => (
+                    <li key={a.id} className="text-xs text-ink-2">
+                      {a.text}
+                      {a.dueDate ? (
+                        <span className="ml-1.5 text-[10px] text-ink-3">
+                          · due {dateFmt.format(a.dueDate)}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader title="Relationship timeline" />
+        <ol className="flex flex-col gap-0 p-4">
+          {timeline.map((e, idx) => (
+            <li key={idx} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
+                {idx < timeline.length - 1 ? (
+                  <span className="w-px flex-1 bg-line" />
+                ) : null}
+              </div>
+              <div className="pb-4">
+                <div className="text-xs font-medium text-ink">{e.label}</div>
+                <div className="mt-0.5 text-[10px] text-ink-3">
+                  {e.detail ? `${e.detail} · ` : ""}
+                  {dateFmt.format(e.date)}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
       </Card>
     </div>
   );
