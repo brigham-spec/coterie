@@ -22,6 +22,7 @@ import {
 } from "@/components/ui";
 
 import { createIntroduction, updateIntroduction } from "./actions";
+import { IntroEmailDraft } from "./_intro-email";
 
 // Introductions — who was connected to whom, toward what (build item 4; ledger
 // lifecycle rebuilt in slice 11.4a). Party A and B are contacts; an intro may
@@ -162,6 +163,16 @@ export default async function IntroductionsPage() {
           </form>
         </Card>
       )}
+
+      {contacts.length >= 2 ? (
+        <IntroEmailDraft
+          contacts={contacts.map((c) => ({
+            id: c.id,
+            name: c.name,
+            org: c.company.name,
+          }))}
+        />
+      ) : null}
 
       <Card>
         <CardHeader title="Ledger" />

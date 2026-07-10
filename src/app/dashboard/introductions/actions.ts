@@ -1,10 +1,17 @@
 "use server";
 
+import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
+import {
+  generateIntroEmail,
+  type IntroEmailDraft,
+  type IntroParty,
+} from "@/lib/intro-email";
 
 // Introductions — the product's core verb (build item 4). A human-created intro
 // is always source="manual" (detected/ai_suggested arrive later from Fireflies/
@@ -83,4 +90,107 @@ export async function updateIntroduction(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/dashboard/introductions");
+}
+
+// Draft-introduction-email (gap-audit cluster E). Writes the warm double-opt-in
+// email connecting two chosen contacts. Both parties are re-loaded withOrg-scoped
+// from the ids in the form (never trusting a client payload), so a foreign id
+// resolves null → we never draft using another tenant's contact. Each party's
+// profile is drawn from the contact and its company (org, industry, what they
+// seek / bring). The Anthropic call runs server-side in @/lib/intro-email; the key
+// never reaches the browser. Ephemeral — nothing is persisted.
+//
+// This is a useActionState action: it returns state rather than throwing, so
+// model/network failures render inline instead of tripping the error boundary.
+
+export type IntroEmailState =
+  | { status: "idle" }
+  | { status: "ok"; draft: IntroEmailDraft }
+  | { status: "error"; message: string };
+
+export async function draftIntroEmail(
+  _prev: IntroEmailState,
+  formData: FormData,
+): Promise<IntroEmailState> {
+  const partyAContactId = String(formData.get("partyAContactId") ?? "").trim();
+  const partyBContactId = String(formData.get("partyBContactId") ?? "").trim();
+  const context = String(formData.get("context") ?? "").trim();
+
+  if (!partyAContactId || !partyBContactId)
+    return { status: "error", message: "Select both parties." };
+  if (partyAContactId === partyBContactId)
+    return { status: "error", message: "Select two different contacts." };
+
+  const { orgId, orgName, userName } = await requireOrgContext();
+
+  const contactSelect = {
+    name: true,
+    title: true,
+    company: {
+      select: {
+        name: true,
+        industry: true,
+        lookingFor: true,
+        canOffer: true,
+      },
+    },
+  } as const;
+
+  const data = await withOrg(orgId, async (tx) => {
+    // Sequential: one pooled connection per tx, so no concurrent queries.
+    const a = await tx.contact.findUnique({
+      where: { id: partyAContactId },
+      select: contactSelect,
+    });
+    const b = await tx.contact.findUnique({
+      where: { id: partyBContactId },
+      select: contactSelect,
+    });
+    if (a == null || b == null) return null;
+    return { a, b };
+  });
+
+  if (data == null)
+    return { status: "error", message: "contact not found in this organization" };
+
+  const toParty = (c: {
+    name: string;
+    title: string | null;
+    company: {
+      name: string;
+      industry: string | null;
+      lookingFor: string | null;
+      canOffer: string | null;
+    };
+  }): IntroParty => ({
+    name: c.name,
+    org: c.company.name,
+    title: c.title,
+    industry: c.company.industry,
+    seeking: c.company.lookingFor,
+    brings: c.company.canOffer,
+  });
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const draft = await generateIntroEmail({
+      orgName,
+      host: userName,
+      partyA: toParty(data.a),
+      partyB: toParty(data.b),
+      context,
+    });
+    if (draft == null)
+      return { status: "error", message: "Could not draft an email. Try again." };
+    return { status: "ok", draft };
+  } catch (err) {
+    console.error("intro email draft failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not draft an email. Try again." };
+  }
 }
