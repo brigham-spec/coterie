@@ -8,6 +8,7 @@ import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { groupConnections } from "@/lib/new-connections";
 import { getIntroStageDef } from "@/lib/intro-stages";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
+import { buildProposalNudge } from "@/lib/proposal-nudge";
 import { StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
@@ -113,6 +114,8 @@ export default async function DashboardPage() {
         tier: true,
         amount: true,
         status: true,
+        sentOn: true,
+        lastFollowUpAt: true,
         createdAt: true,
         companyId: true,
         company: { select: { name: true } },
@@ -167,6 +170,19 @@ export default async function DashboardPage() {
 
   const proposalCompanies = new Set(
     proposals.filter((p) => p.createdAt >= d30).map((p) => p.companyId),
+  );
+
+  // Open proposals gone quiet for over a week — the follow-up nudge banner.
+  const proposalNudge = buildProposalNudge(
+    proposals.map((p) => ({
+      id: p.id,
+      companyName: p.company.name,
+      status: p.status,
+      sentOn: p.sentOn,
+      lastFollowUpAt: p.lastFollowUpAt,
+      createdAt: p.createdAt,
+    })),
+    now,
   );
 
   // ── Needs a Call — members past their tier's cold threshold ─────────────────
@@ -230,6 +246,23 @@ export default async function DashboardPage() {
 
       {/* Layer-0 — proactive introduction scanner */}
       <IntroScan />
+
+      {/* Proposal follow-up — open proposals that have gone quiet for over a week */}
+      {proposalNudge ? (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-gold-line border-l-[3px] bg-gold-bg px-4 py-2.5">
+          <p className="text-[11.5px] text-gold-ink">
+            {proposalNudge.stale.length} proposal
+            {proposalNudge.stale.length === 1 ? "" : "s"} need follow-up — oldest
+            is {proposalNudge.oldestDays}d without contact
+          </p>
+          <a
+            href="#membership-proposals"
+            className="flex-shrink-0 rounded-md border border-gold-line px-2.5 py-1 text-[10px] font-semibold whitespace-nowrap text-gold-ink transition-colors hover:bg-gold-line/20"
+          >
+            Review Proposals
+          </a>
+        </div>
+      ) : null}
 
       {/* Pending Introductions — meetings evidence an intro advanced; confirm on
           the company profile or the ledger before the stage moves. */}
@@ -373,7 +406,7 @@ export default async function DashboardPage() {
           )}
         </DashCard>
 
-        <DashCard title="Membership Proposals">
+        <DashCard title="Membership Proposals" anchorId="membership-proposals">
           {proposals.length === 0 ? (
             <Empty>No proposals logged yet</Empty>
           ) : (
@@ -516,14 +549,19 @@ function Pill({
 function DashCard({
   title,
   viewHref,
+  anchorId,
   children,
 }: {
   title: string;
   viewHref?: string;
+  anchorId?: string;
   children: ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-md border border-line bg-surface shadow-card">
+    <div
+      id={anchorId}
+      className="overflow-hidden rounded-md border border-line bg-surface shadow-card scroll-mt-4"
+    >
       <div className="flex items-center justify-between border-b border-line bg-surface-2 px-4 py-2.5">
         <span className="text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
           {title}
