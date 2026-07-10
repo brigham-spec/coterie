@@ -9,12 +9,14 @@ import { groupConnections } from "@/lib/new-connections";
 import { getIntroStageDef } from "@/lib/intro-stages";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { buildProposalNudge } from "@/lib/proposal-nudge";
+import { classifySyncStatus, type SyncStatus } from "@/lib/sync-status";
 import { StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
 import { DailyFocus } from "./_daily-focus";
 import { IntroScan } from "./_intro-scan";
 import { NewConnections } from "./_new-connections";
+import { syncFirefliesNow } from "./meetings/actions";
 
 // Dashboard overview (slice 11.1) — the operator's morning surface. Six KPI
 // pills over three rows of at-a-glance cards: pipeline (projects/events/cold
@@ -66,6 +68,7 @@ export default async function DashboardPage() {
     invoices,
     unmatched,
     pendingIntros,
+    firefliesCred,
   } = await withOrg(ctx.orgId, async (tx) => {
     const companies = await tx.company.findMany({
       select: {
@@ -145,6 +148,12 @@ export default async function DashboardPage() {
     });
     // Fireflies-evidenced intro-stage advances awaiting confirmation.
     const pendingIntros = await loadPendingIntroDetections(tx);
+    // Fireflies connection + last-sync clock for the sync-status card. RLS
+    // scopes it to this org, so findFirst on provider resolves at most one row.
+    const firefliesCred = await tx.integrationCredential.findFirst({
+      where: { provider: "fireflies" },
+      select: { lastSyncedAt: true },
+    });
     return {
       companies,
       projects,
@@ -154,10 +163,18 @@ export default async function DashboardPage() {
       invoices,
       unmatched,
       pendingIntros,
+      firefliesCred,
     };
   });
 
   const recentPendingIntros = pendingIntros.slice(0, 5);
+
+  // Fireflies sync health for the status bar — connection state + last-sync age.
+  const syncStatus = classifySyncStatus(
+    firefliesCred != null,
+    firefliesCred?.lastSyncedAt ?? null,
+    now,
+  );
 
   // New Connections Detected — cluster unmatched meeting attendees by domain.
   const connectionGroups = groupConnections(unmatched);
@@ -239,6 +256,9 @@ export default async function DashboardPage() {
           <Pill n={coldMembers.length} label="Need a call" href="/dashboard/companies" />
         </div>
       </div>
+
+      {/* Fireflies sync status — connection health + last-sync freshness */}
+      <SyncStatusBar status={syncStatus} now={now} />
 
       {/* Daily Focus — AI briefing over open commitments + upcoming events,
           across Today / This Week / This Month horizons (on-demand). */}
@@ -648,6 +668,64 @@ function RevMetric({
       <div className="text-[10px] text-ink-3">
         {count} member{count === 1 ? "" : "s"}
       </div>
+    </div>
+  );
+}
+
+// Thin Fireflies sync-status bar (gap-audit cluster B). Mirrors the prototype's
+// "last synced …" bar (Coterie.html:3116) in the durable-job model: freshness is
+// read from the persisted last-sync clock, and "Sync now" enqueues the job.
+function SyncStatusBar({ status, now }: { status: SyncStatus; now: Date }) {
+  if (status.health === "disconnected") {
+    return (
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-line bg-surface-2 px-4 py-2">
+        <p className="text-[11px] text-ink-3">
+          Fireflies is not connected — sync meeting transcripts to surface new
+          connections and action items.
+        </p>
+        <Link
+          href="/dashboard/meetings"
+          className="flex-shrink-0 rounded-md border border-line px-2.5 py-1 text-[10px] font-semibold whitespace-nowrap text-ink-2 transition-colors hover:bg-surface-3"
+        >
+          Connect
+        </Link>
+      </div>
+    );
+  }
+
+  const stale = status.health === "stale";
+  const tone = stale
+    ? { border: "border-gold-line", bg: "bg-gold-bg", ink: "text-gold-ink" }
+    : { border: "border-teal-line", bg: "bg-teal-bg", ink: "text-teal-ink" };
+  const rel = status.lastSyncedAt ? relTime(now, status.lastSyncedAt) : "";
+  const label =
+    status.health === "never"
+      ? "Fireflies connected — not synced yet"
+      : stale
+        ? `Fireflies last synced ${rel} — sync is overdue`
+        : `Fireflies synced ${rel}`;
+
+  return (
+    <div
+      className={cn(
+        "mb-4 flex items-center justify-between gap-3 rounded-md border border-l-[3px] px-4 py-2",
+        tone.border,
+        tone.bg,
+      )}
+    >
+      <p className={cn("text-[11.5px]", tone.ink)}>{label}</p>
+      <form action={syncFirefliesNow}>
+        <button
+          type="submit"
+          className={cn(
+            "flex-shrink-0 rounded-md border px-2.5 py-1 text-[10px] font-semibold whitespace-nowrap transition-opacity hover:opacity-80",
+            tone.border,
+            tone.ink,
+          )}
+        >
+          Sync now
+        </button>
+      </form>
     </div>
   );
 }

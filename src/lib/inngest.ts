@@ -197,6 +197,16 @@ export const syncFireflies = inngest.createFunction(
       }
     }
 
+    // Stamp the sync clock so the dashboard sync-status card can report
+    // freshness. updateMany (not update) keeps this a no-op-safe write scoped by
+    // RLS — a missing credential row simply updates nothing.
+    await withOrg(orgId, (tx) =>
+      tx.integrationCredential.updateMany({
+        where: { provider: "fireflies" },
+        data: { lastSyncedAt: new Date() },
+      }),
+    );
+
     return { meetings, attendees, newConnections };
   },
 );

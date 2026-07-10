@@ -532,6 +532,9 @@ model IntegrationCredential {
   refreshTokenEnc Bytes?    @map("refresh_token_enc")
   scopes          String[]
   expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
+  /// Stamped at the end of a successful sync job (see @/lib/inngest). Null until
+  /// the first sync runs — drives the dashboard sync-status card's freshness.
+  lastSyncedAt    DateTime? @map("last_synced_at") @db.Timestamptz(6)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

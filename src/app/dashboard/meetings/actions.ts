@@ -42,6 +42,8 @@ export async function syncFirefliesNow(): Promise<void> {
   // ambient tenant context (see @/lib/inngest).
   await inngest.send({ name: "coterie/fireflies.sync", data: { orgId } });
   revalidatePath("/dashboard/meetings");
+  // The dashboard sync-status card reads the same integration row.
+  revalidatePath("/dashboard");
 }
 
 // Human-verify a proposed attendee match. Both ids are scoped by RLS inside the
