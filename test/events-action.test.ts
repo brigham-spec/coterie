@@ -27,8 +27,20 @@ vi.mock("@/lib/event-brief", async (importOriginal) => {
   return { ...actual, generateGuestBriefs: genSpy };
 });
 
-const { createEvent, addInvitee, updateInviteeRsvp, removeInvitee, generateBrief } =
-  await import("@/app/dashboard/events/actions");
+const outreachSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/event-outreach", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/event-outreach")>();
+  return { ...actual, generateOutreachEmail: outreachSpy };
+});
+
+const {
+  createEvent,
+  addInvitee,
+  updateInviteeRsvp,
+  removeInvitee,
+  generateBrief,
+  draftOutreach,
+} = await import("@/app/dashboard/events/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
 const orgB = { id: randomUUID(), name: `TENANT_B_${randomUUID()}` };
@@ -95,6 +107,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   genSpy.mockReset();
+  outreachSpy.mockReset();
 });
 
 function fd(entries: Record<string, string>): FormData {
@@ -164,6 +177,52 @@ describe("event + guest-list actions", () => {
     expect(guests[0].seeking).toBe("a capital partner");
     expect(guests[0].brings).toBe("land-use counsel");
     void event;
+  });
+
+  test("drafts an invitation for a CRM guest with tenant-scoped context", async () => {
+    outreachSpy.mockResolvedValue("Come see the mill, Alice.");
+    const eventId = await findEventId("Fall Dinner");
+    const aliceInvitee = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, contactId: aliceId } }),
+    );
+
+    const state = await draftOutreach(
+      { status: "idle" },
+      fd({ eventId, inviteeId: aliceInvitee!.id }),
+    );
+    expect(state).toEqual({
+      status: "ok",
+      guestName: "Alice A",
+      draft: "Come see the mill, Alice.",
+    });
+
+    expect(outreachSpy).toHaveBeenCalledTimes(1);
+    const [arg] = outreachSpy.mock.calls[0] as [
+      {
+        host: string;
+        guest: { name: string; org: string | null; seeking: string | null; brings: string | null };
+        event: { name: string };
+      },
+    ];
+    expect(arg.host).toBe("Host Person");
+    expect(arg.event.name).toBe("Fall Dinner");
+    expect(arg.guest.name).toBe("Alice A");
+    expect(arg.guest.org).toBe("Member A");
+    expect(arg.guest.seeking).toBe("a capital partner");
+    expect(arg.guest.brings).toBe("land-use counsel");
+  });
+
+  test("refuses to draft for an external guest (no profile)", async () => {
+    const eventId = await findEventId("Fall Dinner");
+    const external = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, contactId: null } }),
+    );
+    const state = await draftOutreach(
+      { status: "idle" },
+      fd({ eventId, inviteeId: external!.id }),
+    );
+    expect(state.status).toBe("error");
+    expect(outreachSpy).not.toHaveBeenCalled();
   });
 
   test("returns empty state when no attending CRM guest exists", async () => {

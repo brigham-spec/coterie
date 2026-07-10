@@ -31,6 +31,7 @@ import {
   updateInviteeRsvp,
 } from "../actions";
 import { GuestBrief } from "./_guest-brief";
+import { Outreach } from "./_outreach";
 
 // Event detail — the seat of the guest list (slice 11.7). event_invitees carries a
 // composite FK to events(id, org_id) so a guest can never straddle orgs; the optional
@@ -81,6 +82,12 @@ export default async function EventDetailPage({
     event.invitees.map((i) => i.contactId).filter((v): v is string => v != null),
   );
   const invitable = contacts.filter((c) => !invitedContactIds.has(c.id));
+
+  // CRM guests already on the list — the pool the outreach draft can write to
+  // (external guests have no profile to ground a personal invitation in).
+  const outreachGuests = event.invitees
+    .filter((i) => i.contactId != null && i.contact != null)
+    .map((i) => ({ id: i.id, name: i.contact!.name }));
 
   const facts: Array<{ label: string; value: string | null }> = [
     { label: "Type", value: getEventType(event.type).label },
@@ -225,6 +232,8 @@ export default async function EventDetailPage({
       </Card>
 
       <GuestBrief eventId={event.id} />
+
+      <Outreach eventId={event.id} guests={outreachGuests} />
 
       <Card>
         <CardHeader title="Add a guest" />

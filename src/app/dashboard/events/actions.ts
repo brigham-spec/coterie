@@ -24,6 +24,10 @@ import {
   type EventIdea,
   type IdeaMember,
 } from "@/lib/event-ideas";
+import {
+  generateOutreachEmail,
+  type OutreachGuest,
+} from "@/lib/event-outreach";
 
 // Events and their guest lists (slice 11.7). org_id is stamped from context on
 // every write (RLS WITH CHECK backstops it). event_invitees carries a composite FK
@@ -405,5 +409,141 @@ export async function suggestEvents(
     if (err instanceof Anthropic.RateLimitError)
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not suggest events. Try again." };
+  }
+}
+
+// Event outreach email draft (gap-audit cluster D, ported from the prototype's
+// generateInviteEmail). In ONE withOrg tx (RLS-scoped) it loads the event, the one
+// invited CRM guest with their company context and recent meeting topics, and the
+// names of other guests already attending, then the engine drafts a personal
+// invitation email from the host to that guest. External guests have no CRM
+// profile to ground a draft in, so they're refused. Like the other AI features
+// it's a useActionState action returning state (not throwing); the draft is
+// EPHEMERAL — nothing is stored, the host copies and sends it.
+
+export type OutreachState =
+  | { status: "idle" }
+  | { status: "ok"; guestName: string; draft: string }
+  | { status: "error"; message: string };
+
+export async function draftOutreach(
+  _prev: OutreachState,
+  formData: FormData,
+): Promise<OutreachState> {
+  const { orgId, orgName, userName } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const inviteeId = String(formData.get("inviteeId") ?? "").trim();
+  if (!eventId) return { status: "error", message: "Pick an event." };
+  if (!inviteeId) return { status: "error", message: "Pick a guest to invite." };
+
+  const data = await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: { name: true, date: true, venue: true, theme: true, description: true },
+    });
+    if (!event) return null;
+    const invitee = await tx.eventInvitee.findUnique({
+      where: { id: inviteeId },
+      select: {
+        eventId: true,
+        contact: {
+          select: {
+            id: true,
+            name: true,
+            title: true,
+            company: {
+              select: {
+                name: true,
+                industry: true,
+                lookingFor: true,
+                canOffer: true,
+                networkTags: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    // Guest must belong to this event and be a CRM contact (external guests have
+    // no profile to ground a personal draft in).
+    if (!invitee || invitee.eventId !== eventId || invitee.contact === null) {
+      return { event, invitee: null, topics: [] as string[], others: [] as string[] };
+    }
+    // A couple of recent meeting topics for this contact — the "I know you've been
+    // working on X" specificity.
+    const meetings = await tx.meetingAttendee.findMany({
+      where: { contactId: invitee.contact.id },
+      orderBy: { meeting: { heldAt: "desc" } },
+      take: 2,
+      select: { meeting: { select: { title: true, summary: true } } },
+    });
+    const topics = meetings
+      .map((m) => (m.meeting.summary ?? "").trim() || m.meeting.title.trim())
+      .filter((t) => t !== "");
+    // Other guests already attending (for the "you'll know someone" angle).
+    const attending = await tx.eventInvitee.findMany({
+      where: { eventId },
+      select: {
+        id: true,
+        rsvp: true,
+        externalName: true,
+        contact: { select: { name: true } },
+      },
+    });
+    const others = attending
+      .filter((i) => i.id !== inviteeId && isAttending(i.rsvp))
+      .map((i) => i.contact?.name ?? i.externalName ?? "")
+      .filter((n) => n !== "");
+    return { event, invitee, topics, others };
+  });
+
+  if (data === null) return { status: "error", message: "Event not found." };
+  if (data.invitee === null || data.invitee.contact === null)
+    return {
+      status: "error",
+      message: "Pick a network guest — external guests have no profile to draft from.",
+    };
+
+  const c = data.invitee.contact;
+  const guest: OutreachGuest = {
+    name: c.name,
+    org: c.company?.name ?? null,
+    title: c.title,
+    industry: c.company?.industry ?? null,
+    seeking: c.company?.lookingFor ?? null,
+    brings: c.company?.canOffer ?? null,
+    focusAreas: (c.company?.networkTags ?? [])
+      .map((k) => getTagDef(k).label)
+      .filter((l) => l.length > 0),
+    recentTopics: data.topics,
+  };
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const draft = await generateOutreachEmail({
+      orgName,
+      host: userName,
+      event: {
+        name: data.event.name,
+        date: data.event.date ? dateFmt.format(data.event.date) : null,
+        venue: data.event.venue,
+        theme: data.event.theme || data.event.description || null,
+      },
+      guest,
+      confirmedGuests: data.others,
+    });
+    if (draft === "")
+      return { status: "error", message: "The draft came back empty. Try again." };
+    return { status: "ok", guestName: guest.name, draft };
+  } catch (err) {
+    console.error("event outreach failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not draft the invitation. Try again." };
   }
 }
