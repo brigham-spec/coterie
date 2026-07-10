@@ -15,8 +15,12 @@ card), and the Proposal follow-up nudge (`proposal-nudge.ts` + dashboard banner)
 Also landed (not a prototype-parity row, a hardening addition): per-org **AI rate
 limiting** across all on-demand paid seams (`ai-rate-limit.ts`, 20/min + 300/day).
 The v2→v3 batch (Daily Focus, proposal nudge, F1 fix, AI rate limit) is deployed
-to prod (`coterie-psi.vercel.app`). Dashboard cluster (B) has 2 items left:
-Enrichment nudge and Fireflies sync-status card.
+to prod (`coterie-psi.vercel.app`). **Dashboard cluster (B) is now COMPLETE (v4,
+2026-07-10):** the Fireflies sync-status card (`sync-status.ts` +
+`IntegrationCredential.lastSyncedAt` + dashboard bar) and the Enrichment nudge
+(`enrichment-nudge.ts` + dashboard chip card) both shipped. All 7 dashboard
+notification cards are built. Next up: cluster C major views (11.9 News, 11.11
+Rich Revenue, 11.12 Email). The v4 batch is not yet deployed to prod.
 
 ## Verification basis
 Built surface enumerated from `src/app/dashboard/**/page.tsx` (15 routes),
@@ -46,8 +50,7 @@ was checked against the actual route/engine on 2026-07-09, not assumed from the 
 
 ## 2. Dashboard notification-card family (the under-counted cluster)
 
-The prototype dashboard renders seven notification cards. Built 5 of 7 (Enrichment
-nudge + Fireflies sync status remain):
+The prototype dashboard renders seven notification cards. Built 7 of 7:
 
 | Card | Ref | Status | Notes |
 |---|---|---|---|
@@ -56,8 +59,8 @@ nudge + Fireflies sync status remain):
 | Pending intro detections from Fireflies | `3181` | ✅ | Dashboard "Pending Introductions" card + per-company section (`intro-detection.ts`). Proposes advancing the ledger from a later meeting where both parties met. |
 | **Daily Focus (AI Today/Week/Month)** | `3106`/`19582`/`19454` | ✅ | `daily-focus.ts`/`daily-focus-synthesis.ts` + dashboard card. Horizon toggle, prioritized task list from open commitments + upcoming events. |
 | Proposal follow-up nudge | `3041` | ✅ | `proposal-nudge.ts` + dashboard banner flags sent-but-unanswered proposals. |
-| Enrichment nudge | `3066` | ❌ | Prompts to fill thin member profiles. |
-| Fireflies sync status | `3116` | ❌ | Last-sync / connection health surface on dashboard. |
+| Enrichment nudge | `3066` | ✅ | `enrichment-nudge.ts` + dashboard chip card. Flags in-network members with blank network fields (need/offer, website, primary contact). |
+| Fireflies sync status | `3116` | ✅ | `sync-status.ts` + `IntegrationCredential.lastSyncedAt` (stamped by the sync job) + dashboard bar (disconnected/never/fresh/stale + Sync now). |
 
 ## 3. AI features (catalog cross-check)
 
@@ -111,11 +114,10 @@ collapsed to Companies.
 **A. Fireflies-data cluster — ✅ COMPLETE** (New Connections, action-item
 extraction, pending intro detections, pre-meeting brief all shipped).
 
-**B. Dashboard completion (NEXT, 2 of 4 left):**
-- ✅ Daily Focus synthesis · ✅ Proposal follow-up nudge.
-- **Fireflies sync-status card** · **Enrichment nudge** — the two remaining cards.
+**B. Dashboard completion — ✅ COMPLETE** (Daily Focus, proposal nudge,
+Fireflies sync-status card, Enrichment nudge all shipped; all 7 cards built).
 
-**C. Remaining major views:**
+**C. Remaining major views (NEXT):**
 - 11.9 News · 11.11 Rich Revenue · 11.12 Email. (11.10 Commitments ✅ shipped.)
 
 **D. Events polish:** only the outreach email draft remains (suggestions shipped).
