@@ -10,6 +10,10 @@ import { getIntroStageDef } from "@/lib/intro-stages";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { buildProposalNudge } from "@/lib/proposal-nudge";
 import { classifySyncStatus, type SyncStatus } from "@/lib/sync-status";
+import {
+  buildEnrichmentNudges,
+  type EnrichmentNudge as EnrichmentNudgeItem,
+} from "@/lib/enrichment-nudge";
 import { StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
@@ -78,6 +82,16 @@ export default async function DashboardPage() {
         tier: true,
         industry: true,
         lastContactAt: true,
+        website: true,
+        lookingFor: true,
+        canOffer: true,
+        // Presence of a primary contact drives the enrichment nudge — take 1 is
+        // enough to know whether the profile has one.
+        contacts: {
+          where: { isPrimary: true },
+          select: { id: true },
+          take: 1,
+        },
       },
     });
     const projects = await tx.project.findMany({
@@ -174,6 +188,19 @@ export default async function DashboardPage() {
     firefliesCred != null,
     firefliesCred?.lastSyncedAt ?? null,
     now,
+  );
+
+  // Enrichment nudge — in-network members whose network-facing fields are blank.
+  const enrichmentNudges = buildEnrichmentNudges(
+    companies.map((c) => ({
+      id: c.id,
+      name: c.name,
+      status: c.status,
+      website: c.website,
+      lookingFor: c.lookingFor,
+      canOffer: c.canOffer,
+      hasPrimaryContact: c.contacts.length > 0,
+    })),
   );
 
   // New Connections Detected — cluster unmatched meeting attendees by domain.
@@ -283,6 +310,9 @@ export default async function DashboardPage() {
           </a>
         </div>
       ) : null}
+
+      {/* Enrichment nudge — members with thin profiles the operator can fill */}
+      <EnrichmentNudge nudges={enrichmentNudges} />
 
       {/* Pending Introductions — meetings evidence an intro advanced; confirm on
           the company profile or the ledger before the stage moves. */}
@@ -726,6 +756,47 @@ function SyncStatusBar({ status, now }: { status: SyncStatus; now: Date }) {
           Sync now
         </button>
       </form>
+    </div>
+  );
+}
+
+// Enrichment nudge card (gap-audit cluster B, prototype Coterie.html:3066).
+// Chips link straight to each thin profile so the operator can fill the gaps the
+// intro engine and AI briefs depend on. Naturally clears as profiles fill in —
+// no dismiss state to persist.
+function EnrichmentNudge({ nudges }: { nudges: EnrichmentNudgeItem[] }) {
+  if (nudges.length === 0) return null;
+  const shown = nudges.slice(0, 8);
+  const extra = nudges.length - shown.length;
+  return (
+    <div className="mb-4 rounded-md border border-teal-line bg-teal-bg/40 px-4 py-3">
+      <div className="mb-1 text-[10px] font-medium tracking-[0.07em] text-teal-ink uppercase">
+        Profile Enrichment Available
+      </div>
+      <p className="mb-2.5 text-[11px] text-teal-ink/80">
+        {nudges.length} member{nudges.length === 1 ? " has" : "s have"} thin
+        profiles that weaken introductions and briefs
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {shown.map((n) => (
+          <Link
+            key={n.id}
+            href={`/dashboard/companies/${n.id}`}
+            className="rounded-full border border-teal-line bg-surface px-2.5 py-1 text-[10px] text-teal-ink transition-colors hover:bg-teal-bg"
+          >
+            <span className="font-semibold">{n.name}</span>
+            <span className="text-teal-ink/70">
+              {" \u00b7 missing: "}
+              {n.missingFields.join(", ")}
+            </span>
+          </Link>
+        ))}
+        {extra > 0 ? (
+          <span className="self-center px-1 text-[10px] text-teal-ink/70">
+            +{extra} more
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
