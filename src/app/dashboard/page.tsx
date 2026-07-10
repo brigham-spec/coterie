@@ -20,6 +20,7 @@ import { Greeting } from "./_greeting";
 import { DailyFocus } from "./_daily-focus";
 import { IntroScan } from "./_intro-scan";
 import { NewConnections } from "./_new-connections";
+import { QuickCapture } from "./_quick-capture";
 import { syncFirefliesNow } from "./meetings/actions";
 
 // Dashboard overview (slice 11.1) — the operator's morning surface. Six KPI
@@ -293,6 +294,10 @@ export default async function DashboardPage() {
 
       {/* Layer-0 — proactive introduction scanner */}
       <IntroScan />
+
+      {/* Quick capture — turn a plain-English note into a reviewable meeting +
+          prospects (cluster E micro AI; nothing is stored until Save). */}
+      <QuickCapture />
 
       {/* Proposal follow-up — open proposals that have gone quiet for over a week */}
       {proposalNudge ? (
