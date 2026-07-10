@@ -36,6 +36,7 @@ const groups: NavGroup[] = [
       { label: "Commitments", href: "/dashboard/commitments" },
       { label: "Network Search", href: "/dashboard/network-search" },
       { label: "Prospect Finder", href: "/dashboard/prospect-finder" },
+      { label: "News", href: "/dashboard/news" },
     ],
   },
   {
