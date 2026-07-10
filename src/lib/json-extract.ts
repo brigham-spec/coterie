@@ -9,3 +9,12 @@ export function extractJsonArray(raw: string): string | null {
   if (start === -1 || end === -1 || end <= start) return null;
   return raw.slice(start, end + 1);
 }
+
+// Same idea for engines that ask for a single JSON object (e.g. the why-join
+// pitch): pull out the first top-level object so the parser can validate it.
+export function extractJsonObject(raw: string): string | null {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  return raw.slice(start, end + 1);
+}

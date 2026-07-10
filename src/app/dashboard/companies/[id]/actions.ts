@@ -7,8 +7,15 @@ import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
+import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
+import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import { generateCompanyBrief } from "@/lib/anthropic";
 import { generateMeetingPrep, type PrepCommitment } from "@/lib/meeting-prep";
+import {
+  generateWhyJoinPitch,
+  type PitchMember,
+  type WhyJoinPitch,
+} from "@/lib/why-join";
 import {
   eligibleCandidateIds,
   generateIntroSuggestions,
@@ -368,4 +375,135 @@ export async function confirmIntroAdvance(formData: FormData): Promise<void> {
 
   revalidatePath("/dashboard/introductions");
   if (companyId) revalidatePath(`/dashboard/companies/${companyId}`);
+}
+
+// Why-join membership pitch (gap-audit cluster E). Written for a prospect: the
+// prospect and the network it would be joining are re-loaded withOrg-scoped from
+// the id in the form (never a client payload), so a foreign id resolves null and
+// no other tenant's network is pitched. The grounding — current members to
+// introduce, the sector's representation, and active-project opportunities — is
+// assembled here so the engine cites real members and projects by name. The
+// Anthropic call runs server-side in @/lib/why-join; the key never reaches the
+// browser. Ephemeral: nothing is persisted.
+
+export type WhyJoinState =
+  | { status: "idle" }
+  | { status: "ok"; pitch: WhyJoinPitch }
+  | { status: "error"; message: string };
+
+export async function generateWhyJoin(
+  _prev: WhyJoinState,
+  formData: FormData,
+): Promise<WhyJoinState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const { orgId, orgName, userName } = await requireOrgContext();
+
+  const data = await withOrg(orgId, async (tx) => {
+    const prospect = await tx.company.findUnique({
+      where: { id: companyId },
+      select: {
+        name: true,
+        industry: true,
+        lookingFor: true,
+        canOffer: true,
+        notes: true,
+        contacts: {
+          where: { isPrimary: true },
+          take: 1,
+          select: { name: true },
+        },
+      },
+    });
+    if (prospect == null) return null;
+
+    // Current network members the prospect could be introduced to on day one.
+    const members = await tx.company.findMany({
+      where: {
+        status: { in: [...NETWORK_STATUSES] },
+        id: { not: companyId },
+      },
+      orderBy: { name: "asc" },
+      take: 40,
+      select: {
+        name: true,
+        industry: true,
+        lookingFor: true,
+        canOffer: true,
+        contacts: {
+          where: { isPrimary: true },
+          take: 1,
+          select: { name: true },
+        },
+      },
+    });
+
+    // Active projects → open-opportunity descriptors for the prospect's expertise.
+    const projects = await tx.project.findMany({
+      where: { stage: { notIn: [...TERMINAL_STAGES] } },
+      orderBy: { updatedAt: "desc" },
+      take: 12,
+      select: { name: true, stage: true, type: true },
+    });
+
+    return { prospect, members, projects };
+  });
+
+  if (data == null)
+    return { status: "error", message: "company not found in this organization" };
+
+  const memberCount = data.members.length;
+  const sameSector = data.prospect.industry
+    ? data.members.filter((m) => m.industry === data.prospect.industry).length
+    : 0;
+  const industryPresence = data.prospect.industry
+    ? `${sameSector} of ${memberCount} members work in ${data.prospect.industry}`
+    : "sector not specified on this prospect";
+
+  const openRoles = data.projects.map(
+    (p) =>
+      `${p.name} (${getStageDef(p.stage).label}${p.type ? `, ${p.type}` : ""})`,
+  );
+
+  const members: PitchMember[] = data.members.map((m) => ({
+    // Prefer the primary contact as the named person; the company is their org.
+    name: m.contacts[0]?.name ?? m.name,
+    org: m.contacts[0] ? m.name : null,
+    industry: m.industry,
+    seeking: m.lookingFor,
+    brings: m.canOffer,
+  }));
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const pitch = await generateWhyJoinPitch({
+      orgName,
+      host: userName,
+      prospect: {
+        name: data.prospect.name,
+        org: data.prospect.name,
+        industry: data.prospect.industry,
+        seeking: data.prospect.lookingFor,
+        brings: data.prospect.canOffer,
+        notes: data.prospect.notes,
+      },
+      memberCount,
+      industryPresence,
+      openRoles,
+      members,
+    });
+    if (pitch == null)
+      return { status: "error", message: "Could not write a pitch. Try again." };
+    return { status: "ok", pitch };
+  } catch (err) {
+    console.error("why-join pitch failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not write a pitch. Try again." };
+  }
 }

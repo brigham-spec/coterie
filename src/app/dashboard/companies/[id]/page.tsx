@@ -22,6 +22,7 @@ import {
 
 import { CompanyBrief } from "./_brief";
 import { MeetingPrep } from "./_meeting-prep";
+import { WhyJoin } from "./_why-join";
 import { IntroSuggestions } from "./_intros";
 import { confirmIntroAdvance } from "./actions";
 
@@ -263,6 +264,10 @@ export default async function CompanyDetailPage({
           </div>
         ) : null}
       </Card>
+
+      {company.status === "prospect" ? (
+        <WhyJoin companyId={company.id} />
+      ) : null}
 
       <MeetingPrep companyId={company.id} />
 
