@@ -8,11 +8,15 @@ missing, to catch anything else the numbered 11.x roadmap under-counted.
 
 Legend: ✅ built · ⚠️ partial · ❌ missing
 
-**Last reconciled 2026-07-09 (v2).** Since v1, five items flipped ❌→✅:
-New Connections Detected (`new-connections.ts`), meeting action-item extraction
-(`action-items.ts`), pre-meeting brief (`meeting-prep.ts`), pending intro
-detections (`intro-detection.ts` + dashboard card), and Event suggestions
-(`event-ideas.ts`). The Fireflies-data cluster (A) is complete.
+**Last reconciled 2026-07-10 (v3).** Since v2, four more items flipped ❌→✅:
+Commitments view (`commitments.ts` + `/dashboard/commitments`, slice 11.10),
+Daily Focus synthesis (`daily-focus.ts`/`daily-focus-synthesis.ts` + dashboard
+card), and the Proposal follow-up nudge (`proposal-nudge.ts` + dashboard banner).
+Also landed (not a prototype-parity row, a hardening addition): per-org **AI rate
+limiting** across all on-demand paid seams (`ai-rate-limit.ts`, 20/min + 300/day).
+The v2→v3 batch (Daily Focus, proposal nudge, F1 fix, AI rate limit) is deployed
+to prod (`coterie-psi.vercel.app`). Dashboard cluster (B) has 2 items left:
+Enrichment nudge and Fireflies sync-status card.
 
 ## Verification basis
 Built surface enumerated from `src/app/dashboard/**/page.tsx` (15 routes),
@@ -35,28 +39,29 @@ was checked against the actual route/engine on 2026-07-09, not assumed from the 
 | Prospect Finder | `15215` | ✅ | External discovery via web_search, 2 modes. |
 | Events | `7324` | ⚠️ | Event modal + RSVP + guest brief AI + **event-ideas suggestions** (`event-ideas.ts`) built. Only outreach-email draft still missing — see §3. |
 | Value Created | `16185` | ✅ | Facilitated value + economic-impact rollups. |
-| Commitments | `12617` | ❌ | = slice **11.10**. Merge deliverables + manual obligations, group-by-member, scan-meetings button. |
+| Commitments | `12617` | ✅ | Slice **11.10** shipped (`commitments.ts` + `/dashboard/commitments`): we-owe/they-owe split, due badges, Done/Dismiss. Only the meetings-scan AI button not ported. |
 | News Intelligence | `10966` | ❌ | = slice **11.9**. RSS quick-scan + AI scan; `NewsItem` table exists, no ingest/UI. |
 | Meetings Log | `2145` | ⚠️ | List/summary/attendee-confirm built. Action-item extraction + pre-meeting brief missing — see §3. |
 | Email Intelligence | `16116` | ❌ | = slice **11.12**. Zapier→Sheet→CSV ingest, match-to-member. |
 
 ## 2. Dashboard notification-card family (the under-counted cluster)
 
-The prototype dashboard renders seven notification cards. Built 3 of 7:
+The prototype dashboard renders seven notification cards. Built 5 of 7 (Enrichment
+nudge + Fireflies sync status remain):
 
 | Card | Ref | Status | Notes |
 |---|---|---|---|
 | Intro suggestions ("Possible Introductions") | `2985` | ✅ | `_intro-scan.tsx`, manual Scan button. |
 | New Connections Detected | `2589`/`3262` | ✅ | `_new-connections.tsx` + `new-connections.ts`. Unmatched Fireflies attendees now stored (`UnmatchedAttendee`) + triaged (create prospect / attach / dismiss). |
 | Pending intro detections from Fireflies | `3181` | ✅ | Dashboard "Pending Introductions" card + per-company section (`intro-detection.ts`). Proposes advancing the ledger from a later meeting where both parties met. |
-| **Daily Focus (AI Today/Week/Month)** | `3106`/`19582`/`19454` | ❌ | `generateFocusSynthesis` prioritized task list. **Still missing** — no lib, no dashboard card. |
-| Proposal follow-up nudge | `3041` | ❌ | "Membership Proposals" panel exists, but not the nudge that flags sent-but-unanswered proposals. |
+| **Daily Focus (AI Today/Week/Month)** | `3106`/`19582`/`19454` | ✅ | `daily-focus.ts`/`daily-focus-synthesis.ts` + dashboard card. Horizon toggle, prioritized task list from open commitments + upcoming events. |
+| Proposal follow-up nudge | `3041` | ✅ | `proposal-nudge.ts` + dashboard banner flags sent-but-unanswered proposals. |
 | Enrichment nudge | `3066` | ❌ | Prompts to fill thin member profiles. |
 | Fireflies sync status | `3116` | ❌ | Last-sync / connection health surface on dashboard. |
 
 ## 3. AI features (catalog cross-check)
 
-Pattern for all = server-only lib + `"use server"` action + client. Built 10 of ~22:
+Pattern for all = server-only lib + `"use server"` action + client. Built 11 of ~22:
 
 | AI feature | Ref | Status |
 |---|---|---|
@@ -70,9 +75,9 @@ Pattern for all = server-only lib + `"use server"` action + client. Built 10 of 
 | Meeting action-item extraction | `5344` | ✅ (`action-items.ts`) |
 | Pre-meeting brief | `17267` | ✅ (`meeting-prep.ts`) |
 | Event suggestions | `7174` | ✅ (`event-ideas.ts`) |
-| **Daily Focus synthesis** | `19498` | ❌ |
+| **Daily Focus synthesis** | `19498` | ✅ (`daily-focus-synthesis.ts`) |
 | **AI news scan** (+web) | `10475` | ❌ (11.9) |
-| **Commitments scan** | `11513` | ❌ (11.10) |
+| **Commitments scan** | `11513` | ❌ (meetings-scan button; view shipped without it) |
 | **Event outreach email draft** | `7773` | ❌ |
 | **Draft intro email** | `16432` | ❌ (engine emits `draftHook` text, no email action) |
 | Enrich-from-meetings | `8066` | ❌ |
@@ -94,25 +99,24 @@ Prototype IA: Overview(Dashboard, Revenue) · Network(All/Director/Advisory/Part
 Pipeline(Prospects, Projects, Events, Value Created) · Intelligence(Commitments, Intro
 Engine, Network Search, News, Prospect Finder, Email, Meetings).
 Production IA: Overview(Dashboard, Revenue-inert) · Network(Companies, Contacts,
-Projects, Introductions) · Intelligence(Network Search, Prospect Finder) ·
+Projects, Introductions) · Intelligence(Commitments, Network Search, Prospect Finder) ·
 Operations(Events, Meetings, Invoices, Value Created).
-Missing nav entries: **Revenue** (inert), **Commitments**, **News**, **Email**; member
-tier views collapsed to Companies.
+Missing nav entries: **Revenue** (inert), **News**, **Email**; member tier views
+collapsed to Companies.
 
 ---
 
-## Remaining work (re-sequenced, current as of 2026-07-09 v2)
+## Remaining work (re-sequenced, current as of 2026-07-10 v3)
 
 **A. Fireflies-data cluster — ✅ COMPLETE** (New Connections, action-item
 extraction, pending intro detections, pre-meeting brief all shipped).
 
-**B. Dashboard completion (NEXT):**
-- **Daily Focus synthesis** — AI Today/Week/Month prioritized task list. The most
-  visible remaining dashboard gap.
-- Proposal follow-up nudge · Enrichment nudge · Fireflies sync-status card.
+**B. Dashboard completion (NEXT, 2 of 4 left):**
+- ✅ Daily Focus synthesis · ✅ Proposal follow-up nudge.
+- **Fireflies sync-status card** · **Enrichment nudge** — the two remaining cards.
 
 **C. Remaining major views:**
-- 11.9 News · 11.10 Commitments · 11.11 Rich Revenue · 11.12 Email.
+- 11.9 News · 11.11 Rich Revenue · 11.12 Email. (11.10 Commitments ✅ shipped.)
 
 **D. Events polish:** only the outreach email draft remains (suggestions shipped).
 
