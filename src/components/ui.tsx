@@ -62,7 +62,7 @@ export function CardHeader({
   title,
   action,
 }: {
-  title: string;
+  title: ReactNode;
   action?: ReactNode;
 }) {
   return (

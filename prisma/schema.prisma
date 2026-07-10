@@ -56,6 +56,7 @@ model Organization {
   invoices               Invoice[]
   payments               Payment[]
   newsItems              NewsItem[]
+  emailMessages          EmailMessage[]
   activities             Activity[]
   integrationCredentials IntegrationCredential[]
   events                 Event[]
@@ -163,6 +164,7 @@ model Company {
   projectLinks          ProjectLink[]
   invoices              Invoice[]
   newsItems             NewsItem[]
+  emailMessages         EmailMessage[]
   activities            Activity[]
   membershipProposals   MembershipProposal[]
   dismissalsAsFocus     IntroDismissal[]     @relation("IntroDismissalFocus")
@@ -494,6 +496,44 @@ model NewsItem {
   @@index([orgId])
   @@index([companyId])
   @@map("news_items")
+}
+
+/// Synced client correspondence (slice 11.12). Zapier analyses each inbound email
+/// with Claude and appends a row to a published Google Sheet; a sync pulls that
+/// CSV, matches each row to a company, and lands it here. companyId is nullable —
+/// unmatched mail is still stored so it surfaces in an "Unmatched" bucket. Plain
+/// FK (SetNull on company delete); matching runs inside withOrg so the assigned
+/// company is always same-tenant. Deduped by (orgId, externalKey).
+model EmailMessage {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  companyId   String?  @map("company_id") @db.Uuid
+  /// thread_id from the sheet, or a date+from_email fallback — the dedupe key.
+  externalKey String   @map("external_key")
+  fromName    String   @default("") @map("from_name")
+  fromEmail   String   @default("") @map("from_email")
+  subject     String   @default("")
+  summary     String   @default("")
+  /// Comma-separated project names Claude spotted.
+  projects    String   @default("")
+  /// Semicolon-separated follow-ups Claude spotted.
+  actionItems String   @default("") @map("action_items")
+  /// positive | neutral | negative (free-text; unknown renders slate).
+  sentiment   String   @default("")
+  /// The email's date as reported by the sheet (free-text; stored raw).
+  emailDate   String   @default("") @map("email_date")
+  syncedAt    DateTime @map("synced_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company      Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, externalKey])
+  @@index([orgId])
+  @@index([companyId])
+  @@map("email_messages")
 }
 
 /// Unified timeline — everything that happens to a company lands here (spec §3.15).

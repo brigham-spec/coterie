@@ -19,8 +19,11 @@ to prod (`coterie-psi.vercel.app`). **Dashboard cluster (B) is now COMPLETE (v4,
 2026-07-10):** the Fireflies sync-status card (`sync-status.ts` +
 `IntegrationCredential.lastSyncedAt` + dashboard bar) and the Enrichment nudge
 (`enrichment-nudge.ts` + dashboard chip card) both shipped. All 7 dashboard
-notification cards are built. Next up: cluster C major views (11.9 News, 11.11
-Rich Revenue, 11.12 Email). The v4 batch is not yet deployed to prod.
+notification cards are built. **Cluster C major views are now COMPLETE (2026-07-10):**
+11.11 Rich Revenue (`revenue.ts` + `/dashboard/revenue`), 11.9 News Intelligence
+(`news-scan.ts` + `/dashboard/news`), and 11.12 Email Intelligence (`email-intel.ts`
++ `email-sync.ts` + `email_messages` table + `/dashboard/email`) all shipped. The
+v4+ batch is not yet deployed to prod.
 
 ## Verification basis
 Built surface enumerated from `src/app/dashboard/**/page.tsx` (15 routes),
@@ -46,7 +49,7 @@ was checked against the actual route/engine on 2026-07-09, not assumed from the 
 | Commitments | `12617` | ✅ | Slice **11.10** shipped (`commitments.ts` + `/dashboard/commitments`): we-owe/they-owe split, due badges, Done/Dismiss. Only the meetings-scan AI button not ported. |
 | News Intelligence | `10966` | ❌ | = slice **11.9**. RSS quick-scan + AI scan; `NewsItem` table exists, no ingest/UI. |
 | Meetings Log | `2145` | ⚠️ | List/summary/attendee-confirm built. Action-item extraction + pre-meeting brief missing — see §3. |
-| Email Intelligence | `16116` | ❌ | = slice **11.12**. Zapier→Sheet→CSV ingest, match-to-member. |
+| Email Intelligence | `16116` | ✅ | Slice **11.12** shipped (`email-intel.ts` parse/match + `email-sync.ts` fetch seam + `email_messages` table + `/dashboard/email`): published-Sheet CSV ingest, server-side match-to-company (single best match), grouped-by-company view, docs.google.com SSRF guard. |
 
 ## 2. Dashboard notification-card family (the under-counted cluster)
 
@@ -89,7 +92,7 @@ Pattern for all = server-only lib + `"use server"` action + client. Built 11 of 
 | Why-join pitch | `1489` | ❌ |
 | LinkedIn parse | `16497` | ❌ |
 | Quick capture | `16619` | ❌ |
-| Email paste / Zapier email | `16740` | ❌ (11.12) |
+| Email paste / Zapier email | `16740` | ✅ (11.12) |
 
 ## 4. Data model
 All 20 tables present incl. `Event`/`EventInvitee`/`MembershipProposal`/`NewsItem`/
@@ -117,8 +120,8 @@ extraction, pending intro detections, pre-meeting brief all shipped).
 **B. Dashboard completion — ✅ COMPLETE** (Daily Focus, proposal nudge,
 Fireflies sync-status card, Enrichment nudge all shipped; all 7 cards built).
 
-**C. Remaining major views (NEXT):**
-- 11.9 News · 11.11 Rich Revenue · 11.12 Email. (11.10 Commitments ✅ shipped.)
+**C. Major views — ✅ COMPLETE:**
+- 11.9 News ✅ · 11.10 Commitments ✅ · 11.11 Rich Revenue ✅ · 11.12 Email ✅.
 
 **D. Events polish:** only the outreach email draft remains (suggestions shipped).
 
