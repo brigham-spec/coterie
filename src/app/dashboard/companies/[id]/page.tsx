@@ -22,6 +22,7 @@ import {
 
 import { CompanyBrief } from "./_brief";
 import { MeetingPrep } from "./_meeting-prep";
+import { EnrichFromMeetings } from "./_enrich-meetings";
 import { WhyJoin } from "./_why-join";
 import { IntroSuggestions } from "./_intros";
 import { confirmIntroAdvance } from "./actions";
@@ -270,6 +271,8 @@ export default async function CompanyDetailPage({
       ) : null}
 
       <MeetingPrep companyId={company.id} />
+
+      <EnrichFromMeetings companyId={company.id} />
 
       <CompanyBrief companyId={company.id} />
 

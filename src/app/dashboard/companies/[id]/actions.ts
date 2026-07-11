@@ -12,6 +12,11 @@ import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import { generateCompanyBrief } from "@/lib/anthropic";
 import { generateMeetingPrep, type PrepCommitment } from "@/lib/meeting-prep";
 import {
+  generateProfileEnrichment,
+  type EnrichMeeting,
+  type ProfileEnrichment,
+} from "@/lib/enrich-meetings";
+import {
   generateWhyJoinPitch,
   type PitchMember,
   type WhyJoinPitch,
@@ -506,4 +511,237 @@ export async function generateWhyJoin(
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not write a pitch. Try again." };
   }
+}
+
+// Enrich-from-meetings (gap-audit cluster E). The company is re-loaded
+// withOrg-scoped from the id in the form (never a client payload), so a foreign
+// id resolves null and no other tenant's meetings are read. Around it we gather
+// the meetings this company's contacts attended (freshest first) and the open +
+// closed action items on those meetings — the evidence the enrichment is drawn
+// from. The Anthropic call runs server-side in @/lib/enrich-meetings; the key
+// never reaches the browser. Ephemeral: the result is only proposed here —
+// nothing is written until the operator applies selected fields below.
+
+export type EnrichMeetingsState =
+  | { status: "idle" }
+  | { status: "ok"; enrichment: ProfileEnrichment }
+  | { status: "error"; message: string };
+
+const ENRICH_MEETING_TAKE = 6;
+const ENRICH_ACTION_ITEM_TAKE = 3;
+
+export async function enrichFromMeetingsAction(
+  _prev: EnrichMeetingsState,
+  formData: FormData,
+): Promise<EnrichMeetingsState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const { orgId } = await requireOrgContext();
+
+  const data = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: {
+        name: true,
+        industry: true,
+        lookingFor: true,
+        canOffer: true,
+        contacts: {
+          where: { isPrimary: true },
+          take: 1,
+          select: { name: true },
+        },
+      },
+    });
+    if (company == null) return null;
+
+    // Every contact at this company, then the meetings they attended — scoped to
+    // this relationship so the enrichment is grounded in this member only.
+    const contacts = await tx.contact.findMany({
+      where: { companyId },
+      select: { id: true },
+    });
+    const contactIds = contacts.map((c) => c.id);
+    const attendances = contactIds.length
+      ? await tx.meetingAttendee.findMany({
+          where: { contactId: { in: contactIds } },
+          select: { meetingId: true },
+        })
+      : [];
+    const meetingIds = [...new Set(attendances.map((a) => a.meetingId))];
+
+    const meetings = meetingIds.length
+      ? await tx.meeting.findMany({
+          where: { id: { in: meetingIds } },
+          orderBy: { heldAt: "desc" },
+          take: ENRICH_MEETING_TAKE,
+          select: { id: true, title: true, heldAt: true, summary: true },
+        })
+      : [];
+
+    // The action items recorded on those meetings, folded back onto each meeting
+    // as extra evidence. A few per meeting keeps the prompt bounded.
+    const items = meetings.length
+      ? await tx.actionItem.findMany({
+          where: { meetingId: { in: meetings.map((m) => m.id) } },
+          orderBy: { createdAt: "desc" },
+          select: { meetingId: true, text: true },
+        })
+      : [];
+
+    return { company, meetings, items };
+  });
+
+  if (data == null)
+    return { status: "error", message: "company not found in this organization" };
+  if (data.meetings.length === 0)
+    return { status: "error", message: "No synced meetings found for this member yet." };
+
+  const itemsByMeeting = new Map<string, string[]>();
+  for (const it of data.items) {
+    if (it.meetingId == null) continue;
+    const list = itemsByMeeting.get(it.meetingId) ?? [];
+    if (list.length < ENRICH_ACTION_ITEM_TAKE) list.push(it.text);
+    itemsByMeeting.set(it.meetingId, list);
+  }
+
+  const meetings: EnrichMeeting[] = data.meetings.map((m) => ({
+    date: m.heldAt.toISOString().slice(0, 10),
+    title: m.title,
+    summary: m.summary ?? "",
+    actionItems: itemsByMeeting.get(m.id) ?? [],
+  }));
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const enrichment = await generateProfileEnrichment(
+      {
+        orgName: data.company.name,
+        contactName: data.company.contacts[0]?.name ?? "",
+        industry: data.company.industry,
+        lookingFor: data.company.lookingFor ?? "",
+        canOffer: data.company.canOffer ?? "",
+      },
+      meetings,
+    );
+    if (enrichment == null)
+      return {
+        status: "error",
+        message: "No new profile details found in recent meetings.",
+      };
+    return { status: "ok", enrichment };
+  } catch (err) {
+    console.error("meeting enrichment failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not enrich from meetings. Try again." };
+  }
+}
+
+// Apply the operator's selected enrichment fields to the company row (gap-audit
+// cluster E). The client posts a hidden JSON payload of ONLY the fields the
+// operator checked; we coerce it defensively, re-verify the company inside
+// withOrg (RLS → a foreign id resolves null → refused), and write only the
+// provided scalars. `notesAppend` is appended (never overwrites) to the existing
+// notes with a dated "[Meetings]" header so the provenance is visible. Returns
+// the number of fields applied so the UI can confirm.
+
+export type ApplyEnrichmentState =
+  | { status: "idle" }
+  | { status: "applied"; count: number }
+  | { status: "error"; message: string };
+
+type EnrichmentSelection = {
+  lookingFor?: string;
+  canOffer?: string;
+  industry?: string;
+  notesAppend?: string;
+};
+
+// PURE: read the client's selection payload, keeping only non-empty string
+// values for the four writable fields. Anything malformed collapses to {}.
+function readEnrichmentSelection(raw: string): EnrichmentSelection {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const obj = parsed as Record<string, unknown>;
+  const pick = (v: unknown, max: number): string | undefined => {
+    if (typeof v !== "string") return undefined;
+    const t = v.trim();
+    return t === "" ? undefined : t.slice(0, max);
+  };
+  const selection: EnrichmentSelection = {};
+  const lookingFor = pick(obj.lookingFor, 200);
+  const canOffer = pick(obj.canOffer, 200);
+  const industry = pick(obj.industry, 80);
+  const notesAppend = pick(obj.notesAppend, 500);
+  if (lookingFor !== undefined) selection.lookingFor = lookingFor;
+  if (canOffer !== undefined) selection.canOffer = canOffer;
+  if (industry !== undefined) selection.industry = industry;
+  if (notesAppend !== undefined) selection.notesAppend = notesAppend;
+  return selection;
+}
+
+export async function applyMeetingEnrichment(
+  _prev: ApplyEnrichmentState,
+  formData: FormData,
+): Promise<ApplyEnrichmentState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const selection = readEnrichmentSelection(
+    String(formData.get("enrichment") ?? ""),
+  );
+  const count =
+    (selection.lookingFor !== undefined ? 1 : 0) +
+    (selection.canOffer !== undefined ? 1 : 0) +
+    (selection.industry !== undefined ? 1 : 0) +
+    (selection.notesAppend !== undefined ? 1 : 0);
+  if (count === 0)
+    return { status: "error", message: "Nothing selected to apply." };
+
+  const { orgId } = await requireOrgContext();
+
+  const applied = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { notes: true },
+    });
+    if (company == null) return false;
+
+    const data: {
+      lookingFor?: string;
+      canOffer?: string;
+      industry?: string;
+      notes?: string;
+    } = {};
+    if (selection.lookingFor !== undefined) data.lookingFor = selection.lookingFor;
+    if (selection.canOffer !== undefined) data.canOffer = selection.canOffer;
+    if (selection.industry !== undefined) data.industry = selection.industry;
+    if (selection.notesAppend !== undefined) {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const header = `[Meetings, ${stamp}]: ${selection.notesAppend}`;
+      data.notes = company.notes ? `${company.notes}\n\n${header}` : header;
+    }
+
+    await tx.company.update({ where: { id: companyId }, data });
+    return true;
+  });
+
+  if (!applied)
+    return { status: "error", message: "company not found in this organization" };
+
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/companies");
+  revalidatePath("/dashboard");
+  return { status: "applied", count };
 }
