@@ -5,8 +5,12 @@ import { withOrg } from "@/lib/tenant";
 import {
   INTRO_STAGES,
   TERMINAL_INTRO_STAGES,
+  getIntroStageDef,
   introStageRank,
 } from "@/lib/intro-stages";
+import { TERMINAL_STAGES } from "@/lib/project-stages";
+import { openRoles } from "@/lib/disciplines";
+import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import {
   Button,
   Card,
@@ -22,21 +26,29 @@ import {
 } from "@/components/ui";
 
 import { createIntroduction, updateIntroduction } from "./actions";
+import { confirmIntroAdvance } from "../companies/[id]/actions";
 import { IntroEmailDraft } from "./_intro-email";
+import { IntroEngine } from "./_engine";
 
-// Introductions — who was connected to whom, toward what (build item 4; ledger
-// lifecycle rebuilt in slice 11.4a). Party A and B are contacts; an intro may
-// advance a project and progresses along a canonical lifecycle
-// (@/lib/intro-stages): suggested → drafted → made → connected → meeting_set →
-// collaborating → value_created / dormant. Contacts, projects, and the intro list
-// are all read through withOrg in one tx, so nothing foreign appears. An intro
-// needs two distinct contacts, so we require at least two before showing the form.
+// Introductions — the product's core verb, and the prototype's flagship module
+// (Coterie.html:14566 "Introduction Intelligence"). This page is the unified
+// Introduction Engine: proactive signals from meeting evidence at the top, then
+// the three matching modes (For a Member / Project Catalyst / Network Scan) over
+// the network's own reasoning, then the manual tools (draft email, log an intro)
+// and the lifecycle ledger. Every read is scoped by RLS through one withOrg pass
+// so nothing foreign appears; the AI modes each run in their own on-demand server
+// action, so this page stays a single data round-trip.
 
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "short",
   day: "numeric",
 });
+
+const relFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
+// Members / partners / prospects are the pool the "For a Member" mode offers.
+const ENGINE_STATUSES = new Set(["member", "strategic_partner", "prospect"]);
 
 // Pre-intro states seed the create form; the full vocabulary drives the per-row
 // advance control below.
@@ -46,16 +58,26 @@ export default async function IntroductionsPage() {
   const ctx = await requireOrgContext();
 
   // Sequential reads: one pooled connection per tx, so no concurrent queries.
-  const { contacts, projects, introductions } = await withOrg(
-    ctx.orgId,
-    async (tx) => {
+  const { contacts, companies, projects, introductions, pendingIntros } =
+    await withOrg(ctx.orgId, async (tx) => {
       const contacts = await tx.contact.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true, company: { select: { name: true } } },
       });
-      const projects = await tx.project.findMany({
+      const companies = await tx.company.findMany({
         orderBy: { name: "asc" },
-        select: { id: true, name: true },
+        select: { id: true, name: true, status: true },
+      });
+      const projects = await tx.project.findMany({
+        where: { stage: { notIn: [...TERMINAL_STAGES] } },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          stage: true,
+          county: true,
+          projectLinks: { select: { role: true } },
+        },
       });
       const introductions = await tx.introduction.findMany({
         orderBy: { createdAt: "desc" },
@@ -65,17 +87,33 @@ export default async function IntroductionsPage() {
           project: { select: { name: true } },
         },
       });
-      return { contacts, projects, introductions };
-    },
-  );
+      const pendingIntros = await loadPendingIntroDetections(tx);
+      return { contacts, companies, projects, introductions, pendingIntros };
+    });
 
   const valueCreated = introductions.filter(
     (i) => i.status === "value_created",
   ).length;
   const inFlight = introductions.filter(
-    (i) => introStageRank(i.status) >= introStageRank("made") &&
+    (i) =>
+      introStageRank(i.status) >= introStageRank("made") &&
       !TERMINAL_INTRO_STAGES.includes(i.status),
   ).length;
+
+  // Member-mode pool and Project-Catalyst pool (only projects with open roles).
+  const engineMembers = companies.filter((c) => ENGINE_STATUSES.has(c.status));
+  const engineProjects = projects
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      stage: p.stage,
+      county: p.county,
+      openRoles: openRoles(p.projectLinks.map((l) => l.role)).map((d) => ({
+        value: d.value,
+        label: d.label,
+      })),
+    }))
+    .filter((p) => p.openRoles.length > 0);
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -94,6 +132,53 @@ export default async function IntroductionsPage() {
         </div>
       ) : null}
 
+      {/* Urgent signals — meetings evidence an in-flight intro advanced; confirm
+          before the stage moves. This is the engine's proactive layer. */}
+      {pendingIntros.length > 0 ? (
+        <div className="mb-4 overflow-hidden rounded-md border border-teal-line bg-surface shadow-card">
+          <div className="border-b border-line bg-teal-bg/40 px-4 py-2.5">
+            <span className="text-[10px] font-medium tracking-[0.07em] text-teal-ink uppercase">
+              Detected from meetings
+            </span>
+            <span className="ml-2 text-[10px] text-teal-ink/70">
+              {pendingIntros.length} awaiting confirmation
+            </span>
+          </div>
+          <div className="divide-y divide-line">
+            {pendingIntros.map((d) => (
+              <div
+                key={d.introId}
+                className="flex items-center justify-between gap-3 px-4 py-2.5"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-[11.5px] text-ink">
+                    {d.partyALabel} <span className="text-ink-3">&#8596;</span>{" "}
+                    {d.partyBLabel}
+                    <span className="ml-1.5 text-[10px] text-teal-ink">
+                      {getIntroStageDef(d.currentStage).label} &#8594;{" "}
+                      {getIntroStageDef(d.suggestedStage).label}
+                    </span>
+                  </div>
+                  <div className="truncate text-[10px] text-ink-3">
+                    {d.meetingTitle} &middot; {relFmt.format(d.meetingDate)}
+                  </div>
+                </div>
+                <form action={confirmIntroAdvance} className="flex-shrink-0">
+                  <input type="hidden" name="introId" value={d.introId} />
+                  <input type="hidden" name="status" value={d.suggestedStage} />
+                  <Button type="submit" variant="primary">
+                    Confirm
+                  </Button>
+                </form>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* The three matching modes over the network's own reasoning. */}
+      <IntroEngine members={engineMembers} projects={engineProjects} />
+
       {contacts.length < 2 ? (
         <Card>
           <CardHeader title="Make an introduction" />
@@ -106,73 +191,79 @@ export default async function IntroductionsPage() {
           </p>
         </Card>
       ) : (
-        <Card>
-          <CardHeader title="Make an introduction" />
-          <form action={createIntroduction} className="grid grid-cols-2 gap-4 p-4">
-            <SelectField
-              name="partyAContactId"
-              label="Party A"
-              defaultValue=""
-              required
+        <>
+          <IntroEmailDraft
+            contacts={contacts.map((c) => ({
+              id: c.id,
+              name: c.name,
+              org: c.company.name,
+            }))}
+          />
+          <Card>
+            <CardHeader title="Log an introduction" />
+            <form
+              action={createIntroduction}
+              className="grid grid-cols-2 gap-4 p-4"
             >
-              <option value="" disabled>
-                Select a contact…
-              </option>
-              {contacts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} · {c.company.name}
+              <SelectField
+                name="partyAContactId"
+                label="Party A"
+                defaultValue=""
+                required
+              >
+                <option value="" disabled>
+                  Select a contact…
                 </option>
-              ))}
-            </SelectField>
-            <SelectField
-              name="partyBContactId"
-              label="Party B"
-              defaultValue=""
-              required
-            >
-              <option value="" disabled>
-                Select a contact…
-              </option>
-              {contacts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} · {c.company.name}
+                {contacts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} · {c.company.name}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                name="partyBContactId"
+                label="Party B"
+                defaultValue=""
+                required
+              >
+                <option value="" disabled>
+                  Select a contact…
                 </option>
-              ))}
-            </SelectField>
-            <SelectField name="status" label="Status" defaultValue="suggested">
-              {createStatusOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </SelectField>
-            <SelectField name="projectId" label="Project (optional)" defaultValue="">
-              <option value="">None</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </SelectField>
-            <Field name="madeOn" label="Made on (optional)" type="date" />
-            <div className="col-span-2 flex justify-end">
-              <Button type="submit" variant="primary">
-                Record introduction
-              </Button>
-            </div>
-          </form>
-        </Card>
+                {contacts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} · {c.company.name}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField name="status" label="Status" defaultValue="suggested">
+                {createStatusOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                name="projectId"
+                label="Project (optional)"
+                defaultValue=""
+              >
+                <option value="">None</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </SelectField>
+              <Field name="madeOn" label="Made on (optional)" type="date" />
+              <div className="col-span-2 flex justify-end">
+                <Button type="submit" variant="primary">
+                  Record introduction
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </>
       )}
-
-      {contacts.length >= 2 ? (
-        <IntroEmailDraft
-          contacts={contacts.map((c) => ({
-            id: c.id,
-            name: c.name,
-            org: c.company.name,
-          }))}
-        />
-      ) : null}
 
       <Card>
         <CardHeader title="Ledger" />
