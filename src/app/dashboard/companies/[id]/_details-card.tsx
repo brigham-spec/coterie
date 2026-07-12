@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type TextareaHTMLAttributes } from "react";
+import { useState } from "react";
 
 import {
   Button,
@@ -8,7 +8,7 @@ import {
   CardHeader,
   Field,
   SelectField,
-  cn,
+  Textarea,
 } from "@/components/ui";
 import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
 import { ORG_TAGS } from "@/lib/tags";
@@ -327,24 +327,5 @@ function EditForm({
         </div>
       </form>
     </Card>
-  );
-}
-
-function Textarea({
-  label,
-  className,
-  ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string }) {
-  return (
-    <label className={cn("block", className)}>
-      <span className="mb-1 block text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase">
-        {label}
-      </span>
-      <textarea
-        rows={2}
-        className="w-full resize-y rounded-sm border border-line-2 bg-surface px-3 py-1.5 text-xs text-ink outline-none focus:border-gold-line"
-        {...props}
-      />
-    </label>
   );
 }

@@ -27,6 +27,7 @@ import { EnrichFromMeetings } from "./_enrich-meetings";
 import { WhyJoin } from "./_why-join";
 import { IntroSuggestions } from "./_intros";
 import { DetailsCard } from "./_details-card";
+import { ContactsCard } from "./_contacts-card";
 import { confirmIntroAdvance } from "./actions";
 
 // Company detail — the central relationship's home. Surfaces the company's own
@@ -348,73 +349,20 @@ export default async function CompanyDetailPage({
         )}
       </Card>
 
-      <Card>
-        <CardHeader title="Contacts" />
-        {company.contacts.length === 0 ? (
-          <p className="px-4 py-6 text-xs text-ink-3">
-            No contacts yet. Add one on the{" "}
-            <Link href="/dashboard/contacts" className="text-gold underline">
-              contacts
-            </Link>{" "}
-            page.
-          </p>
-        ) : (
-          <Table
-            head={
-              <>
-                <Th>Name</Th>
-                <Th>Title</Th>
-                <Th>Email</Th>
-                <Th>Tags</Th>
-              </>
-            }
-          >
-            {company.contacts.map((c) => (
-              <Tr key={c.id}>
-                <Td className="font-medium">
-                  {c.name}
-                  {c.isPrimary ? (
-                    <span className="ml-2 text-[10px] font-medium tracking-[0.06em] text-gold uppercase">
-                      Primary
-                    </span>
-                  ) : null}
-                  {c.linkedin ? (
-                    <a
-                      href={c.linkedin}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-2 text-[10px] text-ink-3 hover:text-gold hover:underline"
-                    >
-                      LinkedIn
-                    </a>
-                  ) : null}
-                </Td>
-                <Td>{c.title ?? "—"}</Td>
-                <Td>{c.email ?? "—"}</Td>
-                <Td>
-                  {c.tags.length === 0 ? (
-                    <span className="text-ink-3">—</span>
-                  ) : (
-                    <div className="flex flex-wrap gap-1">
-                      {c.tags.map((key) => {
-                        const def = getTagDef(key);
-                        return (
-                          <TagBadge
-                            key={key}
-                            label={def.label}
-                            tone={def.tone}
-                            title={def.desc}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-                </Td>
-              </Tr>
-            ))}
-          </Table>
-        )}
-      </Card>
+      <ContactsCard
+        companyId={company.id}
+        contacts={company.contacts.map((c) => ({
+          id: c.id,
+          name: c.name,
+          title: c.title,
+          email: c.email,
+          phone: c.phone,
+          linkedin: c.linkedin,
+          notes: c.notes,
+          tags: c.tags,
+          isPrimary: c.isPrimary,
+        }))}
+      />
 
       <Card>
         <CardHeader title="Projects" />

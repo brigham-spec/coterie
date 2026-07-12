@@ -3,6 +3,7 @@ import type {
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
+  TextareaHTMLAttributes,
 } from "react";
 
 // Presentational primitives ported from the Coterie prototype. Pure styling over
@@ -122,6 +123,19 @@ export function SelectField({
       <select className={fieldControl} {...props}>
         {children}
       </select>
+    </label>
+  );
+}
+
+export function Textarea({
+  label,
+  className,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string }) {
+  return (
+    <label className={cn("block", className)}>
+      <span className={fieldLabel}>{label}</span>
+      <textarea rows={2} className={cn(fieldControl, "resize-y")} {...props} />
     </label>
   );
 }
