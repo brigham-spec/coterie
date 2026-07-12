@@ -63,3 +63,55 @@ export function summarizeValueDelivered(
     byKind,
   };
 }
+
+export type ValueReportSection = {
+  kind: string;
+  /// Dollars attributed to this kind (nulls contribute 0).
+  amount: number;
+  /// Entries of this kind, monetary or not.
+  count: number;
+  /// This kind's entries, newest first.
+  entries: ValueDeliveredEntry[];
+};
+
+export type ValueReport = {
+  summary: ValueDeliveredSummary;
+  /// Oldest / newest occurredAt across all entries — the report's period. Null
+  /// when there are no entries.
+  firstAt: Date | null;
+  lastAt: Date | null;
+  /// Entries grouped by kind, richest kind first (same order as summary.byKind).
+  sections: ValueReportSection[];
+};
+
+/// Structure a company's value-delivered entries into the shareable report: the
+/// same summary totals plus per-kind sections (richest first) and the covered
+/// period. PURE — the report page loads the rows withOrg-scoped and hands them
+/// here; keeping the shaping testable and free of DB/format concerns.
+export function buildValueReport(entries: ValueDeliveredEntry[]): ValueReport {
+  const summary = summarizeValueDelivered(entries);
+
+  const byKind = new Map<string, ValueDeliveredEntry[]>();
+  let firstAt: Date | null = null;
+  let lastAt: Date | null = null;
+
+  for (const e of entries) {
+    const bucket = byKind.get(e.kind) ?? [];
+    bucket.push(e);
+    byKind.set(e.kind, bucket);
+
+    if (firstAt === null || e.occurredAt < firstAt) firstAt = e.occurredAt;
+    if (lastAt === null || e.occurredAt > lastAt) lastAt = e.occurredAt;
+  }
+
+  const sections: ValueReportSection[] = summary.byKind.map((tally) => ({
+    kind: tally.kind,
+    amount: tally.amount,
+    count: tally.count,
+    entries: (byKind.get(tally.kind) ?? [])
+      .slice()
+      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime()),
+  }));
+
+  return { summary, firstAt, lastAt, sections };
+}

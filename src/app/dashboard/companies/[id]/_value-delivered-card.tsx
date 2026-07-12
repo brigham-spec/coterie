@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 import {
   Button,
@@ -65,13 +66,23 @@ export function ValueDeliveredCard({
       <CardHeader
         title="Value delivered"
         action={
-          <button
-            type="button"
-            onClick={() => setAdding((v) => !v)}
-            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-          >
-            {adding ? "Close" : "Log value"}
-          </button>
+          <div className="flex items-center gap-4">
+            {entries.length > 0 ? (
+              <Link
+                href={`/dashboard/companies/${companyId}/value-report`}
+                className="text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase hover:text-ink"
+              >
+                View report
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setAdding((v) => !v)}
+              className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+            >
+              {adding ? "Close" : "Log value"}
+            </button>
+          </div>
         }
       />
 

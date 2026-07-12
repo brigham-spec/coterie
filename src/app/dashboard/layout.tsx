@@ -27,7 +27,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen">
-      <aside className="fixed inset-y-0 left-0 flex w-56 flex-col bg-ink px-3 py-5 text-white">
+      <aside className="fixed inset-y-0 left-0 flex w-56 flex-col bg-ink px-3 py-5 text-white print:hidden">
         <div className="px-3">
           <div className="text-[9.5px] font-medium tracking-[0.16em] text-gold uppercase">
             Coterie
@@ -40,15 +40,17 @@ export default async function DashboardLayout({
         <Nav />
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col pl-56">
-        <header className="flex h-14 items-center justify-end gap-3 border-b border-line bg-surface px-6">
+      <div className="flex min-h-screen flex-1 flex-col pl-56 print:pl-0">
+        <header className="flex h-14 items-center justify-end gap-3 border-b border-line bg-surface px-6 print:hidden">
           <OrganizationSwitcher
             afterCreateOrganizationUrl="/dashboard"
             afterSelectOrganizationUrl="/dashboard"
           />
           <UserButton />
         </header>
-        <main className="flex-1 bg-canvas px-6 py-8">{children}</main>
+        <main className="flex-1 bg-canvas px-6 py-8 print:bg-surface print:p-0">
+          {children}
+        </main>
       </div>
     </div>
   );

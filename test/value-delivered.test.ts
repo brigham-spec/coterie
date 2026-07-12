@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  buildValueReport,
   summarizeValueDelivered,
   type ValueDeliveredEntry,
 } from "@/lib/value-delivered";
@@ -67,5 +68,44 @@ describe("summarizeValueDelivered", () => {
       { kind: "introduction", count: 2, amount: 0 },
       { kind: "event", count: 1, amount: 0 },
     ]);
+  });
+});
+
+describe("buildValueReport", () => {
+  test("empty ledger has no period and no sections", () => {
+    const r = buildValueReport([]);
+    expect(r.summary.entryCount).toBe(0);
+    expect(r.firstAt).toBeNull();
+    expect(r.lastAt).toBeNull();
+    expect(r.sections).toEqual([]);
+  });
+
+  test("groups entries by kind in the summary's richest-first order", () => {
+    const r = buildValueReport([
+      entry({ kind: "grant", amount: 25000 }),
+      entry({ kind: "introduction", amount: 40000 }),
+      entry({ kind: "introduction", amount: 10000 }),
+    ]);
+    // introduction (50k) outranks grant (25k).
+    expect(r.sections.map((s) => s.kind)).toEqual(["introduction", "grant"]);
+    expect(r.sections[0]).toMatchObject({ kind: "introduction", count: 2, amount: 50000 });
+    expect(r.sections[1]).toMatchObject({ kind: "grant", count: 1, amount: 25000 });
+  });
+
+  test("derives the period from the oldest and newest entry", () => {
+    const r = buildValueReport([
+      entry({ occurredAt: new Date("2026-03-15") }),
+      entry({ occurredAt: new Date("2026-01-02") }),
+      entry({ occurredAt: new Date("2026-06-30") }),
+    ]);
+    expect(r.firstAt).toEqual(new Date("2026-01-02"));
+    expect(r.lastAt).toEqual(new Date("2026-06-30"));
+  });
+
+  test("orders each section's entries newest first", () => {
+    const older = entry({ kind: "service", occurredAt: new Date("2026-01-01") });
+    const newer = entry({ kind: "service", occurredAt: new Date("2026-05-01") });
+    const r = buildValueReport([older, newer]);
+    expect(r.sections[0].entries.map((e) => e.id)).toEqual([newer.id, older.id]);
   });
 });
