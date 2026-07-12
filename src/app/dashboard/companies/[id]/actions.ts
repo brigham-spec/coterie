@@ -11,6 +11,7 @@ import { isIntroStage } from "@/lib/intro-stages";
 import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES, isCompanyStatus } from "@/lib/company-statuses";
 import { isProposalStatus } from "@/lib/proposal-statuses";
+import { isValueKind } from "@/lib/value-kinds";
 import { ORG_TAGS } from "@/lib/tags";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { generateCompanyBrief } from "@/lib/anthropic";
@@ -1019,6 +1020,95 @@ export async function deleteProposal(formData: FormData): Promise<void> {
   if (companyId == null)
     throw new Error("proposal not found in this organization");
   revalidateProposal(companyId);
+}
+
+// ── P4: per-company Value Delivered ledger ──────────────────────────────────
+// The profile's Value Delivered card records concrete wins the network delivered
+// to a member — an intro that bore fruit, a grant, a service — with the outcome
+// and derived dollar value. Each write re-loads the parent company (and, when
+// linked, the introduction) inside withOrg — a foreign id resolves null under RLS
+// and the write is refused. Feeds the per-member drill-down of value created; the
+// org-wide rollup lives on the Value Created page (revalidated alongside).
+
+function revalidateValue(companyId: string): void {
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/value-created");
+  revalidatePath("/dashboard");
+}
+
+export async function logValueDelivered(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) throw new Error("missing company");
+
+  const kind = String(formData.get("kind") ?? "other").trim() || "other";
+  if (!isValueKind(kind)) throw new Error("invalid value kind");
+
+  const summary = String(formData.get("summary") ?? "").trim();
+  if (!summary) throw new Error("summary is required");
+
+  const amount = optionalAmount(formData, "amount");
+  const outcome = String(formData.get("outcome") ?? "").trim();
+  // Default to today when no date is given — a logged win happened now.
+  const occurredAt = optionalDate(formData, "occurredAt") ?? new Date();
+  const introductionId = optionalText(formData, "introductionId");
+
+  const ok = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (company == null) return false;
+
+    // A linked intro must be visible in this tenant (RLS) — a foreign id is
+    // refused rather than silently stored as a dangling reference.
+    if (introductionId !== null) {
+      const intro = await tx.introduction.findUnique({
+        where: { id: introductionId },
+        select: { id: true },
+      });
+      if (intro == null) return false;
+    }
+
+    await tx.valueDelivered.create({
+      data: {
+        orgId,
+        companyId,
+        kind,
+        introductionId,
+        amount,
+        summary,
+        outcome,
+        occurredAt,
+      },
+    });
+    return true;
+  });
+
+  if (!ok) throw new Error("company not found in this organization");
+  revalidateValue(companyId);
+}
+
+export async function deleteValueDelivered(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const valueId = String(formData.get("valueId") ?? "").trim();
+  if (!valueId) throw new Error("missing value entry");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const entry = await tx.valueDelivered.findUnique({
+      where: { id: valueId },
+      select: { companyId: true },
+    });
+    if (entry == null) return null;
+    await tx.valueDelivered.delete({ where: { id: valueId } });
+    return entry.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("value entry not found in this organization");
+  revalidateValue(companyId);
 }
 
 // Lifecycle shortcut — the Convert / Archive / Restore buttons. A no-op status

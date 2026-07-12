@@ -30,6 +30,7 @@ import { IntroSuggestions } from "./_intros";
 import { DetailsCard } from "./_details-card";
 import { ContactsCard } from "./_contacts-card";
 import { ProposalsCard } from "./_proposals-card";
+import { ValueDeliveredCard } from "./_value-delivered-card";
 import { confirmIntroAdvance } from "./actions";
 
 // Company detail — the central relationship's home. Surfaces the company's own
@@ -72,6 +73,7 @@ export default async function CompanyDetailPage({
     meetings,
     actionItems,
     statusChanges,
+    valueDelivered,
   } = await withOrg(ctx.orgId, async (tx) => {
       const company = await tx.company.findUnique({
         where: { id },
@@ -95,6 +97,7 @@ export default async function CompanyDetailPage({
           meetings: [],
           actionItems: [],
           statusChanges: [],
+          valueDelivered: [],
         };
       }
       const contactIds = company.contacts.map((c) => c.id);
@@ -171,6 +174,26 @@ export default async function CompanyDetailPage({
           date: a.occurredAt,
         };
       });
+      // Per-company Value Delivered ledger (P4). The linked introduction's
+      // parties label the entry so a win reads back to its source intro.
+      const valueDelivered = await tx.valueDelivered.findMany({
+        where: { companyId: id },
+        orderBy: { occurredAt: "desc" },
+        select: {
+          id: true,
+          kind: true,
+          amount: true,
+          summary: true,
+          outcome: true,
+          occurredAt: true,
+          introduction: {
+            select: {
+              partyA: { select: { name: true } },
+              partyB: { select: { name: true } },
+            },
+          },
+        },
+      });
       return {
         company,
         introductions,
@@ -178,6 +201,7 @@ export default async function CompanyDetailPage({
         meetings,
         actionItems,
         statusChanges,
+        valueDelivered,
       };
     });
 
@@ -389,6 +413,25 @@ export default async function CompanyDetailPage({
           sentOn: p.sentOn,
           driveUrl: p.driveUrl,
           notes: p.notes,
+        }))}
+      />
+
+      <ValueDeliveredCard
+        companyId={company.id}
+        entries={valueDelivered.map((v) => ({
+          id: v.id,
+          kind: v.kind,
+          amount: v.amount == null ? null : Number(v.amount),
+          summary: v.summary,
+          outcome: v.outcome,
+          occurredAt: v.occurredAt,
+          introLabel: v.introduction
+            ? `${v.introduction.partyA.name} ↔ ${v.introduction.partyB.name}`
+            : null,
+        }))}
+        intros={introductions.map((i) => ({
+          id: i.id,
+          label: `${i.partyA.name} ↔ ${i.partyB.name}`,
         }))}
       />
 

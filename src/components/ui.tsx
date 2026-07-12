@@ -208,6 +208,12 @@ const statusStyles: Record<string, string> = {
   negotiating: "bg-amber-bg text-amber-ink",
   won: "bg-teal-bg text-teal-ink",
   lost: "bg-red-bg text-red-ink",
+  // Value Delivered kinds (see @/lib/value-kinds). "other" reuses the neutral
+  // surface-3 default; the rest are toned by kind.
+  introduction: "border border-gold-line bg-gold-bg text-gold-ink",
+  service: "bg-slate-bg text-slate-ink",
+  grant: "bg-teal-bg text-teal-ink",
+  event: "bg-purple-bg text-purple-ink",
   // Project pipeline stages (see @/lib/project-stages).
   concept: "bg-slate-bg text-slate-ink",
   pre_development: "bg-purple-bg text-purple-ink",

@@ -62,6 +62,7 @@ model Organization {
   events                 Event[]
   eventInvitees          EventInvitee[]
   membershipProposals    MembershipProposal[]
+  valueDelivered         ValueDelivered[]
   introDismissals        IntroDismissal[]
   unmatchedAttendees     UnmatchedAttendee[]
   aiRateLimit            AiRateLimit?
@@ -167,6 +168,7 @@ model Company {
   emailMessages         EmailMessage[]
   activities            Activity[]
   membershipProposals   MembershipProposal[]
+  valueDelivered        ValueDelivered[]
   dismissalsAsFocus     IntroDismissal[]     @relation("IntroDismissalFocus")
   dismissalsAsCandidate IntroDismissal[]     @relation("IntroDismissalCandidate")
 
@@ -319,10 +321,11 @@ model Introduction {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  partyA       Contact      @relation("IntroPartyA", fields: [partyAContactId], references: [id])
-  partyB       Contact      @relation("IntroPartyB", fields: [partyBContactId], references: [id])
-  project      Project?     @relation(fields: [projectId], references: [id])
+  organization   Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  partyA         Contact          @relation("IntroPartyA", fields: [partyAContactId], references: [id])
+  partyB         Contact          @relation("IntroPartyB", fields: [partyBContactId], references: [id])
+  project        Project?         @relation(fields: [projectId], references: [id])
+  valueDelivered ValueDelivered[]
 
   @@index([orgId])
   @@index([partyAContactId])
@@ -686,6 +689,43 @@ model MembershipProposal {
   @@index([companyId])
   @@index([orgId, status])
   @@map("membership_proposals")
+}
+
+/// Per-company Value Delivered ledger (slice P4). Records a concrete win the
+/// network delivered to a member — an introduction that bore fruit, a grant, a
+/// service rendered — with the outcome and the derived dollar value. Powers the
+/// profile's Value Delivered card (per-member drill-down of value created); the
+/// org-wide rollup stays on the Value Created page. Tenant-scoped: org_id + RLS.
+model ValueDelivered {
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
+  /// introduction, service, grant, event, other (see @/lib/value-kinds)
+  kind           String   @default("other")
+  /// Optional link to the introduction that drove this value. Plain nullable FK
+  /// (introductions has no composite (id, org_id) target) — app-layer re-checked
+  /// inside withOrg on write, like introductions.projectId.
+  introductionId String?  @map("introduction_id") @db.Uuid
+  /// Derived dollar value; null when the value is non-monetary.
+  amount         Decimal? @db.Decimal(14, 2)
+  /// What was delivered.
+  summary        String   @default("")
+  /// The result / outcome.
+  outcome        String   @default("")
+  occurredAt     DateTime @map("occurred_at") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FK includes org_id so the recipient company must be in the SAME org.
+  company      Company       @relation(fields: [companyId, orgId], references: [id, orgId], onDelete: Cascade)
+  introduction Introduction? @relation(fields: [introductionId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([companyId])
+  @@index([orgId, occurredAt(sort: Desc)])
+  @@map("value_delivered")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
