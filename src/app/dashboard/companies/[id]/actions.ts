@@ -10,6 +10,7 @@ import { isIntroStage } from "@/lib/intro-stages";
 import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES, isCompanyStatus } from "@/lib/company-statuses";
 import { ORG_TAGS } from "@/lib/tags";
+import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { generateCompanyBrief } from "@/lib/anthropic";
 import { generateMeetingPrep, type PrepCommitment } from "@/lib/meeting-prep";
 import {
@@ -783,6 +784,9 @@ export async function updateCompany(formData: FormData): Promise<void> {
   const industry = String(formData.get("industry") ?? "").trim();
   if (!industry) throw new Error("industry is required");
 
+  // annualValue is a Decimal column, so it bypasses optionalInt (which truncates
+  // to an integer): keep the raw string and let Prisma coerce, defaulting empty
+  // to "0" since the column is non-null.
   const annualValueRaw = String(formData.get("annualValue") ?? "").trim();
   const annualValue = annualValueRaw === "" ? "0" : annualValueRaw;
   if (Number.isNaN(Number(annualValue)))
@@ -842,7 +846,7 @@ export async function updateCompany(formData: FormData): Promise<void> {
           orgId,
           companyId,
           actorUserId: userId,
-          type: "status_changed",
+          type: ACTIVITY_STATUS_CHANGED,
           payload: { from: current.status, to: status },
           occurredAt: new Date(),
         },
@@ -884,7 +888,7 @@ export async function changeCompanyStatus(formData: FormData): Promise<void> {
         orgId,
         companyId,
         actorUserId: userId,
-        type: "status_changed",
+        type: ACTIVITY_STATUS_CHANGED,
         payload: { from: current.status, to: status },
         occurredAt: new Date(),
       },

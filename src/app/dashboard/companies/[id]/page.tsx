@@ -7,6 +7,7 @@ import { getTagDef } from "@/lib/tags";
 import { getIntroStageDef } from "@/lib/intro-stages";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { buildRelationshipTimeline } from "@/lib/relationship-timeline";
+import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import {
   Button,
   Card,
@@ -143,9 +144,10 @@ export default async function CompanyDetailPage({
       // Lifecycle transitions for the relationship timeline (P1). Ordered here
       // for the query; buildRelationshipTimeline re-sorts the merged set.
       const activities = await tx.activity.findMany({
-        where: { companyId: id, type: "status_changed" },
+        where: { companyId: id, type: ACTIVITY_STATUS_CHANGED },
         orderBy: { occurredAt: "desc" },
         select: { payload: true, occurredAt: true },
+        take: 50,
       });
       const statusChanges = activities.map((a) => {
         const p = (a.payload ?? {}) as { from?: string | null; to?: string };
