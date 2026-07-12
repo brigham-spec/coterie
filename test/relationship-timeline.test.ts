@@ -106,7 +106,7 @@ describe("buildRelationshipTimeline", () => {
     expect(commitment.detail).toBe("We delivered");
   });
 
-  test("breaks same-timestamp ties by stable kind rank (meeting<intro<commitment<added)", () => {
+  test("breaks same-timestamp ties by stable kind rank (meeting<intro<commitment<status<added)", () => {
     const same = new Date("2026-01-01T00:00:00Z");
     const out = buildRelationshipTimeline({
       addedAt: same,
@@ -115,12 +115,43 @@ describe("buildRelationshipTimeline", () => {
         { partyAName: "A", partyBName: "B", status: "made", outcome: null, date: same },
       ],
       commitments: [{ text: "C", owedByUs: true, date: same }],
+      statusChanges: [{ from: "prospect", to: "member", date: same }],
     });
     expect(out.map((e) => e.kind)).toEqual([
       "meeting",
       "intro",
       "commitment",
+      "status",
       "added",
     ]);
+  });
+
+  test("shapes a status change's label and detail, humanizing the status", () => {
+    const out = buildRelationshipTimeline({
+      ...base,
+      statusChanges: [
+        {
+          from: "prospect",
+          to: "strategic_partner",
+          date: new Date("2026-04-01T00:00:00Z"),
+        },
+      ],
+    });
+    const status = out.find((e) => e.kind === "status")!;
+    expect(status).toMatchObject({
+      label: "Became strategic partner",
+      detail: "Status · from prospect",
+    });
+  });
+
+  test("labels an initial status (no 'from') without the transition detail", () => {
+    const out = buildRelationshipTimeline({
+      ...base,
+      statusChanges: [
+        { from: null, to: "member", date: new Date("2026-04-01T00:00:00Z") },
+      ],
+    });
+    const status = out.find((e) => e.kind === "status")!;
+    expect(status).toMatchObject({ label: "Became member", detail: "Status" });
   });
 });

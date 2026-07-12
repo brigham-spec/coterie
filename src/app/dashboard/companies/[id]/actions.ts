@@ -8,7 +8,8 @@ import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
 import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
-import { NETWORK_STATUSES } from "@/lib/company-statuses";
+import { NETWORK_STATUSES, isCompanyStatus } from "@/lib/company-statuses";
+import { ORG_TAGS } from "@/lib/tags";
 import { generateCompanyBrief } from "@/lib/anthropic";
 import { generateMeetingPrep, type PrepCommitment } from "@/lib/meeting-prep";
 import {
@@ -744,4 +745,156 @@ export async function applyMeetingEnrichment(
   revalidatePath("/dashboard/companies");
   revalidatePath("/dashboard");
   return { status: "applied", count };
+}
+
+// ── P1: editable profile + lifecycle ────────────────────────────────────────
+// The company detail page is otherwise read-only; these two actions make the
+// Details card editable and drive the prospect → member → former lifecycle.
+// Both re-load the company inside withOrg, so a forged/foreign id resolves null
+// and RLS refuses the write. Every status transition is recorded as an Activity
+// so the relationship timeline reflects the lifecycle (mirrors the prototype's
+// statusHistory). org_id and the acting user are stamped from the resolved
+// context, never from client input.
+
+const ORG_TAG_KEYS = new Set(ORG_TAGS.map((t) => t.key));
+
+function optionalText(formData: FormData, key: string): string | null {
+  const v = String(formData.get(key) ?? "").trim();
+  return v === "" ? null : v;
+}
+
+function optionalInt(formData: FormData, key: string): number | null {
+  const v = String(formData.get(key) ?? "").trim();
+  if (v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) throw new Error(`${key} must be a number`);
+  return Math.trunc(n);
+}
+
+export async function updateCompany(formData: FormData): Promise<void> {
+  const { orgId, userId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) throw new Error("missing company");
+
+  const status = String(formData.get("status") ?? "").trim();
+  if (!isCompanyStatus(status)) throw new Error("invalid company status");
+
+  const industry = String(formData.get("industry") ?? "").trim();
+  if (!industry) throw new Error("industry is required");
+
+  const annualValueRaw = String(formData.get("annualValue") ?? "").trim();
+  const annualValue = annualValueRaw === "" ? "0" : annualValueRaw;
+  if (Number.isNaN(Number(annualValue)))
+    throw new Error("annualValue must be a number");
+
+  const temperature = optionalInt(formData, "temperature");
+  if (temperature !== null && (temperature < 0 || temperature > 100))
+    throw new Error("temperature must be between 0 and 100");
+
+  // counties: comma-separated free text → trimmed, de-duped list (prototype UX).
+  const counties = [
+    ...new Set(
+      String(formData.get("counties") ?? "")
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean),
+    ),
+  ];
+
+  // networkTags: checkbox group → only known org-tag keys survive.
+  const networkTags = formData
+    .getAll("networkTags")
+    .map((t) => String(t))
+    .filter((t) => ORG_TAG_KEYS.has(t));
+
+  const data = {
+    status,
+    industry,
+    annualValue,
+    tier: optionalText(formData, "tier"),
+    temperature,
+    website: optionalText(formData, "website"),
+    emailDomain: optionalText(formData, "emailDomain"),
+    source: optionalText(formData, "source"),
+    memberSince: optionalInt(formData, "memberSince"),
+    dealSize: optionalText(formData, "dealSize"),
+    lookingFor: optionalText(formData, "lookingFor"),
+    canOffer: optionalText(formData, "canOffer"),
+    agencyContacts: optionalText(formData, "agencyContacts"),
+    notes: String(formData.get("notes") ?? "").trim(),
+    counties,
+    networkTags,
+  };
+
+  const ok = await withOrg(orgId, async (tx) => {
+    const current = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { status: true },
+    });
+    if (current == null) return false;
+
+    await tx.company.update({ where: { id: companyId }, data });
+
+    if (current.status !== status) {
+      await tx.activity.create({
+        data: {
+          orgId,
+          companyId,
+          actorUserId: userId,
+          type: "status_changed",
+          payload: { from: current.status, to: status },
+          occurredAt: new Date(),
+        },
+      });
+    }
+    return true;
+  });
+
+  if (!ok) throw new Error("company not found in this organization");
+
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/companies");
+  revalidatePath("/dashboard");
+}
+
+// Lifecycle shortcut — the Convert / Archive / Restore buttons. A no-op status
+// (already there) still returns ok so the button is idempotent; only a real
+// transition writes the Activity.
+export async function changeCompanyStatus(formData: FormData): Promise<void> {
+  const { orgId, userId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) throw new Error("missing company");
+
+  const status = String(formData.get("status") ?? "").trim();
+  if (!isCompanyStatus(status)) throw new Error("invalid company status");
+
+  const ok = await withOrg(orgId, async (tx) => {
+    const current = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { status: true },
+    });
+    if (current == null) return false;
+    if (current.status === status) return true;
+
+    await tx.company.update({ where: { id: companyId }, data: { status } });
+    await tx.activity.create({
+      data: {
+        orgId,
+        companyId,
+        actorUserId: userId,
+        type: "status_changed",
+        payload: { from: current.status, to: status },
+        occurredAt: new Date(),
+      },
+    });
+    return true;
+  });
+
+  if (!ok) throw new Error("company not found in this organization");
+
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/companies");
+  revalidatePath("/dashboard");
 }

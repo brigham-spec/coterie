@@ -6,7 +6,12 @@
 // each source inside its withOrg pass; this only sorts and labels, so it's fully
 // unit-testable.
 
-export type TimelineKind = "added" | "meeting" | "intro" | "commitment";
+export type TimelineKind =
+  | "added"
+  | "meeting"
+  | "intro"
+  | "commitment"
+  | "status";
 
 export type TimelineEntry = {
   kind: TimelineKind;
@@ -32,13 +37,25 @@ export type TimelineCommitment = {
   date: Date;
 };
 
+// A lifecycle transition (prospect → member → former). `from` is null for the
+// very first status a company was created with.
+export type TimelineStatusChange = {
+  from: string | null;
+  to: string;
+  date: Date;
+};
+
 export type TimelineInput = {
   // When the company entered the CRM — the anchor at the bottom of the history.
   addedAt: Date;
   meetings: TimelineMeeting[];
   intros: TimelineIntro[];
   commitments: TimelineCommitment[];
+  // Lifecycle transitions, from Activity rows. Optional: many companies have none.
+  statusChanges?: TimelineStatusChange[];
 };
+
+const humanize = (v: string): string => v.replace(/_/g, " ");
 
 /// PURE: merge every relationship fact into a single list sorted newest-first.
 /// Ties break by a stable kind order so the output is deterministic. The "added"
@@ -80,12 +97,22 @@ export function buildRelationshipTimeline(input: TimelineInput): TimelineEntry[]
     });
   }
 
+  for (const s of input.statusChanges ?? []) {
+    entries.push({
+      kind: "status",
+      date: s.date,
+      label: `Became ${humanize(s.to)}`,
+      detail: s.from ? `Status · from ${humanize(s.from)}` : "Status",
+    });
+  }
+
   // Stable order among same-timestamp entries so tests and UI don't flicker.
   const kindRank: Record<TimelineKind, number> = {
     meeting: 0,
     intro: 1,
     commitment: 2,
-    added: 3,
+    status: 3,
+    added: 4,
   };
 
   return entries.sort((a, b) => {

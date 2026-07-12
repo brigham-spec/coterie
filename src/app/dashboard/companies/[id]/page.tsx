@@ -25,6 +25,7 @@ import { MeetingPrep } from "./_meeting-prep";
 import { EnrichFromMeetings } from "./_enrich-meetings";
 import { WhyJoin } from "./_why-join";
 import { IntroSuggestions } from "./_intros";
+import { DetailsCard } from "./_details-card";
 import { confirmIntroAdvance } from "./actions";
 
 // Company detail — the central relationship's home. Surfaces the company's own
@@ -33,12 +34,6 @@ import { confirmIntroAdvance } from "./actions";
 // the relations we already have: contacts at the firm and the projects it
 // participates in. Read withOrg-scoped; a lookup that returns null (not ours,
 // or absent) is a 404.
-
-const currency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
 
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -56,8 +51,14 @@ export default async function CompanyDetailPage({
 
   // Reads share one pooled connection inside the tx, so run them in sequence —
   // concurrent queries on a single pg client serialize and can stall the load.
-  const { company, introductions, pendingIntros, meetings, actionItems } =
-    await withOrg(ctx.orgId, async (tx) => {
+  const {
+    company,
+    introductions,
+    pendingIntros,
+    meetings,
+    actionItems,
+    statusChanges,
+  } = await withOrg(ctx.orgId, async (tx) => {
       const company = await tx.company.findUnique({
         where: { id },
         include: {
@@ -78,6 +79,7 @@ export default async function CompanyDetailPage({
           pendingIntros: [],
           meetings: [],
           actionItems: [],
+          statusChanges: [],
         };
       }
       const contactIds = company.contacts.map((c) => c.id);
@@ -138,7 +140,29 @@ export default async function CompanyDetailPage({
             },
           })
         : [];
-      return { company, introductions, pendingIntros, meetings, actionItems };
+      // Lifecycle transitions for the relationship timeline (P1). Ordered here
+      // for the query; buildRelationshipTimeline re-sorts the merged set.
+      const activities = await tx.activity.findMany({
+        where: { companyId: id, type: "status_changed" },
+        orderBy: { occurredAt: "desc" },
+        select: { payload: true, occurredAt: true },
+      });
+      const statusChanges = activities.map((a) => {
+        const p = (a.payload ?? {}) as { from?: string | null; to?: string };
+        return {
+          from: p.from ?? null,
+          to: String(p.to ?? ""),
+          date: a.occurredAt,
+        };
+      });
+      return {
+        company,
+        introductions,
+        pendingIntros,
+        meetings,
+        actionItems,
+        statusChanges,
+      };
     });
 
   if (company == null) notFound();
@@ -165,38 +189,8 @@ export default async function CompanyDetailPage({
         owedByUs: a.ownerUserId != null,
         date: a.updatedAt,
       })),
+    statusChanges,
   });
-
-  const facts: Array<{ label: string; value: string | null }> = [
-    { label: "Industry", value: company.industry },
-    { label: "Tier", value: company.tier },
-    { label: "Owner", value: company.owner?.name ?? null },
-    { label: "Annual value", value: currency.format(Number(company.annualValue)) },
-    {
-      label: "Temperature",
-      value: company.temperature == null ? null : `${company.temperature}%`,
-    },
-    {
-      label: "Member since",
-      value: company.memberSince == null ? null : String(company.memberSince),
-    },
-    { label: "Deal size", value: company.dealSize },
-    {
-      label: "Counties",
-      value: company.counties.length ? company.counties.join(", ") : null,
-    },
-    { label: "Source", value: company.source },
-    { label: "Email domain", value: company.emailDomain },
-    { label: "Website", value: company.website },
-  ];
-
-  // Free-text relationship narrative — drives the intro engine downstream.
-  const narrative: Array<{ label: string; value: string | null }> = [
-    { label: "Looking for", value: company.lookingFor },
-    { label: "Can offer", value: company.canOffer },
-    { label: "Agency contacts", value: company.agencyContacts },
-  ];
-  const hasNarrative = narrative.some((n) => n.value);
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -228,43 +222,28 @@ export default async function CompanyDetailPage({
         ) : null}
       </div>
 
-      <Card>
-        <CardHeader title="Details" />
-        <dl className="grid grid-cols-2 gap-4 p-4 text-xs sm:grid-cols-3">
-          {facts.map((f) => (
-            <div key={f.label}>
-              <dt className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
-                {f.label}
-              </dt>
-              <dd className="text-ink">{f.value ?? "—"}</dd>
-            </div>
-          ))}
-        </dl>
-        {hasNarrative ? (
-          <div className="grid gap-4 border-t border-line px-4 py-3 sm:grid-cols-3">
-            {narrative.map((n) =>
-              n.value ? (
-                <div key={n.label}>
-                  <div className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
-                    {n.label}
-                  </div>
-                  <p className="text-xs whitespace-pre-wrap text-ink-2">
-                    {n.value}
-                  </p>
-                </div>
-              ) : null,
-            )}
-          </div>
-        ) : null}
-        {company.notes ? (
-          <div className="border-t border-line px-4 py-3">
-            <div className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
-              Notes
-            </div>
-            <p className="text-xs whitespace-pre-wrap text-ink-2">{company.notes}</p>
-          </div>
-        ) : null}
-      </Card>
+      <DetailsCard
+        company={{
+          id: company.id,
+          status: company.status,
+          tier: company.tier,
+          temperature: company.temperature,
+          industry: company.industry,
+          annualValue: Number(company.annualValue),
+          website: company.website,
+          emailDomain: company.emailDomain,
+          source: company.source,
+          memberSince: company.memberSince,
+          dealSize: company.dealSize,
+          counties: company.counties,
+          lookingFor: company.lookingFor,
+          canOffer: company.canOffer,
+          agencyContacts: company.agencyContacts,
+          notes: company.notes,
+          networkTags: company.networkTags,
+          ownerName: company.owner?.name ?? null,
+        }}
+      />
 
       {company.status === "prospect" ? (
         <WhyJoin companyId={company.id} />
