@@ -35,6 +35,21 @@ const staffUser = {
   name: "Staff Member",
 };
 
+// A second member of orgA — a valid owner target. And an outsider user that
+// exists but belongs only to orgB, so it must be refused as an orgA owner.
+const secondStaffUser = {
+  id: randomUUID(),
+  clerkId: `clerk_${randomUUID()}`,
+  email: `staff2_${randomUUID()}@example.com`,
+  name: "Second Staffer",
+};
+const outsiderUser = {
+  id: randomUUID(),
+  clerkId: `clerk_${randomUUID()}`,
+  email: `outsider_${randomUUID()}@example.com`,
+  name: "Outsider",
+};
+
 const companyAId = randomUUID();
 const statusCompanyId = randomUUID();
 const companyBId = randomUUID();
@@ -46,9 +61,16 @@ beforeAll(async () => {
       { ...orgB, orgType: "chamber" },
     ],
   });
-  await prisma.user.create({ data: staffUser });
-  await prisma.orgMembership.create({
-    data: { orgId: orgA.id, userId: staffUser.id, role: "staff" },
+  await prisma.user.createMany({
+    data: [staffUser, secondStaffUser, outsiderUser],
+  });
+  await prisma.orgMembership.createMany({
+    data: [
+      { orgId: orgA.id, userId: staffUser.id, role: "staff" },
+      { orgId: orgA.id, userId: secondStaffUser.id, role: "staff" },
+      // outsiderUser is a member of orgB only — never of orgA.
+      { orgId: orgB.id, userId: outsiderUser.id, role: "staff" },
+    ],
   });
 
   await withOrg(orgA.id, async (tx) => {
@@ -95,7 +117,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.organization.deleteMany({ where: { id: { in: [orgA.id, orgB.id] } } });
-  await prisma.user.delete({ where: { id: staffUser.id } });
+  await prisma.user.deleteMany({
+    where: { id: { in: [staffUser.id, secondStaffUser.id, outsiderUser.id] } },
+  });
   await prisma.$disconnect();
 });
 
@@ -240,6 +264,59 @@ describe("updateCompany", () => {
     );
     expect(companyB!.status).toBe("member");
     expect(companyB!.industry).toBe("Legal");
+  });
+});
+
+describe("updateCompany owner reassignment", () => {
+  function ownerFd(ownerUserId: string): FormData {
+    return fd({
+      companyId: companyAId,
+      status: "member",
+      industry: "Advanced Manufacturing",
+      annualValue: "25000",
+      ownerUserId,
+    });
+  }
+
+  test("assigns an owner who is a member of this org", async () => {
+    await updateCompany(ownerFd(secondStaffUser.id));
+
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: companyAId },
+        select: { ownerUserId: true },
+      }),
+    );
+    expect(company!.ownerUserId).toBe(secondStaffUser.id);
+  });
+
+  test("clears the owner when left blank", async () => {
+    await updateCompany(ownerFd(""));
+
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: companyAId },
+        select: { ownerUserId: true },
+      }),
+    );
+    expect(company!.ownerUserId).toBeNull();
+  });
+
+  test("refuses a user who is not a member of this org and leaves the owner untouched", async () => {
+    // Seed a known owner so we can prove the rejected write changed nothing.
+    await updateCompany(ownerFd(secondStaffUser.id));
+
+    await expect(updateCompany(ownerFd(outsiderUser.id))).rejects.toThrow(
+      "owner is not a member of this organization",
+    );
+
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: companyAId },
+        select: { ownerUserId: true },
+      }),
+    );
+    expect(company!.ownerUserId).toBe(secondStaffUser.id);
   });
 });
 

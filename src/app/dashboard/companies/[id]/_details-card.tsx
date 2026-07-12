@@ -47,13 +47,28 @@ export type DetailsCompany = {
   notes: string;
   networkTags: string[];
   ownerName: string | null;
+  ownerUserId: string | null;
 };
 
-export function DetailsCard({ company }: { company: DetailsCompany }) {
+export type StaffOption = { id: string; name: string };
+
+export function DetailsCard({
+  company,
+  staff,
+}: {
+  company: DetailsCompany;
+  staff: StaffOption[];
+}) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
-    return <EditForm company={company} onDone={() => setEditing(false)} />;
+    return (
+      <EditForm
+        company={company}
+        staff={staff}
+        onDone={() => setEditing(false)}
+      />
+    );
   }
   return <ReadView company={company} onEdit={() => setEditing(true)} />;
 }
@@ -184,9 +199,11 @@ function LifecycleBar({ company }: { company: DetailsCompany }) {
 
 function EditForm({
   company,
+  staff,
   onDone,
 }: {
   company: DetailsCompany;
+  staff: StaffOption[];
   onDone: () => void;
 }) {
   const tagSet = new Set(company.networkTags);
@@ -222,6 +239,18 @@ function EditForm({
             required
           />
           <Field name="tier" label="Tier" defaultValue={company.tier ?? ""} />
+          <SelectField
+            name="ownerUserId"
+            label="Owner"
+            defaultValue={company.ownerUserId ?? ""}
+          >
+            <option value="">Unassigned</option>
+            {staff.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </SelectField>
           <Field
             name="annualValue"
             label="Annual value ($)"

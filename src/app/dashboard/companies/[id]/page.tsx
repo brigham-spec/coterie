@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireOrgContext } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
 import { getIntroStageDef } from "@/lib/intro-stages";
@@ -51,6 +52,16 @@ export default async function CompanyDetailPage({
 }) {
   const { id } = await params;
   const ctx = await requireOrgContext();
+
+  // Org staff for the owner picker. org_memberships carry no RLS, so this is a
+  // plain query scoped explicitly by orgId — it lists only this tenant's users.
+  const staff = (
+    await prisma.orgMembership.findMany({
+      where: { orgId: ctx.orgId },
+      orderBy: { user: { name: "asc" } },
+      select: { user: { select: { id: true, name: true } } },
+    })
+  ).map((m) => ({ id: m.user.id, name: m.user.name }));
 
   // Reads share one pooled connection inside the tx, so run them in sequence —
   // concurrent queries on a single pg client serialize and can stall the load.
@@ -247,7 +258,9 @@ export default async function CompanyDetailPage({
           notes: company.notes,
           networkTags: company.networkTags,
           ownerName: company.owner?.name ?? null,
+          ownerUserId: company.ownerUserId,
         }}
+        staff={staff}
       />
 
       {company.status === "prospect" ? (

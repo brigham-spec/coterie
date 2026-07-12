@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
@@ -813,6 +814,20 @@ export async function updateCompany(formData: FormData): Promise<void> {
     .map((t) => String(t))
     .filter((t) => ORG_TAG_KEYS.has(t));
 
+  // ownerUserId: the account owner (this org's staff member responsible for the
+  // relationship). Blank clears it; a set value must be a member of THIS org.
+  // org_memberships carry no RLS, so scope the check explicitly by (org, user) —
+  // this refuses assigning a company to another tenant's user.
+  const ownerUserId = optionalText(formData, "ownerUserId");
+  if (ownerUserId !== null) {
+    const membership = await prisma.orgMembership.findUnique({
+      where: { orgId_userId: { orgId, userId: ownerUserId } },
+      select: { userId: true },
+    });
+    if (membership == null)
+      throw new Error("owner is not a member of this organization");
+  }
+
   const data = {
     status,
     industry,
@@ -830,6 +845,7 @@ export async function updateCompany(formData: FormData): Promise<void> {
     notes: String(formData.get("notes") ?? "").trim(),
     counties,
     networkTags,
+    ownerUserId,
   };
 
   const ok = await withOrg(orgId, async (tx) => {
