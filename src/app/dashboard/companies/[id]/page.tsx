@@ -28,6 +28,7 @@ import { WhyJoin } from "./_why-join";
 import { IntroSuggestions } from "./_intros";
 import { DetailsCard } from "./_details-card";
 import { ContactsCard } from "./_contacts-card";
+import { ProposalsCard } from "./_proposals-card";
 import { confirmIntroAdvance } from "./actions";
 
 // Company detail — the central relationship's home. Surfaces the company's own
@@ -66,6 +67,7 @@ export default async function CompanyDetailPage({
         include: {
           owner: { select: { name: true } },
           contacts: { orderBy: { name: "asc" } },
+          membershipProposals: { orderBy: { createdAt: "desc" } },
           projectLinks: {
             include: {
               project: { select: { id: true, name: true, stage: true } },
@@ -361,6 +363,19 @@ export default async function CompanyDetailPage({
           notes: c.notes,
           tags: c.tags,
           isPrimary: c.isPrimary,
+        }))}
+      />
+
+      <ProposalsCard
+        companyId={company.id}
+        proposals={company.membershipProposals.map((p) => ({
+          id: p.id,
+          tier: p.tier,
+          amount: p.amount == null ? null : Number(p.amount),
+          status: p.status,
+          sentOn: p.sentOn,
+          driveUrl: p.driveUrl,
+          notes: p.notes,
         }))}
       />
 

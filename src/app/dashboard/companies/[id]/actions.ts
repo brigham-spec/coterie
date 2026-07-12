@@ -9,6 +9,7 @@ import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
 import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES, isCompanyStatus } from "@/lib/company-statuses";
+import { isProposalStatus } from "@/lib/proposal-statuses";
 import { ORG_TAGS } from "@/lib/tags";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { generateCompanyBrief } from "@/lib/anthropic";
@@ -860,6 +861,148 @@ export async function updateCompany(formData: FormData): Promise<void> {
   revalidatePath(`/dashboard/companies/${companyId}`);
   revalidatePath("/dashboard/companies");
   revalidatePath("/dashboard");
+}
+
+// ── P3: membership proposals ledger ─────────────────────────────────────────
+// The profile's Proposals card logs and tracks membership offers. Each write
+// re-loads the parent company (create) or the proposal itself (update/delete)
+// inside withOrg — a foreign id resolves null under RLS and the write is refused.
+// Winning a proposal nudges a prospect into membership (mirrors the prototype),
+// journaled as a status_changed Activity so the timeline reflects the close.
+
+function revalidateProposal(companyId: string): void {
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/revenue");
+  revalidatePath("/dashboard");
+}
+
+// Optional YYYY-MM-DD date field → Date or null.
+function optionalDate(formData: FormData, key: string): Date | null {
+  const v = String(formData.get(key) ?? "").trim();
+  if (v === "") return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) throw new Error(`${key} is not a valid date`);
+  return d;
+}
+
+// Optional decimal money field → string (Prisma coerces) or null.
+function optionalAmount(formData: FormData, key: string): string | null {
+  const v = String(formData.get(key) ?? "").trim();
+  if (v === "") return null;
+  if (Number.isNaN(Number(v))) throw new Error(`${key} must be a number`);
+  return v;
+}
+
+export async function createProposal(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) throw new Error("missing company");
+
+  const tier = String(formData.get("tier") ?? "").trim();
+  if (!tier) throw new Error("tier is required");
+
+  const status = String(formData.get("status") ?? "draft").trim() || "draft";
+  if (!isProposalStatus(status)) throw new Error("invalid proposal status");
+
+  const amount = optionalAmount(formData, "amount");
+  const sentOn = optionalDate(formData, "sentOn");
+  const driveUrl = optionalText(formData, "driveUrl");
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  const ok = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (company == null) return false;
+
+    await tx.membershipProposal.create({
+      data: { orgId, companyId, tier, amount, status, sentOn, driveUrl, notes },
+    });
+    return true;
+  });
+
+  if (!ok) throw new Error("company not found in this organization");
+  revalidateProposal(companyId);
+}
+
+// Move a proposal along the pipeline. Any status change also stamps
+// lastFollowUpAt so the follow-up nudge treats it as freshly touched. Winning a
+// proposal converts a prospect company to member (journaled) — a member/partner/
+// former company is left as-is.
+export async function updateProposalStatus(formData: FormData): Promise<void> {
+  const { orgId, userId } = await requireOrgContext();
+
+  const proposalId = String(formData.get("proposalId") ?? "").trim();
+  if (!proposalId) throw new Error("missing proposal");
+
+  const status = String(formData.get("status") ?? "").trim();
+  if (!isProposalStatus(status)) throw new Error("invalid proposal status");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const proposal = await tx.membershipProposal.findUnique({
+      where: { id: proposalId },
+      select: { companyId: true },
+    });
+    if (proposal == null) return null;
+
+    await tx.membershipProposal.update({
+      where: { id: proposalId },
+      data: { status, lastFollowUpAt: new Date() },
+    });
+
+    // Winning nudges a prospect into membership, journaled like the lifecycle
+    // shortcut so the relationship timeline reflects the close.
+    if (status === "won") {
+      const company = await tx.company.findUnique({
+        where: { id: proposal.companyId },
+        select: { status: true },
+      });
+      if (company != null && company.status === "prospect") {
+        await tx.company.update({
+          where: { id: proposal.companyId },
+          data: { status: "member" },
+        });
+        await tx.activity.create({
+          data: {
+            orgId,
+            companyId: proposal.companyId,
+            actorUserId: userId,
+            type: ACTIVITY_STATUS_CHANGED,
+            payload: { from: "prospect", to: "member" },
+            occurredAt: new Date(),
+          },
+        });
+      }
+    }
+    return proposal.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("proposal not found in this organization");
+  revalidateProposal(companyId);
+}
+
+export async function deleteProposal(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const proposalId = String(formData.get("proposalId") ?? "").trim();
+  if (!proposalId) throw new Error("missing proposal");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const proposal = await tx.membershipProposal.findUnique({
+      where: { id: proposalId },
+      select: { companyId: true },
+    });
+    if (proposal == null) return null;
+    await tx.membershipProposal.delete({ where: { id: proposalId } });
+    return proposal.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("proposal not found in this organization");
+  revalidateProposal(companyId);
 }
 
 // Lifecycle shortcut — the Convert / Archive / Restore buttons. A no-op status

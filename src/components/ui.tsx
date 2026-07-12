@@ -198,12 +198,16 @@ const statusStyles: Record<string, string> = {
   member: "bg-teal-bg text-teal-ink",
   strategic_partner: "border border-gold-line bg-gold-bg text-gold-ink",
   former: "bg-surface-3 text-ink-2",
-  // Invoice billing (derived — see @/lib/invoice-status).
+  // Invoice billing (derived — see @/lib/invoice-status) + membership proposals
+  // (see @/lib/proposal-statuses); draft/sent are shared with billing above.
   draft: "bg-surface-3 text-ink-2",
   sent: "bg-slate-bg text-slate-ink",
   partial: "bg-amber-bg text-amber-ink",
   paid: "bg-teal-bg text-teal-ink",
   void: "bg-red-bg text-red-ink",
+  negotiating: "bg-amber-bg text-amber-ink",
+  won: "bg-teal-bg text-teal-ink",
+  lost: "bg-red-bg text-red-ink",
   // Project pipeline stages (see @/lib/project-stages).
   concept: "bg-slate-bg text-slate-ink",
   pre_development: "bg-purple-bg text-purple-ink",
