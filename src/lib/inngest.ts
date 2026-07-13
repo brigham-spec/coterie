@@ -3,6 +3,7 @@ import { Inngest, NonRetriableError } from "inngest";
 import { getCredential } from "@/lib/integrations";
 import { listTranscripts } from "@/lib/fireflies";
 import { matchAttendee, CONFIRM_THRESHOLD } from "@/lib/attendee-match";
+import { httpUrlOrNull } from "@/lib/form-fields";
 import {
   normalizeEmail,
   extractDomain,
@@ -85,7 +86,9 @@ export const syncFireflies = inngest.createFunction(
         transcript.date != null ? new Date(transcript.date) : new Date();
       const title = (transcript.title ?? "").trim() || "Untitled meeting";
       const summary = transcript.summary?.overview ?? null;
-      const transcriptUrl = transcript.transcript_url ?? null;
+      // Rendered as a clickable href on the meetings page — only http(s) links
+      // survive so a non-http scheme can't become a stored-XSS vector.
+      const transcriptUrl = httpUrlOrNull(transcript.transcript_url);
 
       const meeting = await withOrg(orgId, (tx) =>
         tx.meeting.upsert({

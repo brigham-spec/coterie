@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { requiredDate } from "@/lib/form-fields";
 
 // Invoices — the billing ledger (build item 7, spec §3.12). org_id is stamped
 // from context; RLS WITH CHECK backstops the write. companyId is a PLAIN FK, and
@@ -18,8 +19,6 @@ export async function createInvoice(formData: FormData): Promise<void> {
   const companyId = String(formData.get("companyId") ?? "").trim();
   const invoiceNumber = String(formData.get("invoiceNumber") ?? "").trim();
   const amountRaw = String(formData.get("amount") ?? "").trim();
-  const issuedOnRaw = String(formData.get("issuedOn") ?? "").trim();
-  const dueOnRaw = String(formData.get("dueOn") ?? "").trim();
   const status = String(formData.get("status") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
 
@@ -27,8 +26,8 @@ export async function createInvoice(formData: FormData): Promise<void> {
   if (!invoiceNumber) throw new Error("an invoice number is required");
   if (amountRaw === "" || Number.isNaN(Number(amountRaw)) || Number(amountRaw) < 0)
     throw new Error("amount must be a non-negative number");
-  if (!issuedOnRaw || !dueOnRaw)
-    throw new Error("issued and due dates are required");
+  const issuedOn = requiredDate(formData, "issuedOn");
+  const dueOn = requiredDate(formData, "dueOn");
 
   await withOrg(orgId, async (tx) => {
     const company = await tx.company.findUnique({ where: { id: companyId } });
@@ -40,8 +39,8 @@ export async function createInvoice(formData: FormData): Promise<void> {
         companyId,
         invoiceNumber,
         amount: amountRaw,
-        issuedOn: new Date(issuedOnRaw),
-        dueOn: new Date(dueOnRaw),
+        issuedOn,
+        dueOn,
         status: status === "sent" ? "sent" : "draft",
         notes,
       },
@@ -61,13 +60,12 @@ export async function recordPayment(formData: FormData): Promise<void> {
 
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
   const amountRaw = String(formData.get("amount") ?? "").trim();
-  const receivedOnRaw = String(formData.get("receivedOn") ?? "").trim();
   const method = String(formData.get("method") ?? "").trim();
 
   if (!invoiceId) throw new Error("an invoice is required");
   if (amountRaw === "" || Number.isNaN(Number(amountRaw)) || Number(amountRaw) <= 0)
     throw new Error("amount must be a positive number");
-  if (!receivedOnRaw) throw new Error("a received date is required");
+  const receivedOn = requiredDate(formData, "receivedOn");
 
   await withOrg(orgId, async (tx) => {
     const invoice = await tx.invoice.findUnique({ where: { id: invoiceId } });
@@ -78,7 +76,7 @@ export async function recordPayment(formData: FormData): Promise<void> {
         orgId,
         invoiceId,
         amount: amountRaw,
-        receivedOn: new Date(receivedOnRaw),
+        receivedOn,
         method: method === "" ? null : method,
       },
     });

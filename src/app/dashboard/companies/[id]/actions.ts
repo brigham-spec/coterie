@@ -12,6 +12,7 @@ import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES, isCompanyStatus } from "@/lib/company-statuses";
 import { isProposalStatus } from "@/lib/proposal-statuses";
 import { isValueKind } from "@/lib/value-kinds";
+import { optionalDate, optionalUrl, assertHttpUrl } from "@/lib/form-fields";
 import { ORG_TAGS } from "@/lib/tags";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { generateCompanyBrief } from "@/lib/anthropic";
@@ -796,8 +797,8 @@ export async function updateCompany(formData: FormData): Promise<void> {
   // to "0" since the column is non-null.
   const annualValueRaw = String(formData.get("annualValue") ?? "").trim();
   const annualValue = annualValueRaw === "" ? "0" : annualValueRaw;
-  if (Number.isNaN(Number(annualValue)))
-    throw new Error("annualValue must be a number");
+  if (Number.isNaN(Number(annualValue)) || Number(annualValue) < 0)
+    throw new Error("annualValue must be a non-negative number");
 
   const temperature = optionalInt(formData, "temperature");
   if (temperature !== null && (temperature < 0 || temperature > 100))
@@ -897,15 +898,6 @@ function revalidateProposal(companyId: string): void {
   revalidatePath("/dashboard");
 }
 
-// Optional YYYY-MM-DD date field → Date or null.
-function optionalDate(formData: FormData, key: string): Date | null {
-  const v = String(formData.get(key) ?? "").trim();
-  if (v === "") return null;
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) throw new Error(`${key} is not a valid date`);
-  return d;
-}
-
 // Optional decimal money field → string (Prisma coerces) or null.
 function optionalAmount(formData: FormData, key: string): string | null {
   const v = String(formData.get(key) ?? "").trim();
@@ -928,7 +920,7 @@ export async function createProposal(formData: FormData): Promise<void> {
 
   const amount = optionalAmount(formData, "amount");
   const sentOn = optionalDate(formData, "sentOn");
-  const driveUrl = optionalText(formData, "driveUrl");
+  const driveUrl = optionalUrl(formData, "driveUrl");
   const notes = String(formData.get("notes") ?? "").trim();
 
   const ok = await withOrg(orgId, async (tx) => {
@@ -1132,7 +1124,7 @@ function readAffiliationFields(formData: FormData) {
   return {
     role: str("role"),
     industry: str("industry"),
-    website: str("website"),
+    website: assertHttpUrl(str("website"), "website"),
     canOffer: str("canOffer"),
     lookingFor: str("lookingFor"),
     counties: str("counties"),
@@ -1515,9 +1507,11 @@ export async function addRelationshipAsProspect(
       where: { id: rel.companyId },
       select: { name: true },
     });
-    const note =
-      `From partner network: ${partner?.name ?? ""}`.trim() +
-      (rel.relevance ? ` — ${rel.relevance}` : "");
+    const partnerName = partner?.name.trim() ?? "";
+    const relevanceSuffix = rel.relevance ? ` — ${rel.relevance}` : "";
+    const note = partnerName
+      ? `From partner network: ${partnerName}${relevanceSuffix}`
+      : `From partner network${relevanceSuffix}`;
 
     const prospect = await tx.company.create({
       data: {

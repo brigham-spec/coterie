@@ -118,6 +118,10 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
   const summary = String(formData.get("summary") ?? "").trim();
   if (companyId === "" || headline === "" || url === "")
     return { status: "error", message: "Missing article details." };
+  // The URL is later rendered as a clickable href, so only http(s) links may be
+  // stored — a `javascript:`/`data:` scheme would be a stored-XSS vector.
+  if (!/^https?:\/\//i.test(url))
+    return { status: "error", message: "Article link must be an http(s) URL." };
 
   try {
     return await withOrg(orgId, async (tx) => {

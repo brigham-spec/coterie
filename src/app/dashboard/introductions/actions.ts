@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
+import { optionalDate } from "@/lib/form-fields";
 import { isIntroStage } from "@/lib/intro-stages";
 import {
   generateIntroEmail,
@@ -30,7 +31,7 @@ export async function createIntroduction(formData: FormData): Promise<void> {
   const partyBContactId = String(formData.get("partyBContactId") ?? "").trim();
   const status = String(formData.get("status") ?? "").trim();
   const projectId = String(formData.get("projectId") ?? "").trim();
-  const madeOnRaw = String(formData.get("madeOn") ?? "").trim();
+  const madeOn = optionalDate(formData, "madeOn");
 
   if (!partyAContactId || !partyBContactId)
     throw new Error("both parties are required");
@@ -58,7 +59,7 @@ export async function createIntroduction(formData: FormData): Promise<void> {
         status,
         source: "manual",
         projectId: projectId === "" ? null : projectId,
-        madeOn: madeOnRaw === "" ? null : new Date(madeOnRaw),
+        madeOn,
       },
     });
   });

@@ -32,10 +32,13 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+// Pin UTC: sentOn is a @db.Date (UTC-midnight), and fixing the zone keeps the
+// server and client renders identical so React doesn't flag a hydration mismatch.
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
   year: "numeric",
+  timeZone: "UTC",
 });
 
 export type ProposalRow = {

@@ -8,7 +8,18 @@ missing, to catch anything else the numbered 11.x roadmap under-counted.
 
 Legend: ✅ built · ⚠️ partial · ❌ missing
 
-**Last reconciled 2026-07-10 (v3).** Since v2, four more items flipped ❌→✅:
+**Last reconciled 2026-07-13 (v5).** Since v3, the profile-parity arc (P1 editable
+profile/lifecycle, P2 contact CRUD, P3 membership-proposals ledger + owner
+reassignment, P4 per-company Value Delivered + member Value Report, P5 Affiliations,
+P6a Partnership + AI Synthesize, P6b Their Network / key relationships) all shipped
+to prod. The AI-helper catalog (§3) is now **20 of 22** built — every micro-helper
+except Commitments scan and Analyze PDF landed and is wired into the UI (AI news scan,
+event outreach draft, draft intro email, enrich-from-meetings, batch profile synth,
+why-join pitch, LinkedIn parse, quick capture). Only two AI helpers remain: the
+Commitments scan button (overlaps the persisted `ActionItem` pipeline — marginal) and
+Analyze PDF (live-verify only). All parity-relevant work is deployed.
+
+**v3 (2026-07-10).** Since v2, four more items flipped ❌→✅:
 Commitments view (`commitments.ts` + `/dashboard/commitments`, slice 11.10),
 Daily Focus synthesis (`daily-focus.ts`/`daily-focus-synthesis.ts` + dashboard
 card), and the Proposal follow-up nudge (`proposal-nudge.ts` + dashboard banner).
@@ -67,7 +78,7 @@ The prototype dashboard renders seven notification cards. Built 7 of 7:
 
 ## 3. AI features (catalog cross-check)
 
-Pattern for all = server-only lib + `"use server"` action + client. Built 11 of ~22:
+Pattern for all = server-only lib + `"use server"` action + client. Built 20 of 22:
 
 | AI feature | Ref | Status |
 |---|---|---|
@@ -79,19 +90,19 @@ Pattern for all = server-only lib + `"use server"` action + client. Built 11 of 
 | Open-roles scan | `13714` | ✅ (`open-roles-engine.ts`) |
 | Prospect finder (recs + targeted) | `14961` | ✅ (`prospect-finder.ts`) |
 | Meeting action-item extraction | `5344` | ✅ (`action-items.ts`) |
-| Pre-meeting brief | `17267` | ✅ (`meeting-prep.ts`) |
+| Pre-meeting brief | `17267` | ✅ (`meeting-prep.ts` + `companies/[id]/_meeting-prep.tsx`) |
 | Event suggestions | `7174` | ✅ (`event-ideas.ts`) |
 | **Daily Focus synthesis** | `19498` | ✅ (`daily-focus-synthesis.ts`) |
-| **AI news scan** (+web) | `10475` | ❌ (11.9) |
-| **Commitments scan** | `11513` | ❌ (meetings-scan button; view shipped without it) |
-| **Event outreach email draft** | `7773` | ❌ |
-| **Draft intro email** | `16432` | ❌ (engine emits `draftHook` text, no email action) |
-| Enrich-from-meetings | `8066` | ❌ |
-| Batch profile synth | `6077` | ❌ |
-| Analyze PDF | `9120` | ❌ |
-| Why-join pitch | `1489` | ❌ |
-| LinkedIn parse | `16497` | ❌ |
-| Quick capture | `16619` | ❌ |
+| **AI news scan** (+web) | `10475` | ✅ (`news-scan.ts` + `/dashboard/news`, 11.9) |
+| **Commitments scan** | `11513` | ❌ (meetings-scan button; view shipped without it — overlaps the persisted `ActionItem` extraction pipeline) |
+| **Event outreach email draft** | `7773` | ✅ (`event-outreach.ts` + `events/actions.ts`) |
+| **Draft intro email** | `16432` | ✅ (`intro-email.ts` + `introductions/_intro-email.tsx`) |
+| Enrich-from-meetings | `8066` | ✅ (`enrich-meetings.ts` + `companies/[id]/_enrich-meetings.tsx`) |
+| Batch profile synth | `6077` | ✅ (`profile-synth.ts` + `companies/_batch-synth.tsx`) |
+| Analyze PDF | `9120` | ❌ (needs file-upload action + Anthropic document block; live-verify only) |
+| Why-join pitch | `1489` | ✅ (`why-join.ts` + `companies/[id]/_why-join.tsx`) |
+| LinkedIn parse | `16497` | ✅ (`linkedin-parse.ts` + `companies/_linkedin-parse.tsx`) |
+| Quick capture | `16619` | ✅ (`quick-capture.ts` + `dashboard/_quick-capture.tsx`) |
 | Email paste / Zapier email | `16740` | ✅ (11.12) |
 
 ## 4. Data model
@@ -123,12 +134,17 @@ Fireflies sync-status card, Enrichment nudge all shipped; all 7 cards built).
 **C. Major views — ✅ COMPLETE:**
 - 11.9 News ✅ · 11.10 Commitments ✅ · 11.11 Rich Revenue ✅ · 11.12 Email ✅.
 
-**D. Events polish:** only the outreach email draft remains (suggestions shipped).
+**D. Events polish — ✅ COMPLETE** (outreach email draft + suggestions both shipped).
 
-**E. Micro AI helpers** (low priority, ship opportunistically): why-join pitch,
-LinkedIn parse, quick capture, PDF analyze, enrich-from-meetings, draft-intro-email,
-batch profile synth.
+**E. Micro AI helpers — ✅ MOSTLY COMPLETE.** Shipped since v3: why-join pitch,
+LinkedIn parse, quick capture, enrich-from-meetings, draft-intro-email, batch profile
+synth (all wired into the UI). Remaining: **Analyze PDF** (needs a file-upload action +
+Anthropic document block; live-verify only) and the **Commitments scan** button (marginal
+— overlaps the persisted `ActionItem` extraction pipeline that already backs the
+Commitments page).
 
 **F. Known divergence to decide (not a build task yet):** member Director/Advisory
 tier data was lost in migration — either backfill tier from a source of truth or
 formally accept status-segments as the model.
+
+**G. Company-profile parity arc — ✅ COMPLETE** (P1–P6, see `profile-parity-gap.md`).

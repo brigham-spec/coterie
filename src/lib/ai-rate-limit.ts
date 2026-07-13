@@ -94,6 +94,13 @@ export async function enforceAiRateLimit(
   caps: RateCaps = DEFAULT_CAPS,
 ): Promise<void> {
   const decision = await withOrg(orgId, async (tx) => {
+    // Serialize concurrent charges for THIS org so the read-modify-write below is
+    // atomic. Without it two simultaneous calls both read the same count and both
+    // write count+1, silently losing an increment and letting the cap be exceeded.
+    // A transaction-scoped advisory lock keyed on the org auto-releases at commit
+    // and never blocks a different tenant (distinct key → no contention).
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`;
+
     const row = await tx.aiRateLimit.findUnique({ where: { orgId } });
     const current: RateWindows | null = row
       ? {

@@ -85,7 +85,7 @@ describe("parseRoleCandidates", () => {
     expect(out[0].companyId).toBe("a");
   });
 
-  it("clamps score into 2..5 and trims whyFit / concern", () => {
+  it("clamps score into 3..5 and trims whyFit / concern", () => {
     const raw = JSON.stringify([
       { companyId: "a", companyName: "A", score: 9, whyFit: "  good  ", concern: " gap " },
     ]);
@@ -93,6 +93,14 @@ describe("parseRoleCandidates", () => {
     expect(c.score).toBe(5);
     expect(c.whyFit).toBe("good");
     expect(c.concern).toBe("gap");
+  });
+
+  it("floors a below-vocabulary score to the weakest real rung (3)", () => {
+    const raw = JSON.stringify([
+      { companyId: "a", companyName: "A", score: 1, whyFit: "x", concern: "" },
+    ]);
+    const [c] = parseRoleCandidates(raw, valid);
+    expect(c.score).toBe(3);
   });
 
   it("drops entries with a non-finite score", () => {

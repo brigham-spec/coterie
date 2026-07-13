@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
+import { optionalDate } from "@/lib/form-fields";
 import { getDiscipline, companyMatchesDiscipline } from "@/lib/disciplines";
 import { prioritizeCandidates, type IntroCompanyProfile } from "@/lib/intro-engine";
 import { introProfileInclude, toIntroProfile } from "@/lib/intro-profile";
@@ -27,7 +28,7 @@ export async function createProject(formData: FormData): Promise<void> {
   const type = String(formData.get("type") ?? "").trim();
   const county = String(formData.get("county") ?? "").trim();
   const unitsRaw = String(formData.get("units") ?? "").trim();
-  const targetDateRaw = String(formData.get("targetDate") ?? "").trim();
+  const targetDate = optionalDate(formData, "targetDate");
   const valueRaw = String(formData.get("value") ?? "").trim();
 
   if (!name || !stage) throw new Error("name and stage are required");
@@ -47,7 +48,7 @@ export async function createProject(formData: FormData): Promise<void> {
         type: type === "" ? null : type,
         county: county === "" ? null : county,
         units: unitsRaw === "" ? null : Number(unitsRaw),
-        targetDate: targetDateRaw === "" ? null : new Date(targetDateRaw),
+        targetDate,
         value: valueRaw === "" ? null : valueRaw,
       },
     }),

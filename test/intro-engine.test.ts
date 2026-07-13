@@ -112,7 +112,7 @@ describe("parseSuggestions", () => {
     expect(out[0].companyId).toBe("a");
   });
 
-  it("clamps score into 2..5 and trims talking points to 3", () => {
+  it("clamps score into 3..5 and trims talking points to 3", () => {
     const raw = JSON.stringify([
       {
         companyId: "a",
@@ -124,6 +124,12 @@ describe("parseSuggestions", () => {
     const [s] = parseSuggestions(raw, valid);
     expect(s.score).toBe(5);
     expect(s.talkingPoints).toEqual(["1", "2", "3"]);
+  });
+
+  it("floors a below-vocabulary score to the weakest real rung (3)", () => {
+    const raw = JSON.stringify([{ companyId: "a", companyName: "A", score: 1 }]);
+    const [s] = parseSuggestions(raw, valid);
+    expect(s.score).toBe(3);
   });
 
   it("returns [] for non-JSON, non-array, or absent-array input", () => {
@@ -201,13 +207,19 @@ describe("parseProactivePairings", () => {
     expect(out[0].score).toBe(5);
   });
 
-  it("clamps score and trims talking points to 3", () => {
+  it("clamps score into 3..5 and trims talking points to 3", () => {
     const raw = JSON.stringify([
       pairing({ score: 9, talkingPoints: ["1", " ", "2", "3", "4"] }),
     ]);
     const [p] = parseProactivePairings(raw, valid, noExclusions);
     expect(p.score).toBe(5);
     expect(p.talkingPoints).toEqual(["1", "2", "3"]);
+  });
+
+  it("floors a below-vocabulary score to the weakest real rung (3)", () => {
+    const raw = JSON.stringify([pairing({ score: 1 })]);
+    const [p] = parseProactivePairings(raw, valid, noExclusions);
+    expect(p.score).toBe(3);
   });
 
   it("returns [] for non-JSON or non-array input", () => {

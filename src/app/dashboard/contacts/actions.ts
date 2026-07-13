@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { optionalUrl } from "@/lib/form-fields";
 import { CONTACT_TAGS } from "@/lib/tags";
 
 // Contact mutations for the tenant's companies. org_id is stamped from context
@@ -58,7 +59,7 @@ export async function createContact(formData: FormData): Promise<void> {
         title: optionalText(formData, "title"),
         email: optionalText(formData, "email"),
         phone: optionalText(formData, "phone"),
-        linkedin: optionalText(formData, "linkedin"),
+        linkedin: optionalUrl(formData, "linkedin"),
         notes: String(formData.get("notes") ?? "").trim(),
         tags: readContactTags(formData),
       },
@@ -90,7 +91,7 @@ export async function updateContact(formData: FormData): Promise<void> {
         title: optionalText(formData, "title"),
         email: optionalText(formData, "email"),
         phone: optionalText(formData, "phone"),
-        linkedin: optionalText(formData, "linkedin"),
+        linkedin: optionalUrl(formData, "linkedin"),
         notes: String(formData.get("notes") ?? "").trim(),
         tags: readContactTags(formData),
       },

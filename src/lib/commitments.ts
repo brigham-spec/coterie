@@ -41,10 +41,12 @@ export interface CommitmentBoard {
   overdueCount: number;
 }
 
-/// Whole days from `now` until `due` (negative once past due). Both are floored
-/// to midnight so "due today" is 0 regardless of the time component.
+/// Whole days from `now` until `due` (negative once past due). Both anchors are
+/// floored to their UTC calendar day so "due today" is 0 regardless of the time
+/// component. `dueDate` is a @db.Date (UTC-midnight instant), so `now` must be
+/// read on the same UTC calendar or the delta skews by a day in non-UTC zones.
 function dueInDays(now: Date, due: Date): number {
-  const startNow = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const startNow = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const startDue = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
   return Math.round((startDue - startNow) / DAY);
 }

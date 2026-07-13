@@ -49,7 +49,9 @@ function coerceRoleCandidate(
 
   const scoreRaw = typeof o.score === "number" ? o.score : Number(o.score);
   if (!Number.isFinite(scoreRaw)) return null;
-  const score = Math.max(2, Math.min(5, Math.round(scoreRaw)));
+  // Vocabulary is 5/4/3 = Strong / Good / Possible; floor to 3 so a model that
+  // returns a lower number lands on the weakest real rung, never an unlabeled 2.
+  const score = Math.max(3, Math.min(5, Math.round(scoreRaw)));
 
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 

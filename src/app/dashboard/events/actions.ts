@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
+import { optionalDate } from "@/lib/form-fields";
 import { getTagDef } from "@/lib/tags";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
 import {
@@ -41,7 +42,7 @@ export async function createEvent(formData: FormData): Promise<void> {
   const name = String(formData.get("name") ?? "").trim();
   const type = String(formData.get("type") ?? "").trim();
   const stage = String(formData.get("stage") ?? "").trim();
-  const dateRaw = String(formData.get("date") ?? "").trim();
+  const date = optionalDate(formData, "date");
   const venue = String(formData.get("venue") ?? "").trim();
   const theme = String(formData.get("theme") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
@@ -62,7 +63,7 @@ export async function createEvent(formData: FormData): Promise<void> {
         name,
         type,
         stage: stage === "" ? "planning" : stage,
-        date: dateRaw === "" ? null : new Date(dateRaw),
+        date,
         venue: venue === "" ? null : venue,
         theme: theme === "" ? null : theme,
         description,

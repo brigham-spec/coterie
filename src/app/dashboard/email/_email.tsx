@@ -50,12 +50,15 @@ export function EmailSync({
   const [showGuide, setShowGuide] = useState(false);
   const [state, formAction, isPending] = useActionState(syncEmails, initialState);
 
+  // Pin UTC so the server-rendered label and the client hydration match (an
+  // unpinned zone renders differently on each side and trips a hydration warning).
   const lastSyncLabel = lastSync
     ? new Date(lastSync).toLocaleString("en-US", {
         month: "short",
         day: "numeric",
         hour: "numeric",
         minute: "2-digit",
+        timeZone: "UTC",
       })
     : null;
 

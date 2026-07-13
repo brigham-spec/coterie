@@ -64,8 +64,11 @@ export interface FocusItem {
 
 // Whole-day difference between two instants, computed from calendar days so a due
 // date at any wall-clock time compares cleanly against "today". Negative = past.
+// Both anchors are read on the UTC calendar: commitment `dueDate` is a @db.Date
+// (UTC-midnight), so reading `now` on the same UTC calendar keeps the delta from
+// skewing by a day in non-UTC zones.
 function daysBetween(now: Date, then: Date): number {
-  const startNow = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const startNow = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const startThen = Date.UTC(
     then.getUTCFullYear(),
     then.getUTCMonth(),

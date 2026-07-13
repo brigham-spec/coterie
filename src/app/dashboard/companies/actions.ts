@@ -23,8 +23,8 @@ export async function createCompany(formData: FormData): Promise<void> {
   if (!isCompanyStatus(status)) throw new Error("invalid company status");
 
   const annualValue = annualValueRaw === "" ? "0" : annualValueRaw;
-  if (Number.isNaN(Number(annualValue)))
-    throw new Error("annualValue must be a number");
+  if (Number.isNaN(Number(annualValue)) || Number(annualValue) < 0)
+    throw new Error("annualValue must be a non-negative number");
 
   await withOrg(orgId, (tx) =>
     tx.company.create({ data: { orgId, name, status, industry, annualValue } }),

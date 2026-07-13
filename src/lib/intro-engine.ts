@@ -110,7 +110,9 @@ function coerceSuggestion(
 
   const scoreRaw = typeof o.score === "number" ? o.score : Number(o.score);
   if (!Number.isFinite(scoreRaw)) return null;
-  const score = Math.max(2, Math.min(5, Math.round(scoreRaw)));
+  // The prompt asks for candidates scoring 3 or higher, so clamp the weakest
+  // real rung to 3 — never surface a 1-2 the vocabulary doesn't define.
+  const score = Math.max(3, Math.min(5, Math.round(scoreRaw)));
 
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const talkingPoints = Array.isArray(o.talkingPoints)
@@ -231,7 +233,9 @@ function coercePairing(
 
   const scoreRaw = typeof o.score === "number" ? o.score : Number(o.score);
   if (!Number.isFinite(scoreRaw)) return null;
-  const score = Math.max(2, Math.min(5, Math.round(scoreRaw)));
+  // The prompt asks for candidates scoring 3 or higher, so clamp the weakest
+  // real rung to 3 — never surface a 1-2 the vocabulary doesn't define.
+  const score = Math.max(3, Math.min(5, Math.round(scoreRaw)));
 
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const talkingPoints = Array.isArray(o.talkingPoints)

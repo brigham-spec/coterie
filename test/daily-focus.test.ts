@@ -11,9 +11,11 @@ import {
 // in, future bounded by the horizon edge), undated-commitment exclusion, past-event
 // exclusion, events-before-commitments ordering, and the numbered context block.
 
-// Fixed "now" = 2026-07-09 (local midnight; its y/m/d is TZ-stable). Dates are
-// built in UTC so dueInDays = (day - 9) is deterministic across zones.
-const now = new Date(2026, 6, 9);
+// Fixed "now" = 2026-07-09. Both `now` and the item dates are built on the UTC
+// calendar so dueInDays = (day - 9) is deterministic in EVERY timezone —
+// including positive-offset zones where a local-midnight `now` would roll back a
+// UTC day and skew the horizon windowing (the off-by-one this suite guards).
+const now = new Date(Date.UTC(2026, 6, 9));
 const on = (day: number) => new Date(Date.UTC(2026, 6, day));
 
 function commitment(over: Partial<FocusCommitment>): FocusCommitment {

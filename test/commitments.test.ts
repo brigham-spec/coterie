@@ -5,9 +5,11 @@ import { buildCommitmentBoard, type RawCommitment } from "@/lib/commitments";
 // Pure-logic tests for the commitments board shaping: side classification,
 // most-overdue-first ordering, undated-last, and the open/overdue counts.
 
-// Fixed "now" = 2026-07-09 (local midnight; its y/m/d is TZ-stable). Due dates
-// are built in UTC so dueInDays = (dueDay - 9) is deterministic across zones.
-const now = new Date(2026, 6, 9);
+// Fixed "now" = 2026-07-09. Both `now` and the due dates are built on the UTC
+// calendar so dueInDays = (dueDay - 9) is deterministic in EVERY timezone —
+// including positive-offset zones where a local-midnight `now` would roll back a
+// UTC day and skew the delta (the off-by-one this suite guards against).
+const now = new Date(Date.UTC(2026, 6, 9));
 const dueOn = (day: number) => new Date(Date.UTC(2026, 6, day));
 
 function staffItem(over: Partial<RawCommitment>): RawCommitment {
