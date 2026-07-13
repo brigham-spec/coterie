@@ -31,6 +31,7 @@ import { DetailsCard } from "./_details-card";
 import { ContactsCard } from "./_contacts-card";
 import { AffiliationsCard } from "./_affiliations-card";
 import { PartnershipCard } from "./_partnership-card";
+import { TheirNetworkCard } from "./_their-network-card";
 import { ProposalsCard } from "./_proposals-card";
 import { ValueDeliveredCard } from "./_value-delivered-card";
 import { confirmIntroAdvance } from "./actions";
@@ -76,6 +77,7 @@ export default async function CompanyDetailPage({
     actionItems,
     statusChanges,
     valueDelivered,
+    linkOptions,
   } = await withOrg(ctx.orgId, async (tx) => {
       const company = await tx.company.findUnique({
         where: { id },
@@ -83,6 +85,10 @@ export default async function CompanyDetailPage({
           owner: { select: { name: true } },
           contacts: { orderBy: { name: "asc" } },
           affiliations: { orderBy: { createdAt: "asc" } },
+          keyRelationships: {
+            orderBy: { createdAt: "asc" },
+            include: { linkedCompany: { select: { id: true, name: true } } },
+          },
           membershipProposals: { orderBy: { createdAt: "desc" } },
           projectLinks: {
             include: {
@@ -101,8 +107,20 @@ export default async function CompanyDetailPage({
           actionItems: [],
           statusChanges: [],
           valueDelivered: [],
+          linkOptions: [],
         };
       }
+      // Companies offered in Their Network's link dropdown — only needed (and
+      // loaded) for strategic partners. This tenant's companies minus the
+      // partner itself and closed-out (former) relationships.
+      const linkOptions =
+        company.status === "strategic_partner"
+          ? await tx.company.findMany({
+              where: { id: { not: id }, status: { not: "former" } },
+              orderBy: { name: "asc" },
+              select: { id: true, name: true },
+            })
+          : [];
       const contactIds = company.contacts.map((c) => c.id);
       // This company's introductions from the ledger, either party. madeOn/
       // createdAt drive the relationship-timeline date.
@@ -205,6 +223,7 @@ export default async function CompanyDetailPage({
         actionItems,
         statusChanges,
         valueDelivered,
+        linkOptions,
       };
     });
 
@@ -422,16 +441,33 @@ export default async function CompanyDetailPage({
       />
 
       {company.status === "strategic_partner" ? (
-        <PartnershipCard
-          companyId={company.id}
-          partnership={{
-            website: company.website ?? "",
-            partnerCategory: company.partnerCategory,
-            partnerRelationship: company.partnerRelationship,
-            partnerSummary: company.partnerSummary,
-            collaborationNotes: company.collaborationNotes,
-          }}
-        />
+        <>
+          <PartnershipCard
+            companyId={company.id}
+            partnership={{
+              website: company.website ?? "",
+              partnerCategory: company.partnerCategory,
+              partnerRelationship: company.partnerRelationship,
+              partnerSummary: company.partnerSummary,
+              collaborationNotes: company.collaborationNotes,
+            }}
+          />
+          <TheirNetworkCard
+            companyId={company.id}
+            relationships={company.keyRelationships.map((r) => ({
+              id: r.id,
+              name: r.name,
+              title: r.title,
+              org: r.org,
+              relevance: r.relevance,
+              email: r.email,
+              phone: r.phone,
+              linkedCompanyId: r.linkedCompanyId,
+              linkedCompanyName: r.linkedCompany?.name ?? null,
+            }))}
+            linkOptions={linkOptions}
+          />
+        </>
       ) : null}
 
       <ProposalsCard

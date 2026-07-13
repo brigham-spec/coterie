@@ -1340,6 +1340,220 @@ export async function synthesizePartner(
   }
 }
 
+// ── P6b: Their Network — key relationships (strategic_partner companies only) ─
+// The key external contacts a partner can connect the network with. Flat text
+// sub-records of the owning partner, each optionally linked to a CRM company (or
+// promoted into one as a fresh prospect). Every write re-loads the parent partner
+// (create) or the relationship itself (update/delete/link) inside withOrg — a
+// foreign id resolves null under RLS and the write is refused.
+
+function revalidateKeyRel(companyId: string): void {
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard");
+}
+
+// The flat text fields the Their-Network editor writes (all optional, default "").
+function readKeyRelFields(formData: FormData) {
+  const str = (key: string) => String(formData.get(key) ?? "").trim().slice(0, 500);
+  return {
+    title: str("title"),
+    org: str("org"),
+    relevance: str("relevance"),
+    email: str("email"),
+    phone: str("phone"),
+  };
+}
+
+export async function addKeyRelationship(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) throw new Error("missing company");
+
+  const name = String(formData.get("name") ?? "").trim().slice(0, 200);
+  if (!name) throw new Error("contact name is required");
+
+  const ok = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { status: true },
+    });
+    if (company == null) return false;
+    if (company.status !== "strategic_partner")
+      throw new Error("key relationships apply only to strategic partners");
+    await tx.keyRelationship.create({
+      data: { orgId, companyId, name, ...readKeyRelFields(formData) },
+    });
+    return true;
+  });
+
+  if (!ok) throw new Error("company not found in this organization");
+  revalidateKeyRel(companyId);
+}
+
+export async function updateKeyRelationship(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const relationshipId = String(formData.get("relationshipId") ?? "").trim();
+  if (!relationshipId) throw new Error("missing relationship");
+
+  const name = String(formData.get("name") ?? "").trim().slice(0, 200);
+  if (!name) throw new Error("contact name is required");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const existing = await tx.keyRelationship.findUnique({
+      where: { id: relationshipId },
+      select: { companyId: true },
+    });
+    if (existing == null) return null;
+    await tx.keyRelationship.update({
+      where: { id: relationshipId },
+      data: { name, ...readKeyRelFields(formData) },
+    });
+    return existing.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("relationship not found in this organization");
+  revalidateKeyRel(companyId);
+}
+
+export async function deleteKeyRelationship(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const relationshipId = String(formData.get("relationshipId") ?? "").trim();
+  if (!relationshipId) throw new Error("missing relationship");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const existing = await tx.keyRelationship.findUnique({
+      where: { id: relationshipId },
+      select: { companyId: true },
+    });
+    if (existing == null) return null;
+    await tx.keyRelationship.delete({ where: { id: relationshipId } });
+    return existing.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("relationship not found in this organization");
+  revalidateKeyRel(companyId);
+}
+
+// Link a relationship to an existing CRM company. Both the relationship and the
+// target company are re-verified inside withOrg, so a foreign id on either side
+// resolves null under RLS and the link is refused (same-org enforced). A blank
+// linkedCompanyId clears the link.
+export async function linkKeyRelationship(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const relationshipId = String(formData.get("relationshipId") ?? "").trim();
+  if (!relationshipId) throw new Error("missing relationship");
+
+  const linkedCompanyId = String(formData.get("linkedCompanyId") ?? "").trim();
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const existing = await tx.keyRelationship.findUnique({
+      where: { id: relationshipId },
+      select: { companyId: true },
+    });
+    if (existing == null) return null;
+
+    if (linkedCompanyId !== "") {
+      const target = await tx.company.findUnique({
+        where: { id: linkedCompanyId },
+        select: { id: true },
+      });
+      if (target == null)
+        throw new Error("linked company not found in this organization");
+    }
+
+    await tx.keyRelationship.update({
+      where: { id: relationshipId },
+      data: { linkedCompanyId: linkedCompanyId === "" ? null : linkedCompanyId },
+    });
+    return existing.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("relationship not found in this organization");
+  revalidateKeyRel(companyId);
+}
+
+// Promote a relationship into the CRM as a fresh prospect company (+ primary
+// contact), then link it back. Mirrors the prototype's "+ Add to CRM". The new
+// company's name is the contact's org (falling back to their own name); the
+// person becomes the primary contact. All inside one withOrg tx.
+export async function addRelationshipAsProspect(
+  formData: FormData,
+): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const relationshipId = String(formData.get("relationshipId") ?? "").trim();
+  if (!relationshipId) throw new Error("missing relationship");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const rel = await tx.keyRelationship.findUnique({
+      where: { id: relationshipId },
+      select: {
+        companyId: true,
+        name: true,
+        title: true,
+        org: true,
+        email: true,
+        phone: true,
+        relevance: true,
+        linkedCompanyId: true,
+      },
+    });
+    if (rel == null) return null;
+    if (!rel.name.trim())
+      throw new Error("add a contact name before adding to the CRM");
+    if (rel.linkedCompanyId != null)
+      throw new Error("this relationship is already linked to a company");
+
+    const partner = await tx.company.findUnique({
+      where: { id: rel.companyId },
+      select: { name: true },
+    });
+    const note =
+      `From partner network: ${partner?.name ?? ""}`.trim() +
+      (rel.relevance ? ` — ${rel.relevance}` : "");
+
+    const prospect = await tx.company.create({
+      data: {
+        orgId,
+        name: rel.org.trim() || rel.name.trim(),
+        status: "prospect",
+        industry: "",
+        annualValue: "0",
+        notes: note,
+        contacts: {
+          create: {
+            orgId,
+            name: rel.name.trim(),
+            title: rel.title || null,
+            email: rel.email || null,
+            phone: rel.phone || null,
+            isPrimary: true,
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    await tx.keyRelationship.update({
+      where: { id: relationshipId },
+      data: { linkedCompanyId: prospect.id },
+    });
+    return rel.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("relationship not found in this organization");
+  revalidateKeyRel(companyId);
+  revalidatePath("/dashboard/companies");
+}
+
 // Lifecycle shortcut — the Convert / Archive / Restore buttons. A no-op status
 // (already there) still returns ok so the button is idempotent; only a real
 // transition writes the Activity.
