@@ -1111,6 +1111,106 @@ export async function deleteValueDelivered(formData: FormData): Promise<void> {
   revalidateValue(companyId);
 }
 
+// ── P5: additional companies / affiliations ─────────────────────────────────
+// The other hats a member wears — a separate business line with its own offer/
+// need profile. Flat text sub-records of the member. Each write re-loads the
+// parent company (create) or the affiliation itself (update/delete) inside
+// withOrg — a foreign id resolves null under RLS and the write is refused.
+
+function revalidateAffiliation(companyId: string): void {
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard");
+}
+
+// The flat text fields the affiliation editor writes (all optional, default "").
+function readAffiliationFields(formData: FormData) {
+  const str = (key: string) => String(formData.get(key) ?? "").trim();
+  return {
+    role: str("role"),
+    industry: str("industry"),
+    website: str("website"),
+    canOffer: str("canOffer"),
+    lookingFor: str("lookingFor"),
+    counties: str("counties"),
+    dealSize: str("dealSize"),
+  };
+}
+
+export async function addAffiliation(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) throw new Error("missing company");
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("affiliated company is required");
+
+  const ok = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (company == null) return false;
+
+    await tx.affiliation.create({
+      data: { orgId, companyId, name, ...readAffiliationFields(formData) },
+    });
+    return true;
+  });
+
+  if (!ok) throw new Error("company not found in this organization");
+  revalidateAffiliation(companyId);
+}
+
+export async function updateAffiliation(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const affiliationId = String(formData.get("affiliationId") ?? "").trim();
+  if (!affiliationId) throw new Error("missing affiliation");
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("affiliated company is required");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const existing = await tx.affiliation.findUnique({
+      where: { id: affiliationId },
+      select: { companyId: true },
+    });
+    if (existing == null) return null;
+
+    await tx.affiliation.update({
+      where: { id: affiliationId },
+      data: { name, ...readAffiliationFields(formData) },
+    });
+    return existing.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("affiliation not found in this organization");
+  revalidateAffiliation(companyId);
+}
+
+export async function deleteAffiliation(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const affiliationId = String(formData.get("affiliationId") ?? "").trim();
+  if (!affiliationId) throw new Error("missing affiliation");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const existing = await tx.affiliation.findUnique({
+      where: { id: affiliationId },
+      select: { companyId: true },
+    });
+    if (existing == null) return null;
+    await tx.affiliation.delete({ where: { id: affiliationId } });
+    return existing.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("affiliation not found in this organization");
+  revalidateAffiliation(companyId);
+}
+
 // Lifecycle shortcut — the Convert / Archive / Restore buttons. A no-op status
 // (already there) still returns ok so the button is idempotent; only a real
 // transition writes the Activity.

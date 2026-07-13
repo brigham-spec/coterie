@@ -63,6 +63,7 @@ model Organization {
   eventInvitees          EventInvitee[]
   membershipProposals    MembershipProposal[]
   valueDelivered         ValueDelivered[]
+  affiliations           Affiliation[]
   introDismissals        IntroDismissal[]
   unmatchedAttendees     UnmatchedAttendee[]
   aiRateLimit            AiRateLimit?
@@ -169,6 +170,7 @@ model Company {
   activities            Activity[]
   membershipProposals   MembershipProposal[]
   valueDelivered        ValueDelivered[]
+  affiliations          Affiliation[]
   dismissalsAsFocus     IntroDismissal[]     @relation("IntroDismissalFocus")
   dismissalsAsCandidate IntroDismissal[]     @relation("IntroDismissalCandidate")
 
@@ -726,6 +728,43 @@ model ValueDelivered {
   @@index([companyId])
   @@index([orgId, occurredAt(sort: Desc)])
   @@map("value_delivered")
+}
+
+/// Additional companies / affiliations for a member (slice P5). A member often
+/// wears more than one hat — a separate business line or capacity (e.g. a bank
+/// contact who also runs a private fund) — each with its own offer/need profile.
+/// Captures those so the network sees (and can match on) every hat a member
+/// wears. A lightweight sub-record of the owning company (flat text fields,
+/// mirroring the prototype's inline editor); not a company row itself. Tenant-
+/// scoped: org_id + RLS, composite company FK so it can only hang off an in-org
+/// member.
+model Affiliation {
+  id         String @id @default(uuid()) @db.Uuid
+  orgId      String @map("org_id") @db.Uuid
+  companyId  String @map("company_id") @db.Uuid
+  /// The affiliated company / business name.
+  name       String @default("")
+  /// The member's role there (e.g. Managing Partner).
+  role       String @default("")
+  industry   String @default("")
+  website    String @default("")
+  canOffer   String @default("") @map("can_offer")
+  lookingFor String @default("") @map("looking_for")
+  /// Free-text geography (e.g. "Dutchess, Ulster, Orange"), mirroring the
+  /// prototype's flat sub-record.
+  counties   String @default("")
+  dealSize   String @default("") @map("deal_size")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FK includes org_id so an affiliation can only hang off an in-org member.
+  company      Company      @relation(fields: [companyId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([companyId])
+  @@map("affiliations")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

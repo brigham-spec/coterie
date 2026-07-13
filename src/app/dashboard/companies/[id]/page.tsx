@@ -29,6 +29,7 @@ import { WhyJoin } from "./_why-join";
 import { IntroSuggestions } from "./_intros";
 import { DetailsCard } from "./_details-card";
 import { ContactsCard } from "./_contacts-card";
+import { AffiliationsCard } from "./_affiliations-card";
 import { ProposalsCard } from "./_proposals-card";
 import { ValueDeliveredCard } from "./_value-delivered-card";
 import { confirmIntroAdvance } from "./actions";
@@ -80,6 +81,7 @@ export default async function CompanyDetailPage({
         include: {
           owner: { select: { name: true } },
           contacts: { orderBy: { name: "asc" } },
+          affiliations: { orderBy: { createdAt: "asc" } },
           membershipProposals: { orderBy: { createdAt: "desc" } },
           projectLinks: {
             include: {
@@ -400,6 +402,21 @@ export default async function CompanyDetailPage({
           notes: c.notes,
           tags: c.tags,
           isPrimary: c.isPrimary,
+        }))}
+      />
+
+      <AffiliationsCard
+        companyId={company.id}
+        affiliations={company.affiliations.map((a) => ({
+          id: a.id,
+          name: a.name,
+          role: a.role,
+          industry: a.industry,
+          website: a.website,
+          canOffer: a.canOffer,
+          lookingFor: a.lookingFor,
+          counties: a.counties,
+          dealSize: a.dealSize,
         }))}
       />
 
