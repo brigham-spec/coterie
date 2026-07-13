@@ -157,6 +157,16 @@ model Company {
   /// Nested/evolving service tracking: { ida:{…}, capital:{…} }.
   services       Json      @default("{}")
 
+  // ── P6 partnership section (strategic_partner companies only) ──
+  /// What kind of partner: Government Agency, Economic Dev, Financial Institution…
+  partnerCategory     String @default("") @map("partner_category")
+  /// The partner's role / how HVEDC relates to them (demo `partnerRelationship`).
+  partnerRelationship String @default("") @map("partner_relationship")
+  /// Who they are + why they're strategic (demo `partnerSummary`; AI-fillable).
+  partnerSummary      String @default("") @map("partner_summary")
+  /// What we're actively working on together (demo `collaborationNotes`).
+  collaborationNotes  String @default("") @map("collaboration_notes")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

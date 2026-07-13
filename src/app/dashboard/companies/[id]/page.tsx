@@ -30,6 +30,7 @@ import { IntroSuggestions } from "./_intros";
 import { DetailsCard } from "./_details-card";
 import { ContactsCard } from "./_contacts-card";
 import { AffiliationsCard } from "./_affiliations-card";
+import { PartnershipCard } from "./_partnership-card";
 import { ProposalsCard } from "./_proposals-card";
 import { ValueDeliveredCard } from "./_value-delivered-card";
 import { confirmIntroAdvance } from "./actions";
@@ -419,6 +420,19 @@ export default async function CompanyDetailPage({
           dealSize: a.dealSize,
         }))}
       />
+
+      {company.status === "strategic_partner" ? (
+        <PartnershipCard
+          companyId={company.id}
+          partnership={{
+            website: company.website ?? "",
+            partnerCategory: company.partnerCategory,
+            partnerRelationship: company.partnerRelationship,
+            partnerSummary: company.partnerSummary,
+            collaborationNotes: company.collaborationNotes,
+          }}
+        />
+      ) : null}
 
       <ProposalsCard
         companyId={company.id}

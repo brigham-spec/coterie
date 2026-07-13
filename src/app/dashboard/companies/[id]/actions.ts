@@ -27,6 +27,10 @@ import {
   type WhyJoinPitch,
 } from "@/lib/why-join";
 import {
+  generatePartnerSynthesis,
+  type PartnerSynthesis,
+} from "@/lib/partner-synth";
+import {
   eligibleCandidateIds,
   generateIntroSuggestions,
   type IntroSuggestion,
@@ -1209,6 +1213,131 @@ export async function deleteAffiliation(formData: FormData): Promise<void> {
   if (companyId == null)
     throw new Error("affiliation not found in this organization");
   revalidateAffiliation(companyId);
+}
+
+// ── P6a: partnership section (strategic_partner companies only) ─────────────
+// A strategic partner's profile carries a small partnership block: category,
+// relationship/role, a who-they-are/why-strategic summary, and what we're
+// collaborating on. `updatePartnership` saves the form; `synthesizePartner`
+// runs the web-research AI to draft the summary/category/collaboration (the
+// operator then reviews and saves via the same form). Both re-verify the
+// company inside withOrg so a foreign id is refused by RLS.
+
+// Save the partnership fields. Guarded to strategic_partner companies — the card
+// only renders for them, and re-checking here keeps the block from leaking onto
+// a non-partner via a hand-forged post.
+export async function updatePartnership(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) throw new Error("missing company");
+
+  const str = (key: string, max: number) =>
+    String(formData.get(key) ?? "").trim().slice(0, max);
+  const data = {
+    website: optionalText(formData, "website"),
+    partnerCategory: str("partnerCategory", 60),
+    partnerRelationship: str("partnerRelationship", 2000),
+    partnerSummary: str("partnerSummary", 2000),
+    collaborationNotes: str("collaborationNotes", 2000),
+  };
+
+  const ok = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { status: true },
+    });
+    if (company == null) return false;
+    if (company.status !== "strategic_partner")
+      throw new Error("partnership details apply only to strategic partners");
+    await tx.company.update({ where: { id: companyId }, data });
+    return true;
+  });
+
+  if (!ok) throw new Error("company not found in this organization");
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard");
+}
+
+export type PartnerSynthState =
+  | { status: "idle" }
+  | { status: "ok"; synthesis: PartnerSynthesis }
+  | { status: "error"; message: string };
+
+// Research the partner and return a draft brief for the operator to review. Like
+// the other useActionState AI seams it returns state rather than throwing, so a
+// model/network failure renders inline. Nothing is persisted here.
+export async function synthesizePartner(
+  _prev: PartnerSynthState,
+  formData: FormData,
+): Promise<PartnerSynthState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const { orgId, orgName } = await requireOrgContext();
+
+  const company = await withOrg(orgId, (tx) =>
+    tx.company.findUnique({
+      where: { id: companyId },
+      select: {
+        name: true,
+        status: true,
+        website: true,
+        partnerRelationship: true,
+        industry: true,
+        contacts: {
+          where: { isPrimary: true },
+          take: 1,
+          select: { name: true },
+        },
+      },
+    }),
+  );
+
+  if (company == null)
+    return { status: "error", message: "company not found in this organization" };
+  if (company.status !== "strategic_partner")
+    return {
+      status: "error",
+      message: "partnership synthesis applies only to strategic partners",
+    };
+
+  // The form may hand over freshly-typed website/relationship values the operator
+  // hasn't saved yet; fall back to what's on the row (relationship falls back to
+  // the industry, mirroring the prototype).
+  const website = String(formData.get("website") ?? "").trim() || (company.website ?? "");
+  const relationship =
+    String(formData.get("partnerRelationship") ?? "").trim() ||
+    company.partnerRelationship ||
+    company.industry;
+  if (!website && !relationship)
+    return {
+      status: "error",
+      message: "Add a website or relationship note first, then synthesize.",
+    };
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const synthesis = await generatePartnerSynthesis({
+      orgName,
+      companyName: company.name,
+      contactName: company.contacts[0]?.name ?? "",
+      relationship,
+      website,
+    });
+    if (synthesis == null)
+      return { status: "error", message: "Could not synthesize a brief. Try again." };
+    return { status: "ok", synthesis };
+  } catch (err) {
+    console.error("partner synthesis failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not synthesize a brief. Try again." };
+  }
 }
 
 // Lifecycle shortcut — the Convert / Archive / Restore buttons. A no-op status
