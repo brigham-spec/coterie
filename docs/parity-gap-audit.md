@@ -8,6 +8,17 @@ missing, to catch anything else the numbered 11.x roadmap under-counted.
 
 Legend: ✅ built · ⚠️ partial · ❌ missing
 
+**v7 (2026-07-14) — parity backlog cleared.** The final two AI helpers shipped and
+deployed: **Analyze PDF** (`analyze-document.ts` + `_analyze-document.tsx` — PDF upload
+→ Anthropic document block → field-selection review) and **Commitments scan**
+(reinterpreted as a discovery card that surfaces meetings with notes but no extracted
+action items, linking to the per-meeting extract flow rather than duplicating the
+`ActionItem` review UI). §3 is now **22 of 22**. Also this batch: member-tier **filter +
+column** on the Companies list, and inline **normalization feedback** in the member-tier
+editor. Remaining open items are the two long-standing *decisions* (§F Director/Advisory
+tier split; §1 Revenue nav), not build gaps. Gate green (lint/typecheck/build 22 routes,
+518 tests / 72 files).
+
 **v6 (2026-07-13) — hardening pass, no parity rows changed.** Two exhaustive code
 audits ran over the full build; the resulting fix batch is committed (`89cea72`) and
 **deployed to prod** (`coterie-git-main-coterie-nmt.vercel.app`, ● Ready). Not new
@@ -93,7 +104,7 @@ The prototype dashboard renders seven notification cards. Built 7 of 7:
 
 ## 3. AI features (catalog cross-check)
 
-Pattern for all = server-only lib + `"use server"` action + client. Built 20 of 22:
+Pattern for all = server-only lib + `"use server"` action + client. Built 22 of 22:
 
 | AI feature | Ref | Status |
 |---|---|---|
@@ -109,12 +120,12 @@ Pattern for all = server-only lib + `"use server"` action + client. Built 20 of 
 | Event suggestions | `7174` | ✅ (`event-ideas.ts`) |
 | **Daily Focus synthesis** | `19498` | ✅ (`daily-focus-synthesis.ts`) |
 | **AI news scan** (+web) | `10475` | ✅ (`news-scan.ts` + `/dashboard/news`, 11.9) |
-| **Commitments scan** | `11513` | ❌ (meetings-scan button; view shipped without it — overlaps the persisted `ActionItem` extraction pipeline) |
+| **Commitments scan** | `11513` | ✅ (reinterpreted as a discovery card — surfaces meetings with notes but no extracted action items, linking to the per-meeting extract flow; avoids duplicating the `ActionItem` review UI) |
 | **Event outreach email draft** | `7773` | ✅ (`event-outreach.ts` + `events/actions.ts`) |
 | **Draft intro email** | `16432` | ✅ (`intro-email.ts` + `introductions/_intro-email.tsx`) |
 | Enrich-from-meetings | `8066` | ✅ (`enrich-meetings.ts` + `companies/[id]/_enrich-meetings.tsx`) |
 | Batch profile synth | `6077` | ✅ (`profile-synth.ts` + `companies/_batch-synth.tsx`) |
-| Analyze PDF | `9120` | ❌ (needs file-upload action + Anthropic document block; live-verify only) |
+| Analyze PDF | `9120` | ✅ (`analyze-document.ts` + `companies/[id]/_analyze-document.tsx`; PDF upload → Anthropic document block → field-selection review) |
 | Why-join pitch | `1489` | ✅ (`why-join.ts` + `companies/[id]/_why-join.tsx`) |
 | LinkedIn parse | `16497` | ✅ (`linkedin-parse.ts` + `companies/_linkedin-parse.tsx`) |
 | Quick capture | `16619` | ✅ (`quick-capture.ts` + `dashboard/_quick-capture.tsx`) |
@@ -151,12 +162,10 @@ Fireflies sync-status card, Enrichment nudge all shipped; all 7 cards built).
 
 **D. Events polish — ✅ COMPLETE** (outreach email draft + suggestions both shipped).
 
-**E. Micro AI helpers — ✅ MOSTLY COMPLETE.** Shipped since v3: why-join pitch,
-LinkedIn parse, quick capture, enrich-from-meetings, draft-intro-email, batch profile
-synth (all wired into the UI). Remaining: **Analyze PDF** (needs a file-upload action +
-Anthropic document block; live-verify only) and the **Commitments scan** button (marginal
-— overlaps the persisted `ActionItem` extraction pipeline that already backs the
-Commitments page).
+**E. Micro AI helpers — ✅ COMPLETE.** Shipped since v3: why-join pitch, LinkedIn parse,
+quick capture, enrich-from-meetings, draft-intro-email, batch profile synth, and (v7)
+**Analyze PDF** (file-upload action + Anthropic document block) and the **Commitments
+scan** discovery card. All 22 catalog helpers are built and wired into the UI.
 
 **F. Known divergence to decide (not a build task yet):** member Director/Advisory
 tier data was lost in migration — either backfill tier from a source of truth or
