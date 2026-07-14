@@ -1,9 +1,11 @@
 import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
 import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
+import { readMemberTiers } from "@/lib/member-tiers";
 import {
   Button,
   Card,
@@ -78,21 +80,31 @@ export default async function CompaniesPage({
   const q = one(sp.q).trim().toLowerCase();
   const ownerFilter = one(sp.owner);
   const tagFilter = one(sp.tag);
+  const tierFilter = one(sp.tier);
   const sort = one(sp.sort) || "name";
 
-  const companies = await withOrg(ctx.orgId, (tx) =>
-    tx.company.findMany({
-      orderBy: { name: "asc" },
-      include: {
-        owner: { select: { id: true, name: true } },
-        contacts: {
-          where: { isPrimary: true },
-          take: 1,
-          select: { name: true },
+  // Companies (RLS-scoped) and the org's configured member tiers (organizations
+  // carry no RLS — a plain query). The tier list orders the filter facet.
+  const [companies, org] = await Promise.all([
+    withOrg(ctx.orgId, (tx) =>
+      tx.company.findMany({
+        orderBy: { name: "asc" },
+        include: {
+          owner: { select: { id: true, name: true } },
+          contacts: {
+            where: { isPrimary: true },
+            take: 1,
+            select: { name: true },
+          },
         },
-      },
+      }),
+    ),
+    prisma.organization.findUnique({
+      where: { id: ctx.orgId },
+      select: { settings: true },
     }),
-  );
+  ]);
+  const configuredTiers = readMemberTiers(org?.settings);
 
   const segment = SEGMENTS.find((s) => s.key === segmentKey) ?? SEGMENTS[0];
 
@@ -101,12 +113,15 @@ export default async function CompaniesPage({
     SEGMENTS.map((s) => [s.key, companies.filter((c) => s.match(c.status)).length]),
   );
 
-  // Owner + tag facets, derived from what's actually present in the network.
+  // Owner + tag + tier facets, derived from what's actually present in the
+  // network (so we only offer filters that would match something).
   const ownerMap = new Map<string, string>();
   const tagSet = new Set<string>();
+  const tierSet = new Set<string>();
   for (const c of companies) {
     if (c.owner) ownerMap.set(c.owner.id, c.owner.name);
     for (const t of c.networkTags) tagSet.add(t);
+    if (c.tier) tierSet.add(c.tier);
   }
   const owners = [...ownerMap.entries()]
     .map(([id, name]) => ({ id, name }))
@@ -114,6 +129,14 @@ export default async function CompaniesPage({
   const tags = [...tagSet]
     .map((key) => ({ key, label: getTagDef(key).label }))
     .sort((a, b) => a.label.localeCompare(b.label));
+  // Present tiers ordered by the org's configured order; any not in the config
+  // (a legacy value) sorts last, alphabetically.
+  const tierRank = new Map(configuredTiers.map((t, i) => [t, i]));
+  const tiers = [...tierSet].sort((a, b) => {
+    const ra = tierRank.get(a) ?? Infinity;
+    const rb = tierRank.get(b) ?? Infinity;
+    return ra !== rb ? ra - rb : a.localeCompare(b);
+  });
 
   const filtered = companies
     .filter((c) => segment.match(c.status))
@@ -124,7 +147,8 @@ export default async function CompaniesPage({
           c.industry.toLowerCase().includes(q),
     )
     .filter((c) => (ownerFilter ? c.ownerUserId === ownerFilter : true))
-    .filter((c) => (tagFilter ? c.networkTags.includes(tagFilter) : true));
+    .filter((c) => (tagFilter ? c.networkTags.includes(tagFilter) : true))
+    .filter((c) => (tierFilter ? c.tier === tierFilter : true));
 
   const rows = [...filtered].sort((a, b) => {
     if (sort === "value") return Number(b.annualValue) - Number(a.annualValue);
@@ -145,6 +169,7 @@ export default async function CompaniesPage({
     if (q) params.set("q", one(sp.q));
     if (ownerFilter) params.set("owner", ownerFilter);
     if (tagFilter) params.set("tag", tagFilter);
+    if (tierFilter) params.set("tier", tierFilter);
     if (sort !== "name") params.set("sort", sort);
     const query = params.toString();
     return query ? `/dashboard/companies?${query}` : "/dashboard/companies";
@@ -239,7 +264,7 @@ export default async function CompaniesPage({
           })}
         </div>
 
-        <CompanyFilters owners={owners} tags={tags} />
+        <CompanyFilters owners={owners} tags={tags} tiers={tiers} />
 
         {rows.length === 0 ? (
           <p className="px-4 py-6 text-xs text-ink-3">
@@ -252,6 +277,7 @@ export default async function CompaniesPage({
                 <>
                   <Th>Company</Th>
                   <Th>Owner</Th>
+                  <Th>Tier</Th>
                   <Th>Tags</Th>
                   <Th>Value</Th>
                   <Th>Last contact</Th>
@@ -273,6 +299,7 @@ export default async function CompaniesPage({
                     </div>
                   </Td>
                   <Td>{c.owner?.name ?? "—"}</Td>
+                  <Td className="text-ink-2">{c.tier ?? "—"}</Td>
                   <Td>
                     {c.networkTags.length === 0 ? (
                       <span className="text-ink-3">—</span>

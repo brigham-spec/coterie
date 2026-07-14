@@ -21,9 +21,11 @@ const sortOptions = [
 export function CompanyFilters({
   owners,
   tags,
+  tiers,
 }: {
   owners: OwnerOption[];
   tags: TagOption[];
+  tiers: string[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -32,6 +34,7 @@ export function CompanyFilters({
   const q = params.get("q") ?? "";
   const owner = params.get("owner") ?? "";
   const tag = params.get("tag") ?? "";
+  const tier = params.get("tier") ?? "";
   const sort = params.get("sort") ?? "name";
 
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -94,6 +97,21 @@ export function CompanyFilters({
           </option>
         ))}
       </select>
+      {tiers.length > 0 ? (
+        <select
+          value={tier}
+          onChange={(e) => push({ tier: e.target.value })}
+          aria-label="Filter by tier"
+          className={control}
+        >
+          <option value="">All tiers</option>
+          {tiers.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      ) : null}
       <select
         value={sort}
         onChange={(e) => push({ sort: e.target.value })}
