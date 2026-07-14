@@ -198,7 +198,7 @@ function PersonRow({
       ) : null}
 
       {error ? (
-        <p className="mt-1 text-[10px] text-red-600">{error}</p>
+        <p className="mt-1 text-[10px] text-red-ink">{error}</p>
       ) : null}
     </li>
   );

@@ -77,7 +77,7 @@ export function NetworkSearch() {
       {isPending ? (
         <p className="text-[11px] text-ink-3 italic">Searching the network…</p>
       ) : state.status === "error" ? (
-        <p className="text-[11px] text-red-600">{state.message}</p>
+        <p className="text-[11px] text-red-ink">{state.message}</p>
       ) : state.status === "ok" ? (
         <Results query={state.query} matches={state.matches} />
       ) : null}

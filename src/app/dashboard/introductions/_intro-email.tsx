@@ -75,7 +75,7 @@ export function IntroEmailDraft({ contacts }: { contacts: ContactOption[] }) {
       </form>
 
       {state.status === "error" ? (
-        <p className="px-4 pb-4 text-xs text-red-600">{state.message}</p>
+        <p className="px-4 pb-4 text-xs text-red-ink">{state.message}</p>
       ) : state.status === "ok" ? (
         <div className="px-4 pb-4">
           {state.draft.subject ? (

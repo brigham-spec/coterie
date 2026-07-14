@@ -56,7 +56,7 @@ export function LinkedInParse() {
       </form>
 
       {parseState.status === "error" ? (
-        <p className="px-4 pb-4 text-xs text-red-600">{parseState.message}</p>
+        <p className="px-4 pb-4 text-xs text-red-ink">{parseState.message}</p>
       ) : null}
 
       {profile ? (
@@ -118,7 +118,7 @@ export function LinkedInParse() {
           <div className="col-span-2 flex items-center justify-between">
             <span className="text-[11px]">
               {createState.status === "error" ? (
-                <span className="text-red-600">{createState.message}</span>
+                <span className="text-red-ink">{createState.message}</span>
               ) : createState.status === "added" ? (
                 <span className="text-ink-2">
                   Saved{" "}

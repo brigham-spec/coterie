@@ -60,7 +60,7 @@ export function OpenRoles({
             Scanning the network…
           </p>
         ) : state.status === "error" ? (
-          <p className="mt-3 text-[11px] text-red-600">{state.message}</p>
+          <p className="mt-3 text-[11px] text-red-ink">{state.message}</p>
         ) : state.status === "ok" ? (
           <div className="mt-4">
             <div className="mb-2 text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">

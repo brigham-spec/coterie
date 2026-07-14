@@ -82,7 +82,7 @@ export function DailyFocus() {
 
       <div className="px-[1.1rem] py-4">
         {state.status === "error" ? (
-          <p className="text-xs text-red-600">{state.message}</p>
+          <p className="text-xs text-red-ink">{state.message}</p>
         ) : current?.status === "empty" ? (
           <p className="text-xs text-ink-3 italic">
             {emptyMessage(horizon)}

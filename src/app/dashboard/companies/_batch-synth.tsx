@@ -206,7 +206,7 @@ function ResultCard({
     return (
       <div className="rounded-md border border-line bg-surface px-3.5 py-3">
         <div className="text-[12px] font-semibold text-ink">{name}</div>
-        <p className="mt-1 text-[11px] text-red-600">{result.message}</p>
+        <p className="mt-1 text-[11px] text-red-ink">{result.message}</p>
       </div>
     );
   }
@@ -287,7 +287,7 @@ function ResultCard({
           <div className="mt-3 flex items-center justify-between gap-2">
             <span className="text-[11px]">
               {applied?.status === "error" ? (
-                <span className="text-red-600">{applied.message}</span>
+                <span className="text-red-ink">{applied.message}</span>
               ) : null}
             </span>
             <Button

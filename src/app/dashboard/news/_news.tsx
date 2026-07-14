@@ -104,7 +104,7 @@ export function NewsScanner({ companies }: { companies: ScanCompany[] }) {
           Searching the web · finding recent coverage…
         </p>
       ) : state.status === "error" ? (
-        <p className="mt-2 text-[11px] text-red-600">{state.message}</p>
+        <p className="mt-2 text-[11px] text-red-ink">{state.message}</p>
       ) : state.status === "ok" ? (
         <Results
           companyId={state.companyId}
@@ -215,7 +215,7 @@ function ArticleCard({
           </a>
         ) : null}
         {result?.status === "error" ? (
-          <span className="text-[11px] text-red-600">{result.message}</span>
+          <span className="text-[11px] text-red-ink">{result.message}</span>
         ) : null}
       </div>
     </li>

@@ -83,7 +83,7 @@ export function PartnershipCard({
 
       <div className="p-4">
         {synthState.status === "error" ? (
-          <p className="mb-3 text-xs text-red-600">{synthState.message}</p>
+          <p className="mb-3 text-xs text-red-ink">{synthState.message}</p>
         ) : null}
 
         {draft ? (

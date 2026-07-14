@@ -64,7 +64,7 @@ export function Outreach({
         )}
 
         {isPending ? null : state.status === "error" ? (
-          <p className="mt-3 text-[11px] text-red-600">{state.message}</p>
+          <p className="mt-3 text-[11px] text-red-ink">{state.message}</p>
         ) : state.status === "ok" ? (
           <div className="mt-4 rounded-md border border-line bg-surface-2 p-3.5">
             <div className="mb-2 text-[10px] font-medium tracking-[0.06em] text-ink-3 uppercase">

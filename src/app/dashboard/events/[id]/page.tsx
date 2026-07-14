@@ -218,7 +218,7 @@ export default async function EventDetailPage({
                       <input type="hidden" name="eventId" value={event.id} />
                       <button
                         type="submit"
-                        className="text-[11px] text-ink-3 hover:text-red-600"
+                        className="text-[11px] text-ink-3 hover:text-red-ink"
                       >
                         Remove
                       </button>

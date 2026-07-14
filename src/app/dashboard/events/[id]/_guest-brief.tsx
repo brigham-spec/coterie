@@ -37,7 +37,7 @@ export function GuestBrief({ eventId }: { eventId: string }) {
         </form>
 
         {isPending ? null : state.status === "error" ? (
-          <p className="mt-3 text-[11px] text-red-600">{state.message}</p>
+          <p className="mt-3 text-[11px] text-red-ink">{state.message}</p>
         ) : state.status === "empty" ? (
           <p className="mt-3 text-[11px] text-ink-3 italic">
             No confirmed guests from the network yet. Confirm a member guest, then

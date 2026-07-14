@@ -14,7 +14,7 @@ import {
   buildEnrichmentNudges,
   type EnrichmentNudge as EnrichmentNudgeItem,
 } from "@/lib/enrichment-nudge";
-import { StatusBadge } from "@/components/ui";
+import { cn, StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
 import { DailyFocus } from "./_daily-focus";
@@ -543,10 +543,6 @@ function bucket(b: Bucket, companyId: string, amt: number) {
 }
 
 // ── Small presentational helpers (server-safe) ────────────────────────────────
-function cn(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
-
 function labelize(value: string | null): string {
   if (!value) return "";
   return value

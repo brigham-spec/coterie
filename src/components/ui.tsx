@@ -19,7 +19,7 @@ type ButtonVariant = "default" | "gold" | "primary";
 const buttonVariants: Record<ButtonVariant, string> = {
   default: "border-line-2 bg-surface text-ink-2 hover:bg-surface-2",
   gold: "border-gold-line bg-gold-bg text-gold-ink hover:brightness-[0.98]",
-  primary: "border-ink bg-ink text-white hover:bg-[#2a2920]",
+  primary: "border-ink bg-ink text-white hover:bg-ink-hover",
 };
 
 export function Button({
@@ -135,7 +135,7 @@ export function Textarea({
   return (
     <label className={cn("block", className)}>
       <span className={fieldLabel}>{label}</span>
-      <textarea rows={2} className={cn(fieldControl, "resize-y")} {...props} />
+      <textarea rows={3} className={cn(fieldControl, "resize-y")} {...props} />
     </label>
   );
 }

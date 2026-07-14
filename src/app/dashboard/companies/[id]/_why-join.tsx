@@ -51,7 +51,7 @@ export function WhyJoin({ companyId }: { companyId: string }) {
       />
       <div className="px-4 py-4">
         {state.status === "error" ? (
-          <p className="text-xs text-red-600">{state.message}</p>
+          <p className="text-xs text-red-ink">{state.message}</p>
         ) : state.status === "ok" ? (
           <div className="flex flex-col gap-4">
             {state.pitch.headline ? (

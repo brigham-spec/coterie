@@ -72,7 +72,7 @@ export function QuickCapture() {
       </form>
 
       {parseState.status === "error" ? (
-        <p className="px-4 pb-4 text-xs text-red-600">{parseState.message}</p>
+        <p className="px-4 pb-4 text-xs text-red-ink">{parseState.message}</p>
       ) : null}
 
       {saveState.status === "saved" ? (

@@ -109,7 +109,7 @@ export function MeetingActionItems({
       </div>
 
       {error !== null ? (
-        <p className="mb-2 text-[11px] text-red-600">{error}</p>
+        <p className="mb-2 text-[11px] text-red-ink">{error}</p>
       ) : null}
 
       {/* Persisted items */}

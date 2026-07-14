@@ -95,7 +95,7 @@ export function EmailSync({
               Reading the sheet · matching to your network…
             </p>
           ) : state.status === "error" ? (
-            <p className="text-[11px] text-red-600">{state.message}</p>
+            <p className="text-[11px] text-red-ink">{state.message}</p>
           ) : state.status === "ok" ? (
             <p className="text-[11px] text-teal-ink">
               Synced {state.synced} email{state.synced === 1 ? "" : "s"} ·{" "}

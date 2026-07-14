@@ -98,7 +98,7 @@ export default async function ProjectsPage({
   const completed = byStage.get("completed") ?? [];
 
   return (
-    <div className="mx-auto w-full max-w-6xl">
+    <div className="mx-auto w-full max-w-5xl">
       <div className="mb-6">
         <PageTitle
           title="Projects"

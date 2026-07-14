@@ -38,7 +38,7 @@ export function CompanyBrief({ companyId }: { companyId: string }) {
       />
       <div className="px-4 py-4">
         {state.status === "error" ? (
-          <p className="text-xs text-red-600">{state.message}</p>
+          <p className="text-xs text-red-ink">{state.message}</p>
         ) : state.status === "ok" ? (
           <p className="text-xs leading-relaxed whitespace-pre-wrap text-ink-2">
             {state.brief}

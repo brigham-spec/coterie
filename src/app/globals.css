@@ -17,6 +17,7 @@
   --color-ink: #18170f;
   --color-ink-2: #6a6659;
   --color-ink-3: #a09c92;
+  --color-ink-hover: #2a2920; /* lifted ink for primary-button hover */
 
   --color-gold: #8a6d1b;
   --color-gold-line: #d4a843;

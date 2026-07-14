@@ -48,7 +48,7 @@ export function IntroSuggestions({ companyId }: { companyId: string }) {
       />
       <div className="px-4 py-4">
         {state.status === "error" ? (
-          <p className="text-xs text-red-600">{state.message}</p>
+          <p className="text-xs text-red-ink">{state.message}</p>
         ) : state.status === "ok" ? (
           visible.length === 0 ? (
             <p className="text-xs text-ink-3">

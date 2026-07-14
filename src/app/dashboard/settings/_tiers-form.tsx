@@ -47,7 +47,7 @@ export function TiersForm({ tiers }: { tiers: string[] }) {
               {state.tiers.length === 1 ? "" : "s"}.
             </span>
           ) : state.status === "error" ? (
-            <span className="text-red-600">{state.message}</span>
+            <span className="text-red-ink">{state.message}</span>
           ) : null}
         </span>
         <Button type="submit" variant="primary" disabled={saving}>

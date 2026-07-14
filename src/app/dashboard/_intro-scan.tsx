@@ -39,7 +39,7 @@ export function IntroScan() {
       </div>
       <div className="p-4">
         {state.status === "error" ? (
-          <p className="text-[11px] text-red-600">{state.message}</p>
+          <p className="text-[11px] text-red-ink">{state.message}</p>
         ) : state.status === "ok" ? (
           state.pairings.length === 0 ? (
             <p className="text-[11px] text-ink-3 italic">

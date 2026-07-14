@@ -78,7 +78,7 @@ export function EnrichFromMeetings({ companyId }: { companyId: string }) {
 
       <div className="px-4 py-4">
         {enrichState.status === "error" ? (
-          <p className="text-xs text-red-600">{enrichState.message}</p>
+          <p className="text-xs text-red-ink">{enrichState.message}</p>
         ) : applyState.status === "applied" ? (
           <p className="text-xs text-ink-2">
             Applied {applyState.count} field{applyState.count === 1 ? "" : "s"} to

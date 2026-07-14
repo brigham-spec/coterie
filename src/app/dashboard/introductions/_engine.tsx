@@ -198,7 +198,7 @@ function MemberMode({ members }: { members: EngineMember[] }) {
           {pending && result.status === "idle" ? (
             <p className="text-[11px] text-ink-3 italic">Reading the network…</p>
           ) : result.status === "error" ? (
-            <p className="text-[11px] text-red-600">{result.message}</p>
+            <p className="text-[11px] text-red-ink">{result.message}</p>
           ) : result.status === "ok" ? (
             visible.length === 0 ? (
               <p className="text-[11px] text-ink-3 italic">
@@ -365,7 +365,7 @@ function CatalystMode({ projects }: { projects: EngineProject[] }) {
           {pending && result.status === "idle" ? (
             <p className="text-[11px] text-ink-3 italic">Scanning the network…</p>
           ) : result.status === "error" ? (
-            <p className="text-[11px] text-red-600">{result.message}</p>
+            <p className="text-[11px] text-red-ink">{result.message}</p>
           ) : result.status === "ok" ? (
             <>
               <div className="mb-2 text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
@@ -437,7 +437,7 @@ function NetworkMode() {
       {pending ? (
         <p className="text-[11px] text-ink-3 italic">Reading the network…</p>
       ) : result.status === "error" ? (
-        <p className="text-[11px] text-red-600">{result.message}</p>
+        <p className="text-[11px] text-red-ink">{result.message}</p>
       ) : result.status === "ok" ? (
         result.pairings.length === 0 ? (
           <p className="text-[11px] text-ink-3 italic">

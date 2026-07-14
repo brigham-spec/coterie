@@ -229,7 +229,7 @@ export function ProspectFinder({ context }: { context: ContextSummary }) {
           Reading member profiles · searching the web · scoring fit…
         </p>
       ) : state.status === "error" ? (
-        <p className="text-[11px] text-red-600">{state.message}</p>
+        <p className="text-[11px] text-red-ink">{state.message}</p>
       ) : state.status === "ok" ? (
         <Results mode={state.mode} targets={state.targets} />
       ) : null}
@@ -345,7 +345,7 @@ function ProspectCard({ t }: { t: ProspectTarget }) {
           </a>
         ) : null}
         {result?.status === "error" ? (
-          <span className="text-[11px] text-red-600">{result.message}</span>
+          <span className="text-[11px] text-red-ink">{result.message}</span>
         ) : null}
       </div>
     </li>

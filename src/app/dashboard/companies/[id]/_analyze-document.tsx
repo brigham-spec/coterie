@@ -87,7 +87,7 @@ export function AnalyzeDocument({ companyId }: { companyId: string }) {
         )}
 
         {analyzeState.status === "error" ? (
-          <p className="mt-3 text-xs text-red-600">{analyzeState.message}</p>
+          <p className="mt-3 text-xs text-red-ink">{analyzeState.message}</p>
         ) : applyState.status === "applied" ? (
           <p className="text-xs text-ink-2">
             Applied {applyState.count} field{applyState.count === 1 ? "" : "s"} to
