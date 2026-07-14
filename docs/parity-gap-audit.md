@@ -15,8 +15,9 @@ deployed: **Analyze PDF** (`analyze-document.ts` + `_analyze-document.tsx` — P
 action items, linking to the per-meeting extract flow rather than duplicating the
 `ActionItem` review UI). §3 is now **22 of 22**. Also this batch: member-tier **filter +
 column** on the Companies list, and inline **normalization feedback** in the member-tier
-editor. Remaining open items are the two long-standing *decisions* (§F Director/Advisory
-tier split; §1 Revenue nav), not build gaps. Gate green (lint/typecheck/build 22 routes,
+editor. **§F (member Director/Advisory tier split) is now RESOLVED** — status-segments
+carry the lifecycle split and the org-configurable tier filter carries the standing
+split; no backfill or separate views. Gate green (lint/typecheck/build 22 routes,
 518 tests / 72 files).
 
 **v6 (2026-07-13) — hardening pass, no parity rows changed.** Two exhaustive code
@@ -76,7 +77,7 @@ was checked against the actual route/engine on 2026-07-09, not assumed from the 
 | Dashboard overview | `2894` | ⚠️ | Shell + 6 KPIs + ROW3/4/5 built. Notification-card family mostly missing — see §2. |
 | Revenue (rich) | `3580` | ❌ | Nav item inert. = slice **11.11**. YTD/past-due/ARR/target/collection-rate/proposal-pipeline/cash-flow/member-revenue-bars/monthly+quarterly charts/edit-schedule. |
 | Companies (list + detail) | `4361` | ✅ | Status segments + filters + rich profile + AI brief. |
-| Member tier views (Director/Advisory/Partners) | `4386`/`4387` | ⚠️ | Collapsed into Companies status-segments. Director/Advisory split **not populated** — tier data lost in item-8 migration. Structural divergence, not just missing UI. |
+| Member tier views (Director/Advisory/Partners) | `4386`/`4387` | ✅ | Resolved (v7, §F): prototype tiers were status-derived labels. Lifecycle split = `Company.status` segments; standing split = org-configurable `Company.tier` filter + column. No separate hardcoded views by design. |
 | Projects (kanban + detail) | `17909` | ✅ | 8-stage kanban, rich cards, open-role pills → intro engine. |
 | Introductions engine | `14566` | ✅ | member / open-roles / network-scan modes + Layer-0 proactive panel + lifecycle stages. |
 | Network Search | `15094` | ✅ | NL search over profiles. |
@@ -145,7 +146,8 @@ Production IA: Overview(Dashboard, Revenue-inert) · Network(Companies, Contacts
 Projects, Introductions) · Intelligence(Commitments, Network Search, Prospect Finder) ·
 Operations(Events, Meetings, Invoices, Value Created).
 Missing nav entries: **Revenue** (inert), **News**, **Email**; member tier views
-collapsed to Companies.
+intentionally collapsed to Companies (status-segments + org-configurable tier filter —
+see §F).
 
 ---
 
@@ -167,8 +169,17 @@ quick capture, enrich-from-meetings, draft-intro-email, batch profile synth, and
 **Analyze PDF** (file-upload action + Anthropic document block) and the **Commitments
 scan** discovery card. All 22 catalog helpers are built and wired into the UI.
 
-**F. Known divergence to decide (not a build task yet):** member Director/Advisory
-tier data was lost in migration — either backfill tier from a source of truth or
-formally accept status-segments as the model.
+**F. Member tier split — ✅ RESOLVED (accept status-segments + tier filter, v7
+2026-07-14).** The prototype's Director/Advisory "tiers" were never independent data —
+they were labels *derived from status* (`m.st` `active` = Director Level, `onboard` =
+Advisory Level). Production already carries that lifecycle split in `Company.status`
+(rendered as status-segments on the Companies list), and the standing/tier axis is now
+served by the **org-configurable `Company.tier`** vocabulary with its filter + column
+(shipped this batch). No data was lost that a backfill could recover — there is no
+source of truth mapping members → tier beyond status. Rebuilding hardcoded
+Director/Advisory nav views would regress the multi-tenant tier system into single-org
+string constants and duplicate the Companies query. Decision: **status-segments carry
+the lifecycle split; the org-configurable tier filter carries the standing split.** No
+migration, no new views.
 
 **G. Company-profile parity arc — ✅ COMPLETE** (P1–P6, see `profile-parity-gap.md`).
