@@ -8,6 +8,21 @@ missing, to catch anything else the numbered 11.x roadmap under-counted.
 
 Legend: ✅ built · ⚠️ partial · ❌ missing
 
+**v6 (2026-07-13) — hardening pass, no parity rows changed.** Two exhaustive code
+audits ran over the full build; the resulting fix batch is committed (`89cea72`) and
+**deployed to prod** (`coterie-git-main-coterie-nmt.vercel.app`, ● Ready). Not new
+features — latent-bug closes across existing seams: stored-XSS guards on user-entered
+URL fields (contact LinkedIn, affiliation website, proposal drive URL) + normalized
+Fireflies transcript URLs, via shared `src/lib/form-fields.ts` parsers (`assertHttpUrl`/
+`optionalUrl`/`httpUrlOrNull`) that block script-executing schemes while still allowing
+bare-domain input; Invalid-Date writes closed by routing every date field through
+`requiredDate`/`optionalDate`; SSRF narrowed (see §1 Email row); Inngest route now
+asserts `INNGEST_SIGNING_KEY` in prod; news links forced http(s); quote-aware balanced
+JSON extractor; AI rate-limit race closed with a tx-scoped advisory lock; intro/open-
+roles score clamps floored to the weakest defined rung (3) to match their prompts; UTC
+date math + UTC-pinned formatters. Gate green (lint/typecheck/build 21 routes, 499
+tests / 70 files).
+
 **Last reconciled 2026-07-13 (v5).** Since v3, the profile-parity arc (P1 editable
 profile/lifecycle, P2 contact CRUD, P3 membership-proposals ledger + owner
 reassignment, P4 per-company Value Delivered + member Value Report, P5 Affiliations,
@@ -60,7 +75,7 @@ was checked against the actual route/engine on 2026-07-09, not assumed from the 
 | Commitments | `12617` | ✅ | Slice **11.10** shipped (`commitments.ts` + `/dashboard/commitments`): we-owe/they-owe split, due badges, Done/Dismiss. Only the meetings-scan AI button not ported. |
 | News Intelligence | `10966` | ❌ | = slice **11.9**. RSS quick-scan + AI scan; `NewsItem` table exists, no ingest/UI. |
 | Meetings Log | `2145` | ⚠️ | List/summary/attendee-confirm built. Action-item extraction + pre-meeting brief missing — see §3. |
-| Email Intelligence | `16116` | ✅ | Slice **11.12** shipped (`email-intel.ts` parse/match + `email-sync.ts` fetch seam + `email_messages` table + `/dashboard/email`): published-Sheet CSV ingest, server-side match-to-company (single best match), grouped-by-company view, docs.google.com SSRF guard. |
+| Email Intelligence | `16116` | ✅ | Slice **11.12** shipped (`email-intel.ts` parse/match + `email-sync.ts` fetch seam + `email_messages` table + `/dashboard/email`): published-Sheet CSV ingest, server-side match-to-company (single best match), grouped-by-company view. SSRF guard (v6): Google-owned host allowlist (docs.google.com + *.googleusercontent.com) with manual, per-hop re-validated redirect following. |
 
 ## 2. Dashboard notification-card family (the under-counted cluster)
 
