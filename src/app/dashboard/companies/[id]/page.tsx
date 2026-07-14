@@ -8,6 +8,7 @@ import { getTagDef } from "@/lib/tags";
 import { getIntroStageDef } from "@/lib/intro-stages";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { buildRelationshipTimeline } from "@/lib/relationship-timeline";
+import { readMemberTiers } from "@/lib/member-tiers";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import {
   Button,
@@ -57,15 +58,22 @@ export default async function CompanyDetailPage({
   const { id } = await params;
   const ctx = await requireOrgContext();
 
-  // Org staff for the owner picker. org_memberships carry no RLS, so this is a
-  // plain query scoped explicitly by orgId — it lists only this tenant's users.
-  const staff = (
-    await prisma.orgMembership.findMany({
+  // Org staff for the owner picker, and the org's configured member tiers for
+  // the Tier dropdown. org_memberships and organizations carry no RLS, so these
+  // are plain queries scoped explicitly by orgId.
+  const [staffRows, org] = await Promise.all([
+    prisma.orgMembership.findMany({
       where: { orgId: ctx.orgId },
       orderBy: { user: { name: "asc" } },
       select: { user: { select: { id: true, name: true } } },
-    })
-  ).map((m) => ({ id: m.user.id, name: m.user.name }));
+    }),
+    prisma.organization.findUnique({
+      where: { id: ctx.orgId },
+      select: { settings: true },
+    }),
+  ]);
+  const staff = staffRows.map((m) => ({ id: m.user.id, name: m.user.name }));
+  const memberTiers = readMemberTiers(org?.settings);
 
   // Reads share one pooled connection inside the tx, so run them in sequence —
   // concurrent queries on a single pg client serialize and can stall the load.
@@ -307,6 +315,7 @@ export default async function CompanyDetailPage({
           ownerUserId: company.ownerUserId,
         }}
         staff={staff}
+        memberTiers={memberTiers}
       />
 
       {company.status === "prospect" ? (

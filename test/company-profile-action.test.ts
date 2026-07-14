@@ -57,7 +57,8 @@ const companyBId = randomUUID();
 beforeAll(async () => {
   await prisma.organization.createMany({
     data: [
-      { ...orgA, orgType: "edc" },
+      // orgA configures member tiers so the tier write-boundary accepts "Director".
+      { ...orgA, orgType: "edc", settings: { memberTiers: ["Chairman", "Director", "Advisory"] } },
       { ...orgB, orgType: "chamber" },
     ],
   });
@@ -264,6 +265,56 @@ describe("updateCompany", () => {
     );
     expect(companyB!.status).toBe("member");
     expect(companyB!.industry).toBe("Legal");
+  });
+});
+
+describe("updateCompany member tier", () => {
+  const tierFd = (tier: string) =>
+    fd({
+      companyId: statusCompanyId,
+      status: "prospect",
+      industry: "Retail",
+      annualValue: "1000",
+      tier,
+    });
+
+  test("accepts a configured tier", async () => {
+    await updateCompany(tierFd("Advisory"));
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: statusCompanyId },
+        select: { tier: true },
+      }),
+    );
+    expect(company!.tier).toBe("Advisory");
+  });
+
+  test("rejects a tier the org has not configured", async () => {
+    await expect(updateCompany(tierFd("Emperor"))).rejects.toThrow(
+      "tier is not configured for this organization",
+    );
+  });
+
+  test("allows re-saving a stored tier that is no longer configured", async () => {
+    // Simulate a legacy value: write a tier directly, then re-save unchanged.
+    await withOrg(orgA.id, (tx) =>
+      tx.company.update({
+        where: { id: statusCompanyId },
+        data: { tier: "Legacy Rank" },
+      }),
+    );
+    await expect(updateCompany(tierFd("Legacy Rank"))).resolves.toBeUndefined();
+  });
+
+  test("clears the tier when left blank", async () => {
+    await updateCompany(tierFd(""));
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: statusCompanyId },
+        select: { tier: true },
+      }),
+    );
+    expect(company!.tier).toBeNull();
   });
 });
 

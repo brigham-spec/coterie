@@ -10,6 +10,7 @@ import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
 import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES, isCompanyStatus } from "@/lib/company-statuses";
+import { readMemberTiers } from "@/lib/member-tiers";
 import { isProposalStatus } from "@/lib/proposal-statuses";
 import { isValueKind } from "@/lib/value-kinds";
 import { optionalDate, optionalUrl, assertHttpUrl } from "@/lib/form-fields";
@@ -834,11 +835,26 @@ export async function updateCompany(formData: FormData): Promise<void> {
       throw new Error("owner is not a member of this organization");
   }
 
+  // tier: the org's own member-standing label. Blank clears it; a set value must
+  // be one the org has configured (organizations carries no RLS, so read it as a
+  // plain query scoped by orgId). A stored value no longer in the configured set
+  // (a since-removed tier) is left selectable and validated against the row
+  // below, so an unrelated save doesn't reject it.
+  const tier = optionalText(formData, "tier");
+  const memberTiers = tier === null ? [] : readMemberTiers(
+    (
+      await prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { settings: true },
+      })
+    )?.settings,
+  );
+
   const data = {
     status,
     industry,
     annualValue,
-    tier: optionalText(formData, "tier"),
+    tier,
     temperature,
     website: optionalText(formData, "website"),
     emailDomain: optionalText(formData, "emailDomain"),
@@ -857,9 +873,17 @@ export async function updateCompany(formData: FormData): Promise<void> {
   const ok = await withOrg(orgId, async (tx) => {
     const current = await tx.company.findUnique({
       where: { id: companyId },
-      select: { status: true },
+      select: { status: true, tier: true },
     });
     if (current == null) return false;
+
+    // A set tier must be configured, or the row's existing value (unchanged).
+    if (
+      tier !== null &&
+      tier !== current.tier &&
+      !memberTiers.includes(tier)
+    )
+      throw new Error("tier is not configured for this organization");
 
     await tx.company.update({ where: { id: companyId }, data });
 

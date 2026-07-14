@@ -55,9 +55,11 @@ export type StaffOption = { id: string; name: string };
 export function DetailsCard({
   company,
   staff,
+  memberTiers,
 }: {
   company: DetailsCompany;
   staff: StaffOption[];
+  memberTiers: string[];
 }) {
   const [editing, setEditing] = useState(false);
 
@@ -66,6 +68,7 @@ export function DetailsCard({
       <EditForm
         company={company}
         staff={staff}
+        memberTiers={memberTiers}
         onDone={() => setEditing(false)}
       />
     );
@@ -200,13 +203,23 @@ function LifecycleBar({ company }: { company: DetailsCompany }) {
 function EditForm({
   company,
   staff,
+  memberTiers,
   onDone,
 }: {
   company: DetailsCompany;
   staff: StaffOption[];
+  memberTiers: string[];
   onDone: () => void;
 }) {
   const tagSet = new Set(company.networkTags);
+
+  // Offer the org's configured tiers, plus a blank "unset" option. If the stored
+  // tier isn't in the configured list (a legacy value, or one since removed),
+  // keep it selectable so an unrelated save doesn't silently drop it.
+  const tierOptions =
+    company.tier && !memberTiers.includes(company.tier)
+      ? [company.tier, ...memberTiers]
+      : memberTiers;
 
   return (
     <Card>
@@ -238,7 +251,18 @@ function EditForm({
             defaultValue={company.industry}
             required
           />
-          <Field name="tier" label="Tier" defaultValue={company.tier ?? ""} />
+          <SelectField
+            name="tier"
+            label="Tier"
+            defaultValue={company.tier ?? ""}
+          >
+            <option value="">—</option>
+            {tierOptions.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </SelectField>
           <SelectField
             name="ownerUserId"
             label="Owner"

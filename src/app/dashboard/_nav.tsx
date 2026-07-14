@@ -49,6 +49,10 @@ const groups: NavGroup[] = [
       { label: "Value Created", href: "/dashboard/value-created" },
     ],
   },
+  {
+    label: "Organization",
+    items: [{ label: "Settings", href: "/dashboard/settings" }],
+  },
 ];
 
 export function Nav() {
