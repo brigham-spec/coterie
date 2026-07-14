@@ -8,6 +8,16 @@ raw SQL, XSS surface, dependency advisories, and HTTP hardening.
 This is an **internal** review, not a substitute for an external penetration test
 before general availability. It covers the code as of commit `1fdd58c` (item 8).
 
+**Status reconciled 2026-07-14 (v2).** Every *actionable* finding has been closed;
+what remains are the two pilot-scoped access-control decisions (M1, M3) that are
+deliberately accepted until access widens. Closed since the original review:
+**H1** (security headers — `next.config.ts` ships CSP-report-only + HSTS +
+X-Frame-Options DENY + nosniff + Referrer-Policy + Permissions-Policy),
+**M2** (Inngest keys documented in `.env.example`; the route asserts
+`INNGEST_SIGNING_KEY` in prod — see the v6 audit batch), and **L5** (per-org AI
+rate limiting via `src/lib/ai-rate-limit.ts`, 20/min + 300/day, across every
+on-demand paid seam). No open build items remain in this review.
+
 ---
 
 ## Summary
@@ -18,10 +28,10 @@ found are not tenant-isolation breaks; they are hardening and access-control
 items appropriate to close before a wider pilot.
 
 - **Critical:** none.
-- **High:** 1 (missing HTTP security headers).
-- **Medium:** 3 (no RBAC enforcement; Inngest endpoint hardening + env gap;
-  open tenant self-provisioning).
-- **Low / informational:** 5.
+- **High:** 1 (missing HTTP security headers) — ✅ CLOSED (H1).
+- **Medium:** 3 — M2 (Inngest hardening + env) ✅ CLOSED; M1 (no RBAC) and
+  M3 (open self-provisioning) **ACCEPTED for pilot**, revisit before wider access.
+- **Low / informational:** 5 — L5 (AI rate limiting) ✅ CLOSED; rest tracked.
 
 ---
 
@@ -69,29 +79,27 @@ items appropriate to close before a wider pilot.
 
 ## Findings
 
-### H1 — Missing HTTP security headers (High)
-`next.config.ts` is empty — the app ships no security response headers. Absent:
-`Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options` /
-`frame-ancestors` (clickjacking), `X-Content-Type-Options: nosniff`,
-`Referrer-Policy`, `Permissions-Policy`.
-**Impact:** the dashboard can be framed (clickjacking), and there is no CSP to
-blunt an XSS should one ever be introduced. No isolation break, but this is the
-cheapest high-value hardening available.
-**Recommendation:** add a `headers()` block (or middleware) setting the above.
-Start CSP in report-only to tune against Clerk's script/frame origins, then
-enforce. HSTS with a long max-age once HTTPS-only is confirmed on the domain.
+### H1 — Missing HTTP security headers (High) — ✅ CLOSED (2026-07-14)
+Originally `next.config.ts` shipped no security response headers.
+**Resolution:** `next.config.ts` now serves a `headers()` block on `/:path*`:
+`Content-Security-Policy-Report-Only` (tuned for Clerk's script/frame/telemetry
+origins, report-only so it can be observed before enforcing), `Strict-Transport-
+Security` (max-age 2y, includeSubDomains, preload), `X-Frame-Options: DENY` +
+CSP `frame-ancestors 'none'` (clickjacking), `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: strict-origin-when-cross-origin`, and `Permissions-Policy`
+(camera/microphone/geolocation/browsing-topics off). **Remaining follow-up (not
+a gap):** flip CSP from report-only to enforcing once violations are observed
+clean against the production Clerk instance.
 
-### M2 — Inngest endpoint hardening + env-var documentation gap (Medium)
-`/api/inngest` is intentionally outside the Clerk matcher; its authenticity
-depends entirely on `INNGEST_SIGNING_KEY` (Inngest verifies request signatures).
-Neither `INNGEST_SIGNING_KEY` nor `INNGEST_EVENT_KEY` is listed in
-`.env.example`, and `syncFirefliesNow` needs the event key to dispatch.
-**Impact:** if deployed without the signing key configured, request-signature
-verification is not in force and an attacker who can reach the endpoint could POST
-crafted events to invoke functions (which are still `withOrg`-scoped, so no
-cross-tenant write — but unwanted job execution and external API calls).
-**Recommendation:** document both keys in `.env.example`; make signing-key
-presence a startup/deploy requirement; confirm production sets it.
+### M2 — Inngest endpoint hardening + env-var documentation gap (Medium) — ✅ CLOSED (2026-07-14)
+Originally neither Inngest key was documented and the route did not require one.
+**Resolution:** both `INNGEST_SIGNING_KEY` and `INNGEST_EVENT_KEY` are now
+documented in `.env.example` with the "required in production" rationale, and the
+`/api/inngest` route asserts `INNGEST_SIGNING_KEY` at boot in production (skipped
+only during the Next build phase) — see the v6 audit batch. Deploy without the
+signing key fails fast instead of serving an unverifiable endpoint.
+**Follow-up (ops, not code):** confirm the signing key is set in the production
+Inngest/deploy environment.
 
 ### M1 — No role-based authorization enforcement (Medium) — ACCEPTED (flat for pilot)
 `requireOrgContext()` resolves a role (`admin` | `staff`) from Clerk's org role,
@@ -149,20 +157,29 @@ It is isolated by RLS and unreachable by any Clerk session (no org maps to it), 
 this is not an exposure — but confirm it's intended for the pilot, and treat
 linking a Clerk org to it as a deliberate, audited step.
 
-### L5 — No rate limiting on the AI brief action (Low)
-`generateBrief` invokes Anthropic on demand with no per-org throttle; a signed-in
-user could repeatedly trigger paid calls (cost/abuse).
-**Recommendation:** add a simple per-org rate limit / debounce before GA.
+### L5 — No rate limiting on the AI brief action (Low) — ✅ CLOSED
+`generateBrief` and every other on-demand paid seam now go through
+`enforceAiRateLimit(orgId)` (`src/lib/ai-rate-limit.ts`, 20/min + 300/day per org,
+with a tx-scoped advisory lock closing the check-then-write race — see the v6
+audit batch). Repeated triggering is throttled per tenant.
 
 ---
 
 ## Suggested remediation order
 
-1. **H1** — add security headers (quick, high value).
-2. **M2** — document + require the Inngest keys; confirm signing key in prod.
+1. ~~**H1** — add security headers~~ ✅ CLOSED.
+2. ~~**M2** — document + require the Inngest keys~~ ✅ CLOSED (confirm the key is
+   set in the prod environment — ops step).
 3. **M1** — decide and enforce the admin/staff authorization boundary.
-4. **M3** — gate tenant self-provisioning for the pilot.
-5. **L1/L5** — dependency tracking and AI-brief rate limiting.
+   **Deferred (flat for pilot).** The highest-value item to build before widening
+   access: gate sensitive actions on `ctx.role === "admin"` (candidates: void
+   invoice, connect/disconnect integrations, destructive deletes).
+4. **M3** — gate tenant self-provisioning. **Deferred (open for pilot).** Effective
+   gate is upstream in Clerk (invite-only sign-up); add an allowlist before
+   `provisionOrg` if public sign-up is ever enabled.
+5. ~~**L5** — AI-brief rate limiting~~ ✅ CLOSED. **L1** — dependency advisories
+   remain build/dev-time only; bump when non-breaking fixes land.
 
-None of the above blocks the isolation guarantee; H1 and M1–M3 are the set worth
-closing before widening access.
+None of the above blocks the isolation guarantee. With H1/M2/L5 closed, the only
+open items are the two pilot-scoped access decisions (M1, M3), to revisit before
+widening beyond the trusted pilot.
