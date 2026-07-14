@@ -276,6 +276,7 @@ model Project {
   projectLinks  ProjectLink[]
   introductions Introduction[]
   events        Event[]
+  actionItems   ActionItem[]
 
   // Composite-FK target for project_links (id, org_id).
   @@unique([id, orgId])
@@ -415,6 +416,8 @@ model ActionItem {
   orgId          String    @map("org_id") @db.Uuid
   /// Null for manually created items.
   meetingId      String?   @map("meeting_id") @db.Uuid
+  /// Null unless this item is a deliverable owed on a project.
+  projectId      String?   @map("project_id") @db.Uuid
   text           String
   /// open, done, dropped
   status         String    @default("open")
@@ -429,11 +432,16 @@ model ActionItem {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   meeting      Meeting?     @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  // Composite FK (project_id, org_id) -> projects(id, org_id): a deliverable can
+  // never straddle orgs. Cascade (not SetNull) because a composite SetNull would
+  // fight org_id's NOT NULL; a project's deliverables die with the project.
+  project      Project?     @relation(fields: [projectId, orgId], references: [id, orgId], onDelete: Cascade)
   ownerUser    User?        @relation("ActionItemOwnerUser", fields: [ownerUserId], references: [id])
   ownerContact Contact?     @relation("ActionItemOwnerContact", fields: [ownerContactId], references: [id])
 
   @@index([orgId])
   @@index([orgId, status, dueDate])
+  @@index([orgId, projectId])
   @@map("action_items")
 }
 

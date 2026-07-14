@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { prisma } from "@/lib/prisma";
 import { PROJECT_STAGES, TERMINAL_STAGES } from "@/lib/project-stages";
 import { buildStageTimeline } from "@/lib/stage-history";
 import { openRoles } from "@/lib/disciplines";
@@ -21,6 +22,10 @@ import {
 
 import { linkCompany, updateStage } from "../actions";
 import { OpenRoles } from "./_open-roles";
+import {
+  DeliverablesCard,
+  type DeliverableRow,
+} from "./_deliverables";
 
 // Project detail — the seat of company participation. project_links carries
 // composite FKs to projects(id, org_id) and companies(id, org_id), so a link can
@@ -79,11 +84,51 @@ export default async function ProjectDetailPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });
-    return { project, companies };
+    // Deliverables = action_items attached to this project, plus the "they owe"
+    // owner pool (contacts at a company on the project). Both reads are RLS-scoped.
+    const deliverables = await tx.actionItem.findMany({
+      where: { projectId: id },
+      include: {
+        ownerUser: { select: { name: true } },
+        ownerContact: { select: { name: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    const companyIds = project.projectLinks.map((l) => l.companyId);
+    const projectContacts =
+      companyIds.length === 0
+        ? []
+        : await tx.contact.findMany({
+            where: { companyId: { in: companyIds } },
+            select: { id: true, name: true, company: { select: { name: true } } },
+            orderBy: { name: "asc" },
+          });
+    return { project, companies, deliverables, projectContacts };
   });
 
   if (data == null) notFound();
-  const { project, companies } = data;
+  const { project, companies, deliverables, projectContacts } = data;
+
+  // Staff owners = org members ("we owe"). org_memberships has no RLS, so scope
+  // it explicitly by org (mirrors owner reassignment on the company profile).
+  const staffRows = await prisma.orgMembership.findMany({
+    where: { orgId: ctx.orgId },
+    orderBy: { user: { name: "asc" } },
+    select: { user: { select: { id: true, name: true } } },
+  });
+  const staff = staffRows.map((r) => r.user);
+  const contactOptions = projectContacts.map((c) => ({
+    id: c.id,
+    name: c.name,
+    companyName: c.company.name,
+  }));
+  const deliverableRows: DeliverableRow[] = deliverables.map((d) => ({
+    id: d.id,
+    text: d.text,
+    status: d.status,
+    direction: d.ownerUserId ? "we_owe" : "they_owe",
+    ownerName: d.ownerUser?.name ?? d.ownerContact?.name ?? "Unassigned",
+  }));
 
   const linkedIds = new Set(project.projectLinks.map((l) => l.companyId));
   const linkable = companies.filter((c) => !linkedIds.has(c.id));
@@ -223,6 +268,13 @@ export default async function ProjectDetailPage({
           </Table>
         )}
       </Card>
+
+      <DeliverablesCard
+        projectId={project.id}
+        deliverables={deliverableRows}
+        staff={staff}
+        contacts={contactOptions}
+      />
 
       {isActive && unfilledRoles.length > 0 ? (
         <OpenRoles projectId={project.id} roles={unfilledRoles} />

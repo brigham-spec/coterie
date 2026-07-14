@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { prisma } from "@/lib/prisma";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { optionalDate } from "@/lib/form-fields";
 import { getDiscipline, companyMatchesDiscipline } from "@/lib/disciplines";
@@ -117,6 +118,115 @@ export async function linkCompany(formData: FormData): Promise<void> {
   );
 
   revalidatePath(`/dashboard/projects/${projectId}`);
+}
+
+// ── Project deliverables ────────────────────────────────────────────────────
+// A deliverable is an action_item attached to a project. Its polymorphic owner
+// (the existing owner-XOR CHECK) carries the direction: a staff owner = "we owe"
+// the project, a network contact owner = "they owe" us back. Owners are always
+// re-validated server-side against the allowed set — org staff for "we owe",
+// contacts at a company on THIS project for "they owe" — so the client can never
+// attach a foreign or off-project owner. Deliverables also surface on the
+// commitments board (they're action_items), so both paths are revalidated.
+
+function revalidateDeliverable(projectId: string): void {
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  revalidatePath("/dashboard/commitments");
+}
+
+export async function addProjectDeliverable(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const text = String(formData.get("text") ?? "").trim();
+  const direction = String(formData.get("direction") ?? "").trim();
+  const ownerId = String(formData.get("ownerId") ?? "").trim();
+
+  if (!projectId) throw new Error("project is required");
+  if (!text) throw new Error("a deliverable description is required");
+  if (direction !== "we_owe" && direction !== "they_owe")
+    throw new Error("invalid direction");
+  if (!ownerId) throw new Error("an owner is required");
+
+  // "We owe" owners are org staff (org_memberships carries no RLS, so scope it
+  // explicitly by org + user — refuses a foreign-tenant user).
+  if (direction === "we_owe") {
+    const member = await prisma.orgMembership.findUnique({
+      where: { orgId_userId: { orgId, userId: ownerId } },
+      select: { userId: true },
+    });
+    if (!member) throw new Error("owner is not a member of this organization");
+  }
+
+  await withOrg(orgId, async (tx) => {
+    // RLS scopes the project to this org; a foreign id resolves to null.
+    const project = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { projectLinks: { select: { companyId: true } } },
+    });
+    if (!project) throw new Error("project not found in this organization");
+
+    if (direction === "they_owe") {
+      // A "they owe" owner must be a contact at a company on this project.
+      const companyIds = project.projectLinks.map((l) => l.companyId);
+      const contact =
+        companyIds.length === 0
+          ? null
+          : await tx.contact.findFirst({
+              where: { id: ownerId, companyId: { in: companyIds } },
+              select: { id: true },
+            });
+      if (!contact)
+        throw new Error("owner must be a contact on a company linked to this project");
+    }
+
+    await tx.actionItem.create({
+      data: {
+        orgId,
+        projectId,
+        text,
+        ownerUserId: direction === "we_owe" ? ownerId : null,
+        ownerContactId: direction === "they_owe" ? ownerId : null,
+      },
+    });
+  });
+
+  revalidateDeliverable(projectId);
+}
+
+// Advance a deliverable's lifecycle. Bounded to the three valid states; RLS scopes
+// the id to the org so a foreign id matches no row.
+export async function updateProjectDeliverable(
+  formData: FormData,
+): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  if (!id || !projectId) throw new Error("deliverable and project are required");
+  if (!["open", "done", "dropped"].includes(status))
+    throw new Error("invalid status");
+
+  await withOrg(orgId, (tx) =>
+    tx.actionItem.updateMany({ where: { id, projectId }, data: { status } }),
+  );
+  revalidateDeliverable(projectId);
+}
+
+export async function deleteProjectDeliverable(
+  formData: FormData,
+): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!id || !projectId) throw new Error("deliverable and project are required");
+
+  await withOrg(orgId, (tx) =>
+    tx.actionItem.deleteMany({ where: { id, projectId } }),
+  );
+  revalidateDeliverable(projectId);
 }
 
 // Open-role scan (slice 11.4c, ported from the prototype's doOpenRolesScan) — the
