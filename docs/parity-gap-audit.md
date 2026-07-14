@@ -17,8 +17,10 @@ action items, linking to the per-meeting extract flow rather than duplicating th
 column** on the Companies list, and inline **normalization feedback** in the member-tier
 editor. **§F (member Director/Advisory tier split) is now RESOLVED** — status-segments
 carry the lifecycle split and the org-configurable tier filter carries the standing
-split; no backfill or separate views. Gate green (lint/typecheck/build 22 routes,
-518 tests / 72 files).
+split; no backfill or separate views. **§1 reconciled** — Dashboard, Revenue, Events,
+News, and Meetings rows were stale (marked ❌/⚠️ but shipped in earlier slices); all now
+✅ and verified against the live routes + `_nav.tsx`. Every §1 view row is now built.
+Gate green (lint/typecheck/build 22 routes, 518 tests / 72 files).
 
 **v6 (2026-07-13) — hardening pass, no parity rows changed.** Two exhaustive code
 audits ran over the full build; the resulting fix batch is committed (`89cea72`) and
@@ -74,19 +76,19 @@ was checked against the actual route/engine on 2026-07-09, not assumed from the 
 
 | Prototype view | Ref | Status | Notes |
 |---|---|---|---|
-| Dashboard overview | `2894` | ⚠️ | Shell + 6 KPIs + ROW3/4/5 built. Notification-card family mostly missing — see §2. |
-| Revenue (rich) | `3580` | ❌ | Nav item inert. = slice **11.11**. YTD/past-due/ARR/target/collection-rate/proposal-pipeline/cash-flow/member-revenue-bars/monthly+quarterly charts/edit-schedule. |
+| Dashboard overview | `2894` | ✅ | Shell + 6 KPIs + ROW3/4/5 + all 7 notification cards (§2). |
+| Revenue (rich) | `3580` | ✅ | Slice **11.11** shipped (`revenue.ts` + `/dashboard/revenue`, live in nav): YTD/past-due/ARR/target/collection-rate/proposal-pipeline/cash-flow/member-revenue-bars/monthly+quarterly charts/edit-schedule. |
 | Companies (list + detail) | `4361` | ✅ | Status segments + filters + rich profile + AI brief. |
 | Member tier views (Director/Advisory/Partners) | `4386`/`4387` | ✅ | Resolved (v7, §F): prototype tiers were status-derived labels. Lifecycle split = `Company.status` segments; standing split = org-configurable `Company.tier` filter + column. No separate hardcoded views by design. |
 | Projects (kanban + detail) | `17909` | ✅ | 8-stage kanban, rich cards, open-role pills → intro engine. |
 | Introductions engine | `14566` | ✅ | member / open-roles / network-scan modes + Layer-0 proactive panel + lifecycle stages. |
 | Network Search | `15094` | ✅ | NL search over profiles. |
 | Prospect Finder | `15215` | ✅ | External discovery via web_search, 2 modes. |
-| Events | `7324` | ⚠️ | Event modal + RSVP + guest brief AI + **event-ideas suggestions** (`event-ideas.ts`) built. Only outreach-email draft still missing — see §3. |
+| Events | `7324` | ✅ | Event modal + RSVP + guest brief AI + event-ideas suggestions (`event-ideas.ts`) + outreach-email draft (`event-outreach.ts` + `events/[id]/_outreach.tsx`). |
 | Value Created | `16185` | ✅ | Facilitated value + economic-impact rollups. |
-| Commitments | `12617` | ✅ | Slice **11.10** shipped (`commitments.ts` + `/dashboard/commitments`): we-owe/they-owe split, due badges, Done/Dismiss. Only the meetings-scan AI button not ported. |
-| News Intelligence | `10966` | ❌ | = slice **11.9**. RSS quick-scan + AI scan; `NewsItem` table exists, no ingest/UI. |
-| Meetings Log | `2145` | ⚠️ | List/summary/attendee-confirm built. Action-item extraction + pre-meeting brief missing — see §3. |
+| Commitments | `12617` | ✅ | Slice **11.10** shipped (`commitments.ts` + `/dashboard/commitments`): we-owe/they-owe split, due badges, Done/Dismiss + (v7) meetings-to-scan discovery card. |
+| News Intelligence | `10966` | ✅ | Slice **11.9** shipped (`news-scan.ts` + `/dashboard/news`, live in nav): RSS quick-scan + AI scan over `NewsItem`. |
+| Meetings Log | `2145` | ✅ | List/summary/attendee-confirm + action-item extraction (`action-items.ts`) + pre-meeting brief (`meeting-prep.ts`) — see §3. |
 | Email Intelligence | `16116` | ✅ | Slice **11.12** shipped (`email-intel.ts` parse/match + `email-sync.ts` fetch seam + `email_messages` table + `/dashboard/email`): published-Sheet CSV ingest, server-side match-to-company (single best match), grouped-by-company view. SSRF guard (v6): Google-owned host allowlist (docs.google.com + *.googleusercontent.com) with manual, per-hop re-validated redirect following. |
 
 ## 2. Dashboard notification-card family (the under-counted cluster)
@@ -142,12 +144,13 @@ attendees** (New Connections needs a new table).
 Prototype IA: Overview(Dashboard, Revenue) · Network(All/Director/Advisory/Partners) ·
 Pipeline(Prospects, Projects, Events, Value Created) · Intelligence(Commitments, Intro
 Engine, Network Search, News, Prospect Finder, Email, Meetings).
-Production IA: Overview(Dashboard, Revenue-inert) · Network(Companies, Contacts,
-Projects, Introductions) · Intelligence(Commitments, Network Search, Prospect Finder) ·
-Operations(Events, Meetings, Invoices, Value Created).
-Missing nav entries: **Revenue** (inert), **News**, **Email**; member tier views
-intentionally collapsed to Companies (status-segments + org-configurable tier filter —
-see §F).
+Production IA: Overview(Dashboard, Revenue) · Network(Companies, Contacts,
+Projects, Introductions) · Intelligence(Commitments, Network Search, Prospect Finder,
+News, Email) · Operations(Events, Meetings, Invoices, Value Created).
+No missing nav entries — Revenue, News, and Email are all live (`_nav.tsx`). Member
+tier views intentionally collapsed to Companies (status-segments + org-configurable
+tier filter — see §F). Remaining IA divergence is grouping only (Contacts/Invoices are
+production additions; the prototype's tier sub-nav is served by the tier filter).
 
 ---
 
