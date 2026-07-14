@@ -1,15 +1,9 @@
 import { requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readMemberTiers } from "@/lib/member-tiers";
-import {
-  Button,
-  Card,
-  CardHeader,
-  PageTitle,
-  Textarea,
-} from "@/components/ui";
+import { Card, CardHeader, PageTitle } from "@/components/ui";
 
-import { updateMemberTiers } from "./actions";
+import { TiersForm } from "./_tiers-form";
 
 // Organization settings. The first surface here is the member-tier vocabulary —
 // each org's own labels for the standing it grants members (HVEDC: Chairman /
@@ -46,20 +40,7 @@ export default async function SettingsPage() {
           </p>
 
           {isAdmin ? (
-            <form action={updateMemberTiers} className="flex flex-col gap-4">
-              <Textarea
-                name="tiers"
-                label="Tiers (one per line)"
-                rows={6}
-                defaultValue={tiers.join("\n")}
-                placeholder={"Chairman\nDirector\nAdvisory"}
-              />
-              <div className="flex justify-end">
-                <Button type="submit" variant="primary">
-                  Save tiers
-                </Button>
-              </div>
-            </form>
+            <TiersForm tiers={tiers} />
           ) : tiers.length === 0 ? (
             <p className="text-xs text-ink-3">
               No member tiers configured. An admin can set them here.

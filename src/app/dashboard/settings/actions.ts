@@ -12,13 +12,28 @@ import { normalizeMemberTiers } from "@/lib/member-tiers";
 // admin-only: staff can read the settings surface but the write is gated on the
 // Clerk-derived role, failing closed for anyone else.
 
+// useActionState result. On success we echo the NORMALIZED tiers back so the
+// editor can show the admin exactly what was stored (blanks/dupes dropped,
+// labels/list capped) instead of leaving them to spot the difference on reload.
+export type UpdateTiersState =
+  | { status: "idle" }
+  | { status: "saved"; tiers: string[] }
+  | { status: "error"; message: string };
+
 // Persist the org's member-tier vocabulary. The editor submits one tier per
 // line; we normalize (trim / drop blanks / de-dupe / cap) through the shared
-// helper, then merge into the settings JSON so other keys are preserved.
-export async function updateMemberTiers(formData: FormData): Promise<void> {
+// helper, then merge into the settings JSON so other keys are preserved. The
+// admin gate still fails closed — a non-admin write is refused before any query.
+export async function updateMemberTiers(
+  _prev: UpdateTiersState,
+  formData: FormData,
+): Promise<UpdateTiersState> {
   const { orgId, role } = await requireOrgContext();
   if (role !== "admin")
-    throw new Error("only an admin can change organization settings");
+    return {
+      status: "error",
+      message: "Only an admin can change organization settings.",
+    };
 
   const tiers = normalizeMemberTiers(
     String(formData.get("tiers") ?? "").split("\n"),
@@ -39,4 +54,5 @@ export async function updateMemberTiers(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/dashboard/settings");
+  return { status: "saved", tiers };
 }

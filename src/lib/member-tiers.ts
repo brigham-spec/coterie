@@ -7,9 +7,10 @@
 // through. Pure — no I/O — so it's trivially testable and safe in any layer.
 
 // A tier label is free text (org's own vocabulary), but bounded so one bad
-// paste can't bloat the JSON blob or the tier <select>.
-const MAX_TIERS = 20;
-const MAX_LABEL_LENGTH = 60;
+// paste can't bloat the JSON blob or the tier <select>. Exported so the editor
+// can show the same caps it enforces on write.
+export const MAX_TIERS = 20;
+export const MAX_LABEL_LENGTH = 60;
 
 // Normalize an arbitrary settings value into the tier list. Accepts the whole
 // Organization.settings object (or anything) and reads its `memberTiers` array,
