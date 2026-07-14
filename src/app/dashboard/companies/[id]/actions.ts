@@ -24,6 +24,10 @@ import {
   type ProfileEnrichment,
 } from "@/lib/enrich-meetings";
 import {
+  generateDocumentIntel,
+  type DocumentIntel,
+} from "@/lib/analyze-document";
+import {
   generateWhyJoinPitch,
   type PitchMember,
   type WhyJoinPitch,
@@ -741,6 +745,208 @@ export async function applyMeetingEnrichment(
     if (selection.notesAppend !== undefined) {
       const stamp = new Date().toISOString().slice(0, 10);
       const header = `[Meetings, ${stamp}]: ${selection.notesAppend}`;
+      data.notes = company.notes ? `${company.notes}\n\n${header}` : header;
+    }
+
+    await tx.company.update({ where: { id: companyId }, data });
+    return true;
+  });
+
+  if (!applied)
+    return { status: "error", message: "company not found in this organization" };
+
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/companies");
+  revalidatePath("/dashboard");
+  return { status: "applied", count };
+}
+
+// Analyze-document (gap-audit cluster E). The operator uploads a PDF — an
+// offering memo, pitch deck, or investment summary — and we read the profile
+// intelligence out of it. The company is re-loaded withOrg-scoped from the id in
+// the form (never a client payload), so a foreign id resolves null and no other
+// tenant's profile is touched. The PDF bytes are sent to Anthropic as a document
+// block in @/lib/analyze-document; the key never reaches the browser. Ephemeral:
+// the result is only proposed here — nothing is written until the operator
+// applies selected fields below.
+
+export type AnalyzeDocumentState =
+  | { status: "idle" }
+  | { status: "ok"; intel: DocumentIntel; fileName: string }
+  | { status: "error"; message: string };
+
+const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20MB, matching the prototype's cap.
+
+export async function analyzeDocumentAction(
+  _prev: AnalyzeDocumentState,
+  formData: FormData,
+): Promise<AnalyzeDocumentState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const file = formData.get("document");
+  if (!(file instanceof File) || file.size === 0)
+    return { status: "error", message: "Choose a PDF to analyze." };
+  if (file.type !== "application/pdf")
+    return { status: "error", message: "Only PDF files can be analyzed." };
+  if (file.size > MAX_PDF_BYTES)
+    return { status: "error", message: "That file is too large (20MB max)." };
+
+  const { orgId } = await requireOrgContext();
+
+  const company = await withOrg(orgId, (tx) =>
+    tx.company.findUnique({
+      where: { id: companyId },
+      select: {
+        name: true,
+        industry: true,
+        lookingFor: true,
+        canOffer: true,
+        counties: true,
+        dealSize: true,
+        agencyContacts: true,
+        contacts: { where: { isPrimary: true }, take: 1, select: { name: true } },
+      },
+    }),
+  );
+  if (company == null)
+    return { status: "error", message: "company not found in this organization" };
+
+  const base64Pdf = Buffer.from(await file.arrayBuffer()).toString("base64");
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const intel = await generateDocumentIntel(
+      {
+        fileName: file.name,
+        orgName: company.name,
+        contactName: company.contacts[0]?.name ?? "",
+        industry: company.industry,
+        lookingFor: company.lookingFor ?? "",
+        canOffer: company.canOffer ?? "",
+        counties: company.counties.join(", "),
+        dealSize: company.dealSize ?? "",
+        agencyContacts: company.agencyContacts ?? "",
+      },
+      base64Pdf,
+    );
+    if (intel == null)
+      return {
+        status: "error",
+        message: "No structured data found in this document.",
+      };
+    return { status: "ok", intel, fileName: file.name };
+  } catch (err) {
+    console.error("analyze document failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not analyze the document. Try again." };
+  }
+}
+
+// Apply the operator's selected document-intel fields to the company row. The
+// client posts a hidden JSON payload of ONLY the checked fields plus the source
+// file name; we coerce it defensively, re-verify the company inside withOrg (RLS
+// → a foreign id resolves null → refused), and write only the provided scalars.
+// `counties` is split into the array column; `notesAppend` is appended (never
+// overwrites) with a dated "[Document]" header so the provenance is visible.
+
+export type ApplyDocumentIntelState =
+  | { status: "idle" }
+  | { status: "applied"; count: number }
+  | { status: "error"; message: string };
+
+type DocumentIntelSelection = {
+  lookingFor?: string;
+  canOffer?: string;
+  counties?: string;
+  dealSize?: string;
+  agencyContacts?: string;
+  notesAppend?: string;
+};
+
+// PURE: read the client's selection payload, keeping only non-empty string values
+// for the writable fields. Anything malformed collapses to {}.
+function readDocumentIntelSelection(raw: string): DocumentIntelSelection {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const obj = parsed as Record<string, unknown>;
+  const pick = (v: unknown, max: number): string | undefined => {
+    if (typeof v !== "string") return undefined;
+    const t = v.trim();
+    return t === "" ? undefined : t.slice(0, max);
+  };
+  const selection: DocumentIntelSelection = {};
+  const lookingFor = pick(obj.lookingFor, 200);
+  const canOffer = pick(obj.canOffer, 200);
+  const counties = pick(obj.counties, 200);
+  const dealSize = pick(obj.dealSize, 120);
+  const agencyContacts = pick(obj.agencyContacts, 200);
+  const notesAppend = pick(obj.notesAppend, 500);
+  if (lookingFor !== undefined) selection.lookingFor = lookingFor;
+  if (canOffer !== undefined) selection.canOffer = canOffer;
+  if (counties !== undefined) selection.counties = counties;
+  if (dealSize !== undefined) selection.dealSize = dealSize;
+  if (agencyContacts !== undefined) selection.agencyContacts = agencyContacts;
+  if (notesAppend !== undefined) selection.notesAppend = notesAppend;
+  return selection;
+}
+
+export async function applyDocumentIntel(
+  _prev: ApplyDocumentIntelState,
+  formData: FormData,
+): Promise<ApplyDocumentIntelState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const selection = readDocumentIntelSelection(
+    String(formData.get("intel") ?? ""),
+  );
+  const fileName = String(formData.get("fileName") ?? "").trim().slice(0, 200);
+  const count = Object.keys(selection).length;
+  if (count === 0)
+    return { status: "error", message: "Nothing selected to apply." };
+
+  const { orgId } = await requireOrgContext();
+
+  const applied = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { notes: true },
+    });
+    if (company == null) return false;
+
+    const data: {
+      lookingFor?: string;
+      canOffer?: string;
+      counties?: string[];
+      dealSize?: string;
+      agencyContacts?: string;
+      notes?: string;
+    } = {};
+    if (selection.lookingFor !== undefined) data.lookingFor = selection.lookingFor;
+    if (selection.canOffer !== undefined) data.canOffer = selection.canOffer;
+    if (selection.counties !== undefined)
+      data.counties = selection.counties
+        .split(",")
+        .map((c) => c.trim())
+        .filter((c) => c !== "");
+    if (selection.dealSize !== undefined) data.dealSize = selection.dealSize;
+    if (selection.agencyContacts !== undefined)
+      data.agencyContacts = selection.agencyContacts;
+    if (selection.notesAppend !== undefined) {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const label = fileName ? `Document: ${fileName}, ${stamp}` : `Document, ${stamp}`;
+      const header = `[${label}]: ${selection.notesAppend}`;
       data.notes = company.notes ? `${company.notes}\n\n${header}` : header;
     }
 
