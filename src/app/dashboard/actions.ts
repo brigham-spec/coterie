@@ -72,3 +72,93 @@ export async function scanNetworkIntros(
     return { status: "error", message: "Could not scan the network. Try again." };
   }
 }
+
+// Global command-palette search (review Tier-1) — matches companies, contacts,
+// and projects by name for _command-palette.tsx. RLS scopes every read to the
+// caller's tenant via withOrg, so results can never span organizations. Bounded
+// per type so the palette stays scannable.
+
+export type SearchResultType = "company" | "contact" | "project";
+
+export type SearchResult = {
+  type: SearchResultType;
+  id: string;
+  label: string;
+  sublabel: string;
+  href: string;
+};
+
+const SEARCH_PER_TYPE = 6;
+
+function titleize(value: string): string {
+  return value
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+export async function searchNetwork(query: string): Promise<SearchResult[]> {
+  const q = query.trim();
+  // One character is too broad to be useful; the client still shows nav commands.
+  if (q.length < 2) return [];
+
+  const { orgId } = await requireOrgContext();
+
+  return withOrg(orgId, async (tx) => {
+    // A withOrg tx holds a single pooled connection, so its reads run
+    // sequentially — issuing them concurrently would serialize under contention.
+    const companies = await tx.company.findMany({
+      where: { name: { contains: q, mode: "insensitive" } },
+      orderBy: { name: "asc" },
+      take: SEARCH_PER_TYPE,
+      select: { id: true, name: true, status: true, industry: true },
+    });
+    const contacts = await tx.contact.findMany({
+      where: { name: { contains: q, mode: "insensitive" } },
+      orderBy: { name: "asc" },
+      take: SEARCH_PER_TYPE,
+      select: {
+        id: true,
+        name: true,
+        title: true,
+        company: { select: { name: true } },
+      },
+    });
+    const projects = await tx.project.findMany({
+      where: { name: { contains: q, mode: "insensitive" } },
+      orderBy: { name: "asc" },
+      take: SEARCH_PER_TYPE,
+      select: { id: true, name: true, stage: true },
+    });
+
+    return [
+      ...companies.map(
+        (c): SearchResult => ({
+          type: "company",
+          id: c.id,
+          label: c.name,
+          sublabel: c.industry || titleize(c.status),
+          href: `/dashboard/companies/${c.id}`,
+        }),
+      ),
+      ...contacts.map(
+        (c): SearchResult => ({
+          type: "contact",
+          id: c.id,
+          label: c.name,
+          sublabel: [c.title, c.company.name].filter(Boolean).join(" \u00b7 "),
+          href: `/dashboard/contacts/${c.id}`,
+        }),
+      ),
+      ...projects.map(
+        (p): SearchResult => ({
+          type: "project",
+          id: p.id,
+          label: p.name,
+          sublabel: titleize(p.stage),
+          href: `/dashboard/projects/${p.id}`,
+        }),
+      ),
+    ];
+  });
+}

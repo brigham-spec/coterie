@@ -5,6 +5,7 @@ import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import { NoActiveOrgError, requireOrgContext } from "@/lib/auth";
 
 import { Nav } from "./_nav";
+import { CommandPalette } from "./_command-palette";
 
 // The app shell: a fixed dark sidebar (tenant identity + grouped nav) beside a
 // topbar and the scrolling content area. requireOrgContext is React-cached, so
@@ -42,6 +43,8 @@ export default async function DashboardLayout({
 
       <div className="flex min-h-screen flex-1 flex-col pl-56 print:pl-0">
         <header className="flex h-14 items-center justify-end gap-3 border-b border-line bg-surface px-6 print:hidden">
+          <CommandPalette />
+          <div className="flex-1" />
           <OrganizationSwitcher
             afterCreateOrganizationUrl="/dashboard"
             afterSelectOrganizationUrl="/dashboard"

@@ -5,99 +5,36 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/components/ui";
 
+import { NAV_GROUPS } from "./nav-items";
+
 // Sidebar navigation. Grouped like the prototype: a labelled section per domain,
-// active item marked with a gold left border. Items without an `href` are
-// planned surfaces (later build-order slices) — shown, but inert, so the shell
-// reads as the full product without linking to routes that don't exist yet.
-
-type NavItem = { label: string; href?: string };
-type NavGroup = { label: string; items: NavItem[] };
-
-const groups: NavGroup[] = [
-  {
-    label: "Overview",
-    items: [
-      { label: "Dashboard", href: "/dashboard" },
-      { label: "Revenue", href: "/dashboard/revenue" },
-    ],
-  },
-  {
-    label: "Network",
-    items: [
-      { label: "Companies", href: "/dashboard/companies" },
-      { label: "Contacts", href: "/dashboard/contacts" },
-      { label: "Projects", href: "/dashboard/projects" },
-      { label: "Introductions", href: "/dashboard/introductions" },
-    ],
-  },
-  {
-    label: "Intelligence",
-    items: [
-      { label: "Commitments", href: "/dashboard/commitments" },
-      { label: "Network Search", href: "/dashboard/network-search" },
-      { label: "Prospect Finder", href: "/dashboard/prospect-finder" },
-      { label: "News", href: "/dashboard/news" },
-      { label: "Email", href: "/dashboard/email" },
-    ],
-  },
-  {
-    label: "Operations",
-    items: [
-      { label: "Events", href: "/dashboard/events" },
-      { label: "Meetings", href: "/dashboard/meetings" },
-      { label: "Invoices", href: "/dashboard/invoices" },
-      { label: "Value Created", href: "/dashboard/value-created" },
-    ],
-  },
-  {
-    label: "Organization",
-    items: [{ label: "Settings", href: "/dashboard/settings" }],
-  },
-];
+// active item marked with a gold left border. Destinations come from the shared
+// NAV_GROUPS model (see nav-items.ts), also consumed by the command palette.
 
 export function Nav() {
   const pathname = usePathname();
 
   return (
     <nav className="flex flex-col gap-6">
-      {groups.map((group) => (
+      {NAV_GROUPS.map((group) => (
         <div key={group.label}>
           <div className="mb-1.5 px-3 text-[9.5px] font-medium tracking-[0.1em] text-white/35 uppercase">
             {group.label}
           </div>
           <ul className="flex flex-col gap-0.5">
             {group.items.map((item) => {
+              // The dashboard root only lights on an exact match; every other
+              // section stays lit on its detail sub-routes too.
               const active =
-                item.href != null &&
-                // The dashboard root only lights on an exact match; every other
-                // section stays lit on its detail sub-routes too.
-                (pathname === item.href ||
-                  (item.href !== "/dashboard" &&
-                    pathname.startsWith(`${item.href}/`)));
-              const base =
-                "block rounded-sm border-l-2 px-3 py-1.5 text-[13px] transition-colors";
-
-              if (item.href == null) {
-                return (
-                  <li key={item.label}>
-                    <span
-                      className={cn(
-                        base,
-                        "cursor-default border-transparent text-white/25",
-                      )}
-                    >
-                      {item.label}
-                    </span>
-                  </li>
-                );
-              }
-
+                pathname === item.href ||
+                (item.href !== "/dashboard" &&
+                  pathname.startsWith(`${item.href}/`));
               return (
                 <li key={item.label}>
                   <Link
                     href={item.href}
                     className={cn(
-                      base,
+                      "block rounded-sm border-l-2 px-3 py-1.5 text-[13px] transition-colors",
                       active
                         ? "border-gold bg-white/5 text-white"
                         : "border-transparent text-white/70 hover:bg-white/5 hover:text-white",
