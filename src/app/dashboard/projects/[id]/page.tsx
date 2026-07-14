@@ -103,11 +103,29 @@ export default async function ProjectDetailPage({
             select: { id: true, name: true, company: { select: { name: true } } },
             orderBy: { name: "asc" },
           });
-    return { project, companies, deliverables, projectContacts };
+    // Press & News = saved news items across the participant companies (read-only
+    // here; capture/removal live on /dashboard/news). RLS-scoped like the rest.
+    const newsItems =
+      companyIds.length === 0
+        ? []
+        : await tx.newsItem.findMany({
+            where: { companyId: { in: companyIds } },
+            orderBy: { capturedAt: "desc" },
+            take: 15,
+            select: {
+              id: true,
+              headline: true,
+              url: true,
+              summary: true,
+              capturedAt: true,
+              company: { select: { name: true } },
+            },
+          });
+    return { project, companies, deliverables, projectContacts, newsItems };
   });
 
   if (data == null) notFound();
-  const { project, companies, deliverables, projectContacts } = data;
+  const { project, companies, deliverables, projectContacts, newsItems } = data;
 
   // Staff owners = org members ("we owe"). org_memberships has no RLS, so scope
   // it explicitly by org (mirrors owner reassignment on the company profile).
@@ -275,6 +293,46 @@ export default async function ProjectDetailPage({
         staff={staff}
         contacts={contactOptions}
       />
+
+      {project.projectLinks.length > 0 ? (
+        <Card>
+          <CardHeader title="Press & News" />
+          {newsItems.length === 0 ? (
+            <p className="px-4 py-6 text-xs text-ink-3">
+              No saved news for the participant companies yet. Capture coverage on{" "}
+              <Link href="/dashboard/news" className="text-gold underline">
+                News
+              </Link>
+              .
+            </p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {newsItems.map((n) => (
+                <li key={n.id} className="flex flex-col gap-1 px-4 py-3">
+                  <a
+                    href={n.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[12.5px] font-medium text-ink hover:text-gold hover:underline"
+                  >
+                    {n.headline}
+                  </a>
+                  {n.summary ? (
+                    <p className="line-clamp-2 text-[10.5px] text-ink-3">
+                      {n.summary}
+                    </p>
+                  ) : null}
+                  <div className="flex items-center gap-2 text-[10px] text-ink-3">
+                    <span>{n.company.name}</span>
+                    <span>·</span>
+                    <span>{dateFmt.format(n.capturedAt)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      ) : null}
 
       {isActive && unfilledRoles.length > 0 ? (
         <OpenRoles projectId={project.id} roles={unfilledRoles} />
