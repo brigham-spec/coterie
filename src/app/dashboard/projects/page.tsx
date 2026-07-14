@@ -160,12 +160,24 @@ export default async function ProjectsPage({
               placeholder="0"
             />
             <Field
+              name="sqft"
+              label="Sq ft"
+              inputMode="numeric"
+              placeholder="0"
+            />
+            <Field
               name="value"
               label="Value (USD)"
               placeholder="0"
               inputMode="decimal"
             />
             <Field name="targetDate" label="Target date" type="date" />
+            <Field
+              name="prospectLead"
+              label="Developer / lead"
+              placeholder="Lead org or developer"
+              className="col-span-2"
+            />
             <Field
               name="description"
               label="Description"

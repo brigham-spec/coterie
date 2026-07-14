@@ -256,6 +256,8 @@ model Project {
   county         String?
   /// Units / keys — pipeline metric (demo `units`).
   units          Int?
+  /// Gross square footage — pipeline metric (demo `sqft`).
+  sqft           Int?
   /// Value actually realized — powers Value Created (demo `realizedValue`).
   realizedValue  Decimal? @map("realized_value") @db.Decimal(14, 2)
   /// Lead org/name if not yet a member (demo `prospectLead`).

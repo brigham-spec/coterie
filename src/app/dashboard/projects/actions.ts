@@ -29,6 +29,8 @@ export async function createProject(formData: FormData): Promise<void> {
   const type = String(formData.get("type") ?? "").trim();
   const county = String(formData.get("county") ?? "").trim();
   const unitsRaw = String(formData.get("units") ?? "").trim();
+  const sqftRaw = String(formData.get("sqft") ?? "").trim();
+  const prospectLead = String(formData.get("prospectLead") ?? "").trim();
   const targetDate = optionalDate(formData, "targetDate");
   const valueRaw = String(formData.get("value") ?? "").trim();
 
@@ -38,6 +40,8 @@ export async function createProject(formData: FormData): Promise<void> {
     throw new Error("value must be a number");
   if (unitsRaw !== "" && !Number.isInteger(Number(unitsRaw)))
     throw new Error("units must be a whole number");
+  if (sqftRaw !== "" && !Number.isInteger(Number(sqftRaw)))
+    throw new Error("square footage must be a whole number");
 
   await withOrg(orgId, (tx) =>
     tx.project.create({
@@ -49,6 +53,8 @@ export async function createProject(formData: FormData): Promise<void> {
         type: type === "" ? null : type,
         county: county === "" ? null : county,
         units: unitsRaw === "" ? null : Number(unitsRaw),
+        sqft: sqftRaw === "" ? null : Number(sqftRaw),
+        prospectLead: prospectLead === "" ? null : prospectLead,
         targetDate,
         value: valueRaw === "" ? null : valueRaw,
       },

@@ -167,6 +167,10 @@ export default async function ProjectDetailPage({
       value: project.units == null ? null : String(project.units),
     },
     {
+      label: "Sq ft",
+      value: project.sqft == null ? null : project.sqft.toLocaleString("en-US"),
+    },
+    {
       label: "Value",
       value: project.value == null ? null : currency.format(Number(project.value)),
     },
@@ -177,7 +181,7 @@ export default async function ProjectDetailPage({
           ? null
           : currency.format(Number(project.realizedValue)),
     },
-    { label: "Prospect lead", value: project.prospectLead },
+    { label: "Developer / lead", value: project.prospectLead },
     {
       label: "Target date",
       value: project.targetDate == null ? null : dateFmt.format(project.targetDate),
