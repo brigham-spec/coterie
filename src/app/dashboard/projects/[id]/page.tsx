@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { PROJECT_STAGES, TERMINAL_STAGES } from "@/lib/project-stages";
+import { buildStageTimeline } from "@/lib/stage-history";
 import { openRoles } from "@/lib/disciplines";
 import {
   Button,
@@ -32,6 +33,15 @@ const currency = new Intl.NumberFormat("en-US", {
 });
 
 const dateFmt = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
+
+// Stage-history dates are stored as UTC "YYYY-MM-DD"; pin formatting to UTC so the
+// rendered day can't drift by the server's timezone (and can't mismatch on hydrate).
+const stageDateFmt = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
   year: "numeric",
   month: "short",
   day: "numeric",
@@ -77,6 +87,9 @@ export default async function ProjectDetailPage({
 
   const linkedIds = new Set(project.projectLinks.map((l) => l.companyId));
   const linkable = companies.filter((c) => !linkedIds.has(c.id));
+
+  // Stage history reads the trail updateStage appends to; newest-first for display.
+  const timeline = buildStageTimeline(project.stageHistory);
 
   // Open roles = disciplines not yet staffed on the team. Only meaningful while the
   // project is live — a completed / on-hold project isn't hiring.
@@ -158,6 +171,31 @@ export default async function ProjectDetailPage({
           <Button type="submit">Update stage</Button>
         </form>
       </Card>
+
+      {timeline.length > 0 ? (
+        <Card>
+          <CardHeader title="Stage history" />
+          <ul className="flex flex-col">
+            {[...timeline].reverse().map((e) => (
+              <li
+                key={`${e.stage}-${e.date}`}
+                className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
+              >
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={e.stage} />
+                  <span className="text-[11px] text-ink-3">
+                    {stageDateFmt.format(new Date(`${e.date}T00:00:00Z`))}
+                  </span>
+                </div>
+                <span className="text-[11px] text-ink-2">
+                  {e.days} {e.days === 1 ? "day" : "days"}
+                  {e.isCurrent ? " in current stage" : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader title="Participants" />
