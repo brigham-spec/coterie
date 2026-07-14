@@ -37,6 +37,9 @@ const staffUser = {
 // prove the win-nudge; company B is the foreign tenant.
 const companyAId = randomUUID();
 const wonCompanyId = randomUUID();
+// An existing member (not a prospect) — winning a proposal against it must not
+// overwrite its tier/value.
+const memberCompanyId = randomUUID();
 const companyBId = randomUUID();
 const proposalBId = randomUUID();
 
@@ -71,6 +74,17 @@ beforeAll(async () => {
         status: "prospect",
         industry: "Retail",
         annualValue: 1000,
+      },
+    });
+    await tx.company.create({
+      data: {
+        id: memberCompanyId,
+        orgId: orgA.id,
+        name: "Founders Co",
+        status: "member",
+        tier: "Founders Tier",
+        industry: "Energy",
+        annualValue: 30000,
       },
     });
   });
@@ -198,7 +212,7 @@ describe("updateProposalStatus", () => {
       });
       const company = await tx.company.findUnique({
         where: { id: wonCompanyId },
-        select: { status: true },
+        select: { status: true, tier: true, annualValue: true },
       });
       const activities = await tx.activity.findMany({
         where: { companyId: wonCompanyId, type: "status_changed" },
@@ -212,12 +226,86 @@ describe("updateProposalStatus", () => {
     expect(result.proposal!.lastFollowUpAt).not.toBeNull();
     // The prospect was nudged into membership and the transition journaled.
     expect(result.company!.status).toBe("member");
+    // The proposal's tier is stamped onto the new member…
+    expect(result.company!.tier).toBe("Director");
+    // …but its annualValue is left untouched because this proposal named no amount.
+    expect(Number(result.company!.annualValue)).toBe(1000);
     expect(result.activities).toHaveLength(1);
     expect(result.activities[0].payload).toMatchObject({
       from: "prospect",
       to: "member",
     });
     expect(result.activities[0].actorUserId).toBe(staffUser.id);
+  });
+
+  test("stamps the proposed tier and amount onto the promoted member", async () => {
+    const amountCompanyId = randomUUID();
+    const proposalId = randomUUID();
+    await withOrg(orgA.id, async (tx) => {
+      await tx.company.create({
+        data: {
+          id: amountCompanyId,
+          orgId: orgA.id,
+          name: "Amount Co",
+          status: "prospect",
+          industry: "Finance",
+          annualValue: 1000,
+        },
+      });
+      await tx.membershipProposal.create({
+        data: {
+          id: proposalId,
+          orgId: orgA.id,
+          companyId: amountCompanyId,
+          tier: "Chairman's Circle",
+          amount: "50000",
+          status: "negotiating",
+        },
+      });
+    });
+
+    await updateProposalStatus(fd({ proposalId, status: "won" }));
+
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: amountCompanyId },
+        select: { status: true, tier: true, annualValue: true },
+      }),
+    );
+    expect(company!.status).toBe("member");
+    expect(company!.tier).toBe("Chairman's Circle");
+    // The proposal named $50k, so the new member's annual value inherits it.
+    expect(Number(company!.annualValue)).toBe(50000);
+  });
+
+  test("leaves a non-prospect company's tier and value untouched on win", async () => {
+    const proposalId = randomUUID();
+    await withOrg(orgA.id, (tx) =>
+      tx.membershipProposal.create({
+        data: {
+          id: proposalId,
+          orgId: orgA.id,
+          companyId: memberCompanyId,
+          tier: "Advisory",
+          amount: "9000",
+          status: "sent",
+        },
+      }),
+    );
+
+    await updateProposalStatus(fd({ proposalId, status: "won" }));
+
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: memberCompanyId },
+        select: { status: true, tier: true, annualValue: true },
+      }),
+    );
+    // Already a member — the win records the proposal but does not overwrite
+    // the existing tier/value (only prospect promotions apply the proposal).
+    expect(company!.status).toBe("member");
+    expect(company!.tier).toBe("Founders Tier");
+    expect(Number(company!.annualValue)).toBe(30000);
   });
 
   test("rejects an unknown status", async () => {

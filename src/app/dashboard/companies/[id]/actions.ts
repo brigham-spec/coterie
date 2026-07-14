@@ -1172,7 +1172,9 @@ export async function createProposal(formData: FormData): Promise<void> {
 
 // Move a proposal along the pipeline. Any status change also stamps
 // lastFollowUpAt so the follow-up nudge treats it as freshly touched. Winning a
-// proposal converts a prospect company to member (journaled) — a member/partner/
+// proposal converts a prospect company to member (journaled) and stamps the new
+// member's standing at the proposed tier/amount — mirroring the prototype's
+// convert flow (Coterie.html:6788, which sets both st and v). A member/partner/
 // former company is left as-is.
 export async function updateProposalStatus(formData: FormData): Promise<void> {
   const { orgId, userId } = await requireOrgContext();
@@ -1186,7 +1188,7 @@ export async function updateProposalStatus(formData: FormData): Promise<void> {
   const companyId = await withOrg(orgId, async (tx) => {
     const proposal = await tx.membershipProposal.findUnique({
       where: { id: proposalId },
-      select: { companyId: true },
+      select: { companyId: true, tier: true, amount: true },
     });
     if (proposal == null) return null;
 
@@ -1196,7 +1198,8 @@ export async function updateProposalStatus(formData: FormData): Promise<void> {
     });
 
     // Winning nudges a prospect into membership, journaled like the lifecycle
-    // shortcut so the relationship timeline reflects the close.
+    // shortcut so the relationship timeline reflects the close. The new member
+    // inherits the proposal's tier (and amount, when the proposal carried one).
     if (status === "won") {
       const company = await tx.company.findUnique({
         where: { id: proposal.companyId },
@@ -1205,7 +1208,15 @@ export async function updateProposalStatus(formData: FormData): Promise<void> {
       if (company != null && company.status === "prospect") {
         await tx.company.update({
           where: { id: proposal.companyId },
-          data: { status: "member" },
+          data: {
+            status: "member",
+            tier: proposal.tier,
+            // The proposal's amount is optional; leave annualValue untouched when
+            // the proposal never named a figure.
+            ...(proposal.amount != null
+              ? { annualValue: proposal.amount }
+              : {}),
+          },
         });
         await tx.activity.create({
           data: {
