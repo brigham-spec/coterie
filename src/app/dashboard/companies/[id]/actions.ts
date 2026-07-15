@@ -24,6 +24,10 @@ import {
   type ProfileEnrichment,
 } from "@/lib/enrich-meetings";
 import {
+  generateWebEnrichment,
+  type WebEnrichment,
+} from "@/lib/enrich-web";
+import {
   generateDocumentIntel,
   type DocumentIntel,
 } from "@/lib/analyze-document";
@@ -745,6 +749,201 @@ export async function applyMeetingEnrichment(
     if (selection.notesAppend !== undefined) {
       const stamp = new Date().toISOString().slice(0, 10);
       const header = `[Meetings, ${stamp}]: ${selection.notesAppend}`;
+      data.notes = company.notes ? `${company.notes}\n\n${header}` : header;
+    }
+
+    await tx.company.update({ where: { id: companyId }, data });
+    return true;
+  });
+
+  if (!applied)
+    return { status: "error", message: "company not found in this organization" };
+
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/companies");
+  revalidatePath("/dashboard");
+  return { status: "applied", count };
+}
+
+// Enrich-from-web (gap-audit cluster E), sibling to enrich-from-meetings. The
+// company is re-loaded withOrg-scoped from the id in the form (never a client
+// payload), so a foreign id resolves null and no other tenant is read. Its
+// current field values + public URLs ground a live web search in @/lib/enrich-web;
+// the Anthropic key never reaches the browser. Ephemeral: the result is only
+// proposed here — nothing is written until the operator applies selected fields.
+
+export type EnrichWebState =
+  | { status: "idle" }
+  | { status: "ok"; enrichment: WebEnrichment }
+  | { status: "error"; message: string };
+
+export async function enrichFromWebAction(
+  _prev: EnrichWebState,
+  formData: FormData,
+): Promise<EnrichWebState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const { orgId } = await requireOrgContext();
+
+  const company = await withOrg(orgId, (tx) =>
+    tx.company.findUnique({
+      where: { id: companyId },
+      select: {
+        name: true,
+        industry: true,
+        counties: true,
+        website: true,
+        dealSize: true,
+        lookingFor: true,
+        canOffer: true,
+        agencyContacts: true,
+        contacts: {
+          where: { isPrimary: true },
+          take: 1,
+          select: { name: true },
+        },
+      },
+    }),
+  );
+
+  if (company == null)
+    return { status: "error", message: "company not found in this organization" };
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const enrichment = await generateWebEnrichment({
+      orgName: company.name,
+      companyName: company.name,
+      contactName: company.contacts[0]?.name ?? "",
+      industry: company.industry,
+      counties: company.counties,
+      website: company.website,
+      lookingFor: company.lookingFor ?? "",
+      canOffer: company.canOffer ?? "",
+      dealSize: company.dealSize ?? "",
+      agencyContacts: company.agencyContacts ?? "",
+    });
+    if (enrichment == null)
+      return {
+        status: "error",
+        message: "No new profile details found on the web.",
+      };
+    return { status: "ok", enrichment };
+  } catch (err) {
+    console.error("web enrichment failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not enrich from the web. Try again." };
+  }
+}
+
+// Apply the operator's selected web-enrichment fields to the company row. The
+// client posts a hidden JSON payload of ONLY the fields the operator checked; we
+// coerce it defensively, re-verify the company inside withOrg (RLS → a foreign id
+// resolves null → refused), and write only the provided scalars. `counties` is
+// split on commas into the String[] column; `notesAppend` is appended (never
+// overwrites) with a dated "[Web]" header so the provenance is visible.
+
+export type ApplyWebEnrichmentState =
+  | { status: "idle" }
+  | { status: "applied"; count: number }
+  | { status: "error"; message: string };
+
+type WebEnrichmentSelection = {
+  lookingFor?: string;
+  canOffer?: string;
+  industry?: string;
+  counties?: string;
+  dealSize?: string;
+  agencyContacts?: string;
+  notesAppend?: string;
+};
+
+// PURE: read the client's selection payload, keeping only non-empty string values
+// for the writable fields. Anything malformed collapses to {}.
+function readWebEnrichmentSelection(raw: string): WebEnrichmentSelection {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const obj = parsed as Record<string, unknown>;
+  const pick = (v: unknown, max: number): string | undefined => {
+    if (typeof v !== "string") return undefined;
+    const t = v.trim();
+    return t === "" ? undefined : t.slice(0, max);
+  };
+  const selection: WebEnrichmentSelection = {};
+  const lookingFor = pick(obj.lookingFor, 200);
+  const canOffer = pick(obj.canOffer, 200);
+  const industry = pick(obj.industry, 80);
+  const counties = pick(obj.counties, 200);
+  const dealSize = pick(obj.dealSize, 100);
+  const agencyContacts = pick(obj.agencyContacts, 300);
+  const notesAppend = pick(obj.notesAppend, 500);
+  if (lookingFor !== undefined) selection.lookingFor = lookingFor;
+  if (canOffer !== undefined) selection.canOffer = canOffer;
+  if (industry !== undefined) selection.industry = industry;
+  if (counties !== undefined) selection.counties = counties;
+  if (dealSize !== undefined) selection.dealSize = dealSize;
+  if (agencyContacts !== undefined) selection.agencyContacts = agencyContacts;
+  if (notesAppend !== undefined) selection.notesAppend = notesAppend;
+  return selection;
+}
+
+export async function applyWebEnrichment(
+  _prev: ApplyWebEnrichmentState,
+  formData: FormData,
+): Promise<ApplyWebEnrichmentState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const selection = readWebEnrichmentSelection(
+    String(formData.get("enrichment") ?? ""),
+  );
+  const count = Object.keys(selection).length;
+  if (count === 0)
+    return { status: "error", message: "Nothing selected to apply." };
+
+  const { orgId } = await requireOrgContext();
+
+  const applied = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { notes: true },
+    });
+    if (company == null) return false;
+
+    const data: {
+      lookingFor?: string;
+      canOffer?: string;
+      industry?: string;
+      counties?: string[];
+      dealSize?: string;
+      agencyContacts?: string;
+      notes?: string;
+    } = {};
+    if (selection.lookingFor !== undefined) data.lookingFor = selection.lookingFor;
+    if (selection.canOffer !== undefined) data.canOffer = selection.canOffer;
+    if (selection.industry !== undefined) data.industry = selection.industry;
+    if (selection.counties !== undefined)
+      data.counties = selection.counties
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean);
+    if (selection.dealSize !== undefined) data.dealSize = selection.dealSize;
+    if (selection.agencyContacts !== undefined)
+      data.agencyContacts = selection.agencyContacts;
+    if (selection.notesAppend !== undefined) {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const header = `[Web, ${stamp}]: ${selection.notesAppend}`;
       data.notes = company.notes ? `${company.notes}\n\n${header}` : header;
     }
 

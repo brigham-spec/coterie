@@ -26,6 +26,7 @@ import {
 import { CompanyBrief } from "./_brief";
 import { MeetingPrep } from "./_meeting-prep";
 import { EnrichFromMeetings } from "./_enrich-meetings";
+import { EnrichFromWeb } from "./_enrich-web";
 import { AnalyzeDocument } from "./_analyze-document";
 import { WhyJoin } from "./_why-join";
 import { IntroSuggestions } from "./_intros";
@@ -371,6 +372,8 @@ export default async function CompanyDetailPage({
       <MeetingPrep companyId={company.id} />
 
       <EnrichFromMeetings companyId={company.id} />
+
+      <EnrichFromWeb companyId={company.id} />
 
       <AnalyzeDocument companyId={company.id} />
 
