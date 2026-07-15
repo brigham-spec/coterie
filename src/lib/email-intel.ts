@@ -27,6 +27,20 @@ export type MatchCompany = {
   contactNames: string[];
 };
 
+// Map a sentiment string to a TagBadge tone (positive → teal, negative → red,
+// else slate). Shared by the org-level inbox and the per-company profile card.
+export function sentimentTone(sentiment: string): "teal" | "red" | "slate" {
+  const v = sentiment.toLowerCase();
+  if (v === "positive") return "teal";
+  if (v === "negative") return "red";
+  return "slate";
+}
+
+// Count the follow-ups in a semicolon/newline-separated actionItems string.
+export function actionItemCount(raw: string): number {
+  return raw.split(/[;\n]/).filter((s) => s.trim() !== "").length;
+}
+
 // Reject anything that isn't a Google-published CSV URL before the server fetches
 // it — a plain host allowlist that closes the SSRF door the sheet URL would open.
 export function isPublishedSheetUrl(url: string): boolean {

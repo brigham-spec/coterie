@@ -39,6 +39,7 @@ import { ProposalsCard } from "./_proposals-card";
 import { ValueDeliveredCard } from "./_value-delivered-card";
 import { CommitmentsCard } from "./_commitments-card";
 import { MeetingsCard } from "./_meetings-card";
+import { EmailCorrespondence } from "./_email-correspondence";
 import { confirmIntroAdvance } from "./actions";
 
 // Company detail — the central relationship's home. Surfaces the company's own
@@ -86,6 +87,7 @@ export default async function CompanyDetailPage({
     introductions,
     pendingIntros,
     meetings,
+    emailMessages,
     actionItems,
     statusChanges,
     valueDelivered,
@@ -117,6 +119,7 @@ export default async function CompanyDetailPage({
           introductions: [],
           pendingIntros: [],
           meetings: [],
+          emailMessages: [],
           actionItems: [],
           statusChanges: [],
           valueDelivered: [],
@@ -177,6 +180,25 @@ export default async function CompanyDetailPage({
             },
           })
         : [];
+      // All correspondence for this company — synced (Zapier) + manual (pasted on
+      // the profile). Manual rows are keyed manual:… so the card can tag them.
+      const emailMessages = await tx.emailMessage.findMany({
+        where: { companyId: id },
+        orderBy: { syncedAt: "desc" },
+        take: 50,
+        select: {
+          id: true,
+          subject: true,
+          summary: true,
+          projects: true,
+          actionItems: true,
+          sentiment: true,
+          emailDate: true,
+          fromName: true,
+          fromEmail: true,
+          externalKey: true,
+        },
+      });
       // Commitments touching this company: manual ones logged on the profile
       // (companyId), items its contacts owe us (ownerContactId), plus items we
       // owe on meetings its people attended.
@@ -257,6 +279,7 @@ export default async function CompanyDetailPage({
         introductions,
         pendingIntros,
         meetings,
+        emailMessages,
         actionItems,
         statusChanges,
         valueDelivered,
@@ -276,6 +299,21 @@ export default async function CompanyDetailPage({
     summary: m.summary,
     isManual: m.firefliesId == null,
     attendeeNames: m.attendees.map((a) => a.contact.name),
+  }));
+
+  // Shape correspondence for the interactive card (manual rows — keyed manual:… —
+  // are pasted on the profile; synced ones come from the Zapier email sync).
+  const emailRows = emailMessages.map((e) => ({
+    id: e.id,
+    subject: e.subject,
+    summary: e.summary,
+    projects: e.projects,
+    actionItems: e.actionItems,
+    sentiment: e.sentiment,
+    emailDate: e.emailDate,
+    fromName: e.fromName,
+    fromEmail: e.fromEmail,
+    isManual: e.externalKey.startsWith("manual:"),
   }));
 
   // Shape commitments for the interactive card; done items feed the timeline.
@@ -603,6 +641,8 @@ export default async function CompanyDetailPage({
         meetings={meetingRows}
         contacts={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
       />
+
+      <EmailCorrespondence companyId={company.id} messages={emailRows} />
 
       <CommitmentsCard
         companyId={company.id}

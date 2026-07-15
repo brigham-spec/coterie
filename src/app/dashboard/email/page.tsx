@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { PageTitle, Card, CardHeader, TagBadge } from "@/components/ui";
 import { requireOrgContext } from "@/lib/auth";
+import { actionItemCount, sentimentTone } from "@/lib/email-intel";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 
@@ -15,17 +16,6 @@ import { deleteEmailMessage } from "./actions";
 // grouped by company, and hands the sync/save flow to the client component.
 
 const UNMATCHED = "__unmatched";
-
-function sentimentTone(sentiment: string): string {
-  const v = sentiment.toLowerCase();
-  if (v === "positive") return "teal";
-  if (v === "negative") return "red";
-  return "slate";
-}
-
-function actionItemCount(raw: string): number {
-  return raw.split(/[;\n]/).filter((s) => s.trim() !== "").length;
-}
 
 export default async function EmailPage() {
   const { orgId } = await requireOrgContext();

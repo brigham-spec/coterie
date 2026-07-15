@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
 
@@ -31,6 +33,11 @@ import {
   generateDocumentIntel,
   type DocumentIntel,
 } from "@/lib/analyze-document";
+import {
+  generateEmailExtraction,
+  parseEmailExtraction,
+  type EmailExtraction,
+} from "@/lib/extract-email";
 import {
   generateWhyJoinPitch,
   type PitchMember,
@@ -1160,6 +1167,142 @@ export async function applyDocumentIntel(
   revalidatePath("/dashboard/companies");
   revalidatePath("/dashboard");
   return { status: "applied", count };
+}
+
+// ── Email correspondence (member-profile parity) ────────────────────────────
+// The manual analog to the org-level Zapier email sync: paste a thread on a
+// company profile and Claude extracts the same EmailMessage shape the sync lands.
+// extractEmailThreadAction is the AI seam (ephemeral review); saveEmailMessage
+// persists ONE row keyed manual:<uuid> scoped to this company; deleteEmail
+// Correspondence drops one. Both writes re-verify the company inside withOrg, so a
+// forged/foreign id resolves null and RLS refuses.
+
+export type ExtractEmailState =
+  | { status: "idle" }
+  | { status: "ok"; extraction: EmailExtraction }
+  | { status: "error"; message: string };
+
+const MAX_EMAIL_CHARS = 20000;
+
+export async function extractEmailThreadAction(
+  _prev: ExtractEmailState,
+  formData: FormData,
+): Promise<ExtractEmailState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const thread = String(formData.get("thread") ?? "").trim();
+  if (thread === "")
+    return { status: "error", message: "Paste an email thread first." };
+
+  const { orgId } = await requireOrgContext();
+
+  const company = await withOrg(orgId, (tx) =>
+    tx.company.findUnique({
+      where: { id: companyId },
+      select: {
+        name: true,
+        contacts: { select: { name: true } },
+      },
+    }),
+  );
+  if (company == null)
+    return { status: "error", message: "company not found in this organization" };
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const extraction = await generateEmailExtraction(
+      { orgName: company.name, contactNames: company.contacts.map((c) => c.name) },
+      thread.slice(0, MAX_EMAIL_CHARS),
+    );
+    if (extraction == null)
+      return { status: "error", message: "Could not read that email thread." };
+    return { status: "ok", extraction };
+  } catch (err) {
+    console.error("email extraction failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not read that email thread. Try again." };
+  }
+}
+
+export type SaveEmailMessageState =
+  | { status: "idle" }
+  | { status: "saved" }
+  | { status: "error"; message: string };
+
+export async function saveEmailMessage(
+  _prev: SaveEmailMessageState,
+  formData: FormData,
+): Promise<SaveEmailMessageState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  // Re-coerce the client's reviewed payload through the same parser the model
+  // output went through — so the bounds and the sentiment vocab are enforced once.
+  // parseEmailExtraction returns null when there's no subject AND no summary,
+  // which is exactly the "nothing worth saving" case.
+  const extraction = parseEmailExtraction(String(formData.get("extraction") ?? ""));
+  if (extraction == null)
+    return { status: "error", message: "Nothing to save." };
+
+  const { orgId } = await requireOrgContext();
+
+  const saved = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (company == null) return false;
+
+    await tx.emailMessage.create({
+      data: {
+        orgId,
+        companyId,
+        externalKey: `manual:${randomUUID()}`,
+        fromName: extraction.fromName,
+        fromEmail: extraction.fromEmail,
+        subject: extraction.subject,
+        summary: extraction.summary,
+        projects: extraction.projects,
+        actionItems: extraction.actionItems,
+        sentiment: extraction.sentiment,
+        emailDate: extraction.emailDate,
+        syncedAt: new Date(),
+      },
+    });
+    return true;
+  });
+
+  if (!saved)
+    return { status: "error", message: "company not found in this organization" };
+
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/email");
+  return { status: "saved" };
+}
+
+export async function deleteEmailCorrespondence(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (id === "" || companyId === "") throw new Error("email required");
+
+  // Only manual (pasted) rows are removable from the profile — synced rows carry
+  // no manual: key so they match no row here (mirrors deleteMeeting's firefliesId
+  // guard). Their source of truth is the org-level Zapier sync.
+  await withOrg(orgId, (tx) =>
+    tx.emailMessage.deleteMany({
+      where: { id, externalKey: { startsWith: "manual:" } },
+    }),
+  );
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/email");
 }
 
 // ── P1: editable profile + lifecycle ────────────────────────────────────────
