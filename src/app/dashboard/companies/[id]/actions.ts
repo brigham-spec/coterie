@@ -1829,3 +1829,136 @@ export async function changeCompanyStatus(formData: FormData): Promise<void> {
   revalidatePath("/dashboard/companies");
   revalidatePath("/dashboard");
 }
+
+// ── Commitments (interactive action items on the company profile) ───────────
+// Ports the prototype's per-member Action Items section. A commitment carries a
+// direction: "we owe" (owned by org staff -> ownerUserId) or "they owe" (owned
+// by a contact of THIS company -> ownerContactId). The action_items owner-XOR
+// CHECK means exactly one owner column is set, never both/neither — so we map
+// direction to the correct column and re-validate the owner server-side (the
+// client is never trusted). company_id anchors the row to the profile so a
+// manual "we owe" item (staff owner, no meeting/project) still surfaces here.
+// All writes run withOrg so RLS scopes them; a foreign id matches no row.
+
+function revalidateCommitment(companyId: string): void {
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/commitments");
+  revalidatePath("/dashboard");
+}
+
+export async function addCommitment(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const text = String(formData.get("text") ?? "")
+    .trim()
+    .slice(0, 500);
+  const direction = String(formData.get("direction") ?? "").trim();
+  const ownerId = String(formData.get("ownerId") ?? "").trim();
+  const projectId = optionalText(formData, "projectId");
+  const dueDate = optionalDate(formData, "dueDate");
+
+  if (!companyId) throw new Error("missing company");
+  if (!text) throw new Error("a commitment is required");
+  if (direction !== "we_owe" && direction !== "they_owe")
+    throw new Error("invalid direction");
+  if (!ownerId) throw new Error("an owner is required");
+
+  await withOrg(orgId, async (tx) => {
+    // Re-verify the company belongs to THIS org before anchoring a row to it —
+    // action_items.company_id's composite FK enforces same-org at the DB, but a
+    // foreign id would simply match no company row, so we refuse early.
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (!company) throw new Error("company not found in this organization");
+
+    let ownerUserId: string | null = null;
+    let ownerContactId: string | null = null;
+    if (direction === "we_owe") {
+      // org_memberships carry no RLS — scope explicitly by org+user.
+      const member = await prisma.orgMembership.findUnique({
+        where: { orgId_userId: { orgId, userId: ownerId } },
+        select: { userId: true },
+      });
+      if (!member) throw new Error("owner is not a member of this organization");
+      ownerUserId = ownerId;
+    } else {
+      const contact = await tx.contact.findFirst({
+        where: { id: ownerId, companyId },
+        select: { id: true },
+      });
+      if (!contact) throw new Error("contact not found on this company");
+      ownerContactId = ownerId;
+    }
+
+    if (projectId) {
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { id: true },
+      });
+      if (!project) throw new Error("project not found in this organization");
+    }
+
+    await tx.actionItem.create({
+      data: {
+        orgId,
+        companyId,
+        text,
+        status: "open",
+        dueDate,
+        projectId,
+        ownerUserId,
+        ownerContactId,
+      },
+    });
+  });
+
+  revalidateCommitment(companyId);
+}
+
+export async function updateCommitmentStatus(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  if (!id || !companyId) throw new Error("commitment and company are required");
+  if (!["open", "done", "dropped"].includes(status))
+    throw new Error("invalid status");
+
+  await withOrg(orgId, (tx) =>
+    tx.actionItem.updateMany({ where: { id }, data: { status } }),
+  );
+  revalidateCommitment(companyId);
+}
+
+export async function editCommitment(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const text = String(formData.get("text") ?? "")
+    .trim()
+    .slice(0, 500);
+  const dueDate = optionalDate(formData, "dueDate");
+  if (!id || !companyId) throw new Error("commitment and company are required");
+  if (!text) throw new Error("a commitment is required");
+
+  await withOrg(orgId, (tx) =>
+    tx.actionItem.updateMany({ where: { id }, data: { text, dueDate } }),
+  );
+  revalidateCommitment(companyId);
+}
+
+export async function deleteCommitment(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!id || !companyId) throw new Error("commitment and company are required");
+
+  await withOrg(orgId, (tx) => tx.actionItem.deleteMany({ where: { id } }));
+  revalidateCommitment(companyId);
+}

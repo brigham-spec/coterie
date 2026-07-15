@@ -183,6 +183,7 @@ model Company {
   activities            Activity[]
   membershipProposals   MembershipProposal[]
   valueDelivered        ValueDelivered[]
+  actionItems           ActionItem[]
   affiliations          Affiliation[]
   keyRelationships      KeyRelationship[]    @relation("KeyRelationshipOwner")
   linkedFromKeyRels     KeyRelationship[]    @relation("KeyRelationshipLink")
@@ -492,6 +493,8 @@ model ActionItem {
   meetingId      String?   @map("meeting_id") @db.Uuid
   /// Null unless this item is a deliverable owed on a project.
   projectId      String?   @map("project_id") @db.Uuid
+  /// Null unless this item is a manual commitment logged on a company profile.
+  companyId      String?   @map("company_id") @db.Uuid
   text           String
   /// open, done, dropped
   status         String    @default("open")
@@ -510,12 +513,17 @@ model ActionItem {
   // never straddle orgs. Cascade (not SetNull) because a composite SetNull would
   // fight org_id's NOT NULL; a project's deliverables die with the project.
   project      Project?     @relation(fields: [projectId, orgId], references: [id, orgId], onDelete: Cascade)
+  // Composite FK (company_id, org_id) -> companies(id, org_id): a manual
+  // commitment can never straddle orgs (mirrors project_id). Cascade — a
+  // company's manual commitments die with it.
+  company      Company?     @relation(fields: [companyId, orgId], references: [id, orgId], onDelete: Cascade)
   ownerUser    User?        @relation("ActionItemOwnerUser", fields: [ownerUserId], references: [id])
   ownerContact Contact?     @relation("ActionItemOwnerContact", fields: [ownerContactId], references: [id])
 
   @@index([orgId])
   @@index([orgId, status, dueDate])
   @@index([orgId, projectId])
+  @@index([orgId, companyId])
   @@map("action_items")
 }
 

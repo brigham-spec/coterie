@@ -36,6 +36,7 @@ import { PartnershipCard } from "./_partnership-card";
 import { TheirNetworkCard } from "./_their-network-card";
 import { ProposalsCard } from "./_proposals-card";
 import { ValueDeliveredCard } from "./_value-delivered-card";
+import { CommitmentsCard } from "./_commitments-card";
 import { confirmIntroAdvance } from "./actions";
 
 // Company detail — the central relationship's home. Surfaces the company's own
@@ -87,6 +88,7 @@ export default async function CompanyDetailPage({
     statusChanges,
     valueDelivered,
     linkOptions,
+    projects,
   } = await withOrg(ctx.orgId, async (tx) => {
       const company = await tx.company.findUnique({
         where: { id },
@@ -117,6 +119,7 @@ export default async function CompanyDetailPage({
           statusChanges: [],
           valueDelivered: [],
           linkOptions: [],
+          projects: [],
         };
       }
       // Companies offered in Their Network's link dropdown — only needed (and
@@ -162,32 +165,45 @@ export default async function CompanyDetailPage({
             select: { id: true, title: true, heldAt: true },
           })
         : [];
-      // Commitments touching this company: items its contacts owe us
-      // (ownerContactId) plus items we owe on meetings its people attended.
-      const actionItems = contactIds.length
-        ? await tx.actionItem.findMany({
-            where: {
-              OR: [
-                { ownerContactId: { in: contactIds } },
-                {
-                  meeting: {
-                    attendees: { some: { contactId: { in: contactIds } } },
+      // Commitments touching this company: manual ones logged on the profile
+      // (companyId), items its contacts owe us (ownerContactId), plus items we
+      // owe on meetings its people attended.
+      const actionItems = await tx.actionItem.findMany({
+        where: {
+          OR: [
+            { companyId: id },
+            ...(contactIds.length
+              ? [
+                  { ownerContactId: { in: contactIds } },
+                  {
+                    meeting: {
+                      attendees: { some: { contactId: { in: contactIds } } },
+                    },
                   },
-                },
-              ],
-            },
-            orderBy: { createdAt: "desc" },
-            select: {
-              id: true,
-              text: true,
-              status: true,
-              dueDate: true,
-              ownerUserId: true,
-              ownerContactId: true,
-              updatedAt: true,
-            },
-          })
-        : [];
+                ]
+              : []),
+          ],
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          text: true,
+          status: true,
+          dueDate: true,
+          ownerUserId: true,
+          ownerContactId: true,
+          projectId: true,
+          updatedAt: true,
+          ownerUser: { select: { name: true } },
+          ownerContact: { select: { name: true } },
+          project: { select: { name: true } },
+        },
+      });
+      // Org projects for the commitment project-picker (optional link).
+      const projects = await tx.project.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      });
       // Lifecycle transitions for the relationship timeline (P1). Ordered here
       // for the query; buildRelationshipTimeline re-sorts the merged set.
       const activities = await tx.activity.findMany({
@@ -233,15 +249,22 @@ export default async function CompanyDetailPage({
         statusChanges,
         valueDelivered,
         linkOptions,
+        projects,
       };
     });
 
   if (company == null) notFound();
 
-  // Split open commitments by side; done items feed the relationship timeline.
-  const openCommitments = actionItems.filter((a) => a.status === "open");
-  const weOwe = openCommitments.filter((a) => a.ownerUserId != null);
-  const theyOwe = openCommitments.filter((a) => a.ownerUserId == null);
+  // Shape commitments for the interactive card; done items feed the timeline.
+  const commitments = actionItems.map((a) => ({
+    id: a.id,
+    text: a.text,
+    status: a.status,
+    dueDate: a.dueDate,
+    ownerUserId: a.ownerUserId,
+    ownerName: a.ownerUser?.name ?? a.ownerContact?.name ?? null,
+    projectName: a.project?.name ?? null,
+  }));
 
   const timeline = buildRelationshipTimeline({
     addedAt: company.createdAt,
@@ -575,59 +598,14 @@ export default async function CompanyDetailPage({
         )}
       </Card>
 
-      <Card>
-        <CardHeader title="Commitments" />
-        {openCommitments.length === 0 ? (
-          <p className="px-4 py-6 text-xs text-ink-3">
-            No open commitments with this company.
-          </p>
-        ) : (
-          <div className="grid gap-4 p-4 sm:grid-cols-2">
-            <div>
-              <div className="mb-2 text-[10px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
-                We owe
-              </div>
-              {weOwe.length === 0 ? (
-                <p className="text-[11px] text-ink-3 italic">Nothing outstanding.</p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {weOwe.map((a) => (
-                    <li key={a.id} className="text-xs text-ink-2">
-                      {a.text}
-                      {a.dueDate ? (
-                        <span className="ml-1.5 text-[10px] text-ink-3">
-                          · due {dateFmt.format(a.dueDate)}
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div>
-              <div className="mb-2 text-[10px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
-                They owe
-              </div>
-              {theyOwe.length === 0 ? (
-                <p className="text-[11px] text-ink-3 italic">Nothing outstanding.</p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {theyOwe.map((a) => (
-                    <li key={a.id} className="text-xs text-ink-2">
-                      {a.text}
-                      {a.dueDate ? (
-                        <span className="ml-1.5 text-[10px] text-ink-3">
-                          · due {dateFmt.format(a.dueDate)}
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
-      </Card>
+      <CommitmentsCard
+        companyId={company.id}
+        currentUserId={ctx.userId}
+        commitments={commitments}
+        staff={staff}
+        contacts={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
+        projects={projects}
+      />
 
       <Card>
         <CardHeader title="Relationship timeline" />
