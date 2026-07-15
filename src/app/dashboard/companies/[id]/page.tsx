@@ -37,6 +37,7 @@ import { TheirNetworkCard } from "./_their-network-card";
 import { ProposalsCard } from "./_proposals-card";
 import { ValueDeliveredCard } from "./_value-delivered-card";
 import { CommitmentsCard } from "./_commitments-card";
+import { MeetingsCard } from "./_meetings-card";
 import { confirmIntroAdvance } from "./actions";
 
 // Company detail — the central relationship's home. Surfaces the company's own
@@ -162,7 +163,17 @@ export default async function CompanyDetailPage({
         ? await tx.meeting.findMany({
             where: { attendees: { some: { contactId: { in: contactIds } } } },
             orderBy: { heldAt: "desc" },
-            select: { id: true, title: true, heldAt: true },
+            select: {
+              id: true,
+              title: true,
+              heldAt: true,
+              summary: true,
+              firefliesId: true,
+              attendees: {
+                where: { contactId: { in: contactIds } },
+                select: { contact: { select: { name: true } } },
+              },
+            },
           })
         : [];
       // Commitments touching this company: manual ones logged on the profile
@@ -254,6 +265,17 @@ export default async function CompanyDetailPage({
     });
 
   if (company == null) notFound();
+
+  // Shape meetings for the interactive card (a manual meeting — firefliesId
+  // null — is removable; synced ones are read-only here).
+  const meetingRows = meetings.map((m) => ({
+    id: m.id,
+    title: m.title,
+    heldAt: m.heldAt,
+    summary: m.summary,
+    isManual: m.firefliesId == null,
+    attendeeNames: m.attendees.map((a) => a.contact.name),
+  }));
 
   // Shape commitments for the interactive card; done items feed the timeline.
   const commitments = actionItems.map((a) => ({
@@ -573,30 +595,11 @@ export default async function CompanyDetailPage({
         )}
       </Card>
 
-      <Card>
-        <CardHeader title="Meetings" />
-        {meetings.length === 0 ? (
-          <p className="px-4 py-6 text-xs text-ink-3">
-            No meetings recorded with this company yet.
-          </p>
-        ) : (
-          <Table
-            head={
-              <>
-                <Th>Meeting</Th>
-                <Th>Date</Th>
-              </>
-            }
-          >
-            {meetings.map((m) => (
-              <Tr key={m.id}>
-                <Td className="font-medium">{m.title}</Td>
-                <Td>{dateFmt.format(m.heldAt)}</Td>
-              </Tr>
-            ))}
-          </Table>
-        )}
-      </Card>
+      <MeetingsCard
+        companyId={company.id}
+        meetings={meetingRows}
+        contacts={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
+      />
 
       <CommitmentsCard
         companyId={company.id}

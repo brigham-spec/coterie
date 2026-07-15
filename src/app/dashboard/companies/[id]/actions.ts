@@ -1962,3 +1962,93 @@ export async function deleteCommitment(formData: FormData): Promise<void> {
   await withOrg(orgId, (tx) => tx.actionItem.deleteMany({ where: { id } }));
   revalidateCommitment(companyId);
 }
+
+// ── Meetings (manual logging on the company profile) ────────────────────────
+// Ports the prototype's "Log Meeting" — a staff-recorded meeting the profile
+// otherwise couldn't create (production meetings come from the org-level
+// Fireflies sync). A meeting has no company column; it surfaces on a profile
+// through its attendees, so a manual meeting must link at least one contact OF
+// THIS COMPANY. Attendee rows are written confirmed (matchMethod "manual",
+// confidence 1) — a human chose them, so there's nothing to review. Removal is
+// limited to manual meetings (firefliesId null); a synced meeting would just
+// reappear on the next sync. All writes run withOrg so RLS scopes them.
+
+function revalidateMeeting(companyId: string): void {
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/meetings");
+  revalidatePath("/dashboard");
+}
+
+export async function logMeeting(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const title = String(formData.get("title") ?? "")
+    .trim()
+    .slice(0, 300);
+  const summary = optionalText(formData, "summary");
+  const heldAt = optionalDate(formData, "heldAt") ?? new Date();
+  const attendeeIds = formData
+    .getAll("attendeeIds")
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+
+  if (!companyId) throw new Error("missing company");
+  if (!title) throw new Error("a meeting title is required");
+  if (attendeeIds.length === 0)
+    throw new Error("select at least one attendee");
+
+  await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (!company) throw new Error("company not found in this organization");
+
+    // Every attendee must be a contact OF THIS COMPANY — otherwise the meeting
+    // could link a foreign contact (a cross-profile leak). Resolve against this
+    // company's contacts and refuse if any id doesn't belong.
+    const contacts = await tx.contact.findMany({
+      where: { id: { in: attendeeIds }, companyId },
+      select: { id: true },
+    });
+    if (contacts.length !== attendeeIds.length)
+      throw new Error("an attendee is not a contact on this company");
+
+    await tx.meeting.create({
+      data: {
+        orgId,
+        title,
+        heldAt,
+        summary,
+        attendees: {
+          // orgId is inherited from the parent meeting's composite relation —
+          // Prisma fills it, so the nested create must not (and cannot) set it.
+          create: contacts.map((c) => ({
+            contactId: c.id,
+            matchMethod: "manual",
+            confidence: 1,
+            confirmed: true,
+          })),
+        },
+      },
+    });
+  });
+
+  revalidateMeeting(companyId);
+}
+
+export async function deleteMeeting(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!id || !companyId) throw new Error("meeting and company are required");
+
+  // Only manual meetings are removable here — deleteMany scoped to firefliesId
+  // null (and RLS to the org) means a synced meeting id simply matches no row.
+  await withOrg(orgId, (tx) =>
+    tx.meeting.deleteMany({ where: { id, firefliesId: null } }),
+  );
+  revalidateMeeting(companyId);
+}
