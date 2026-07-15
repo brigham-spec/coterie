@@ -39,11 +39,19 @@ export type NewsScanInput = {
 // Defensive cap on how many articles we accept back (the prompt asks for 5).
 const MAX_ARTICLES = 8;
 
+// The web_search tool wraps cited claims in <cite index="…">…</cite> markup; if
+// left in place it renders as literal tag text on the news card and, once saved,
+// in the Project Press & News view. Strip the tags but keep their inner text.
+function stripCitations(v: string): string {
+  return v.replace(/<\/?cite\b[^>]*>/gi, "");
+}
+
 function coerceArticle(item: unknown): NewsArticle | null {
   if (typeof item !== "object" || item === null) return null;
   const o = item as Record<string, unknown>;
 
-  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const str = (v: unknown) =>
+    typeof v === "string" ? stripCitations(v).trim() : "";
 
   const headline = str(o.headline) || str(o.title);
   // An article with no headline is unusable; drop it.

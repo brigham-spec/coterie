@@ -2321,7 +2321,15 @@ function revalidateMeeting(companyId: string): void {
   revalidatePath("/dashboard");
 }
 
-export async function logMeeting(formData: FormData): Promise<void> {
+// Validation and RLS refusals are returned, not thrown: the form invokes this
+// directly (not via useActionState) and shows the message inline, so a bad
+// submit — e.g. zero attendees, which the checkboxes can't enforce — surfaces a
+// field error instead of an unhandled server-action error that crashes the page.
+export type LogMeetingState =
+  | { status: "saved" }
+  | { status: "error"; message: string };
+
+export async function logMeeting(formData: FormData): Promise<LogMeetingState> {
   const { orgId } = await requireOrgContext();
 
   const companyId = String(formData.get("companyId") ?? "").trim();
@@ -2335,17 +2343,17 @@ export async function logMeeting(formData: FormData): Promise<void> {
     .map((v) => String(v).trim())
     .filter(Boolean);
 
-  if (!companyId) throw new Error("missing company");
-  if (!title) throw new Error("a meeting title is required");
+  if (!companyId) return { status: "error", message: "missing company" };
+  if (!title) return { status: "error", message: "A meeting title is required." };
   if (attendeeIds.length === 0)
-    throw new Error("select at least one attendee");
+    return { status: "error", message: "Select at least one attendee." };
 
-  await withOrg(orgId, async (tx) => {
+  const error = await withOrg(orgId, async (tx) => {
     const company = await tx.company.findUnique({
       where: { id: companyId },
       select: { id: true },
     });
-    if (!company) throw new Error("company not found in this organization");
+    if (!company) return "company not found in this organization";
 
     // Every attendee must be a contact OF THIS COMPANY — otherwise the meeting
     // could link a foreign contact (a cross-profile leak). Resolve against this
@@ -2355,7 +2363,7 @@ export async function logMeeting(formData: FormData): Promise<void> {
       select: { id: true },
     });
     if (contacts.length !== attendeeIds.length)
-      throw new Error("an attendee is not a contact on this company");
+      return "An attendee is not a contact on this company.";
 
     await tx.meeting.create({
       data: {
@@ -2375,9 +2383,13 @@ export async function logMeeting(formData: FormData): Promise<void> {
         },
       },
     });
+    return null;
   });
 
+  if (error) return { status: "error", message: error };
+
   revalidateMeeting(companyId);
+  return { status: "saved" };
 }
 
 export async function deleteMeeting(formData: FormData): Promise<void> {

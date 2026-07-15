@@ -136,10 +136,16 @@ function MeetingForm({
   contacts: Contact[];
   onDone: () => void;
 }) {
+  const [error, setError] = useState<string | null>(null);
+
   return (
     <form
       action={async (fd) => {
-        await logMeeting(fd);
+        const result = await logMeeting(fd);
+        if (result.status === "error") {
+          setError(result.message);
+          return;
+        }
         onDone();
       }}
       className="flex flex-col gap-4"
@@ -171,6 +177,8 @@ function MeetingForm({
       </fieldset>
 
       <Textarea name="summary" label="Summary / notes" />
+
+      {error ? <p className="text-xs text-red-ink">{error}</p> : null}
 
       <div className="flex justify-end gap-2">
         <Button type="button" onClick={onDone}>

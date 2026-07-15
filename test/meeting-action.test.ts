@@ -174,29 +174,35 @@ describe("logMeeting", () => {
   });
 
   test("requires a title", async () => {
-    await expect(
-      logMeeting(fd({ companyId: companyAId, title: "  ", attendeeIds: [contactA1Id] })),
-    ).rejects.toThrow("a meeting title is required");
+    const state = await logMeeting(
+      fd({ companyId: companyAId, title: "  ", attendeeIds: [contactA1Id] }),
+    );
+    expect(state).toEqual({ status: "error", message: "A meeting title is required." });
   });
 
   test("requires at least one attendee", async () => {
-    await expect(
-      logMeeting(fd({ companyId: companyAId, title: "Empty" })),
-    ).rejects.toThrow("select at least one attendee");
+    const state = await logMeeting(fd({ companyId: companyAId, title: "Empty" }));
+    expect(state).toEqual({ status: "error", message: "Select at least one attendee." });
   });
 
   test("refuses a company id from another tenant", async () => {
-    await expect(
-      logMeeting(fd({ companyId: companyBId, title: "hijack", attendeeIds: [contactBId] })),
-    ).rejects.toThrow("company not found in this organization");
+    const state = await logMeeting(
+      fd({ companyId: companyBId, title: "hijack", attendeeIds: [contactBId] }),
+    );
+    expect(state).toEqual({
+      status: "error",
+      message: "company not found in this organization",
+    });
   });
 
   test("refuses an attendee who is not a contact of this company", async () => {
-    await expect(
-      logMeeting(
-        fd({ companyId: companyAId, title: "Mixed", attendeeIds: [contactA1Id, contactBId] }),
-      ),
-    ).rejects.toThrow("an attendee is not a contact on this company");
+    const state = await logMeeting(
+      fd({ companyId: companyAId, title: "Mixed", attendeeIds: [contactA1Id, contactBId] }),
+    );
+    expect(state).toEqual({
+      status: "error",
+      message: "An attendee is not a contact on this company.",
+    });
   });
 });
 

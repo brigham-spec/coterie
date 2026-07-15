@@ -88,6 +88,22 @@ describe("parseNewsArticles", () => {
     expect(parseNewsArticles(raw)).toHaveLength(8);
   });
 
+  test("strips web_search <cite> markup but keeps the inner text", () => {
+    const raw = JSON.stringify([
+      {
+        headline: 'Acme <cite index="1-2">breaks ground</cite> in Kingston',
+        source: "HV Journal",
+        summary: 'Construction <cite index="3">started Monday</cite>.',
+        significance: "Big <cite>deal</cite> for the county</cite>",
+        url: "https://x.example/cite",
+      },
+    ]);
+    const out = parseNewsArticles(raw);
+    expect(out[0].headline).toBe("Acme breaks ground in Kingston");
+    expect(out[0].summary).toBe("Construction started Monday.");
+    expect(out[0].significance).toBe("Big deal for the county");
+  });
+
   test("returns [] for non-JSON, non-array, or empty responses", () => {
     expect(parseNewsArticles("no json here")).toEqual([]);
     expect(parseNewsArticles('{"headline":"object not array"}')).toEqual([]);
