@@ -16,6 +16,7 @@ import {
   type RoleCandidate,
 } from "@/lib/open-roles-engine";
 import { isProjectStage } from "@/lib/project-stages";
+import { isTeamRole } from "@/lib/team-roles";
 
 // Projects and their company participants (build item 4). org_id is stamped from
 // context on every write (RLS WITH CHECK backstops it).
@@ -233,6 +234,116 @@ export async function deleteProjectDeliverable(
     tx.actionItem.deleteMany({ where: { id, projectId } }),
   );
   revalidateDeliverable(projectId);
+}
+
+// ── Professional team ───────────────────────────────────────────────────────
+// A team member is an individual professional on a project (architect, attorney,
+// lender, GC, …), captured as free text so off-network professionals can be
+// tracked, with an OPTIONAL link to a CRM company. Every write re-verifies the
+// parent project inside withOrg (RLS), so a foreign projectId is refused; the
+// company link, when set, is likewise verified in-tenant (company_id is a plain
+// FK whose referential check bypasses tenant scoping).
+
+function readTeamFields(formData: FormData): {
+  name: string;
+  org: string;
+  email: string;
+} {
+  return {
+    name: String(formData.get("name") ?? "").trim().slice(0, 200),
+    org: String(formData.get("org") ?? "").trim().slice(0, 200),
+    email: String(formData.get("email") ?? "").trim().slice(0, 200),
+  };
+}
+
+// Resolve the optional CRM company link, verifying it belongs to this tenant.
+// Blank clears to null. Runs inside the caller's withOrg tx (RLS-scoped).
+async function resolveTeamCompany(
+  tx: Parameters<Parameters<typeof withOrg>[1]>[0],
+  companyId: string,
+): Promise<string | null> {
+  if (companyId === "") return null;
+  const company = await tx.company.findUnique({
+    where: { id: companyId },
+    select: { id: true },
+  });
+  if (!company) throw new Error("linked company not found in this organization");
+  return company.id;
+}
+
+export async function addTeamMember(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const role = String(formData.get("role") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const { name, org, email } = readTeamFields(formData);
+
+  if (!projectId) throw new Error("project is required");
+  if (!isTeamRole(role)) throw new Error("invalid team role");
+  if (!name && !org) throw new Error("a name or organization is required");
+
+  await withOrg(orgId, async (tx) => {
+    // RLS scopes the project to this org; a foreign id resolves to null.
+    const project = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (!project) throw new Error("project not found in this organization");
+
+    const linkedCompanyId = await resolveTeamCompany(tx, companyId);
+
+    await tx.projectTeamMember.create({
+      data: { orgId, projectId, role, name, org, email, companyId: linkedCompanyId },
+    });
+  });
+
+  revalidatePath(`/dashboard/projects/${projectId}`);
+}
+
+export async function updateTeamMember(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const memberId = String(formData.get("memberId") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const role = String(formData.get("role") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const { name, org, email } = readTeamFields(formData);
+
+  if (!memberId || !projectId) throw new Error("team member and project are required");
+  if (!isTeamRole(role)) throw new Error("invalid team role");
+  if (!name && !org) throw new Error("a name or organization is required");
+
+  await withOrg(orgId, async (tx) => {
+    // RLS scopes the load to this org; a foreign member id resolves to null.
+    const existing = await tx.projectTeamMember.findUnique({
+      where: { id: memberId },
+      select: { id: true },
+    });
+    if (!existing) throw new Error("team member not found in this organization");
+
+    const linkedCompanyId = await resolveTeamCompany(tx, companyId);
+
+    await tx.projectTeamMember.update({
+      where: { id: memberId },
+      data: { role, name, org, email, companyId: linkedCompanyId },
+    });
+  });
+
+  revalidatePath(`/dashboard/projects/${projectId}`);
+}
+
+export async function removeTeamMember(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const memberId = String(formData.get("memberId") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!memberId || !projectId) throw new Error("team member and project are required");
+
+  await withOrg(orgId, (tx) =>
+    tx.projectTeamMember.deleteMany({ where: { id: memberId, projectId } }),
+  );
+  revalidatePath(`/dashboard/projects/${projectId}`);
 }
 
 // Open-role scan (slice 11.4c, ported from the prototype's doOpenRolesScan) — the

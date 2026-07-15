@@ -65,6 +65,7 @@ model Organization {
   valueDelivered         ValueDelivered[]
   affiliations           Affiliation[]
   keyRelationships       KeyRelationship[]
+  projectTeamMembers     ProjectTeamMember[]
   introDismissals        IntroDismissal[]
   unmatchedAttendees     UnmatchedAttendee[]
   aiRateLimit            AiRateLimit?
@@ -184,6 +185,7 @@ model Company {
   affiliations          Affiliation[]
   keyRelationships      KeyRelationship[]    @relation("KeyRelationshipOwner")
   linkedFromKeyRels     KeyRelationship[]    @relation("KeyRelationshipLink")
+  projectTeamMembers    ProjectTeamMember[]
   dismissalsAsFocus     IntroDismissal[]     @relation("IntroDismissalFocus")
   dismissalsAsCandidate IntroDismissal[]     @relation("IntroDismissalCandidate")
 
@@ -274,11 +276,12 @@ model Project {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization  Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization  Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   projectLinks  ProjectLink[]
   introductions Introduction[]
   events        Event[]
   actionItems   ActionItem[]
+  teamMembers   ProjectTeamMember[]
 
   // Composite-FK target for project_links (id, org_id).
   @@unique([id, orgId])
@@ -317,6 +320,40 @@ model ProjectLink {
   @@index([orgId])
   @@index([companyId])
   @@map("project_links")
+}
+
+/// The professional team on a project (projects-module parity; ported from the
+/// prototype's Professional Team section). Unlike ProjectLink (a CRM company in a
+/// pipeline role), a team member is an individual professional — architect,
+/// attorney, lender, GC, etc. — captured as free text (name/org/email) so
+/// off-network professionals can be tracked, with an OPTIONAL link to a CRM
+/// company when one exists. `role` vocab lives in @/lib/team-roles.
+model ProjectTeamMember {
+  id        String @id @default(uuid()) @db.Uuid
+  orgId     String @map("org_id") @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+  /// Discipline — see @/lib/team-roles (TEAM_ROLES).
+  role      String
+  name      String @default("")
+  org       String @default("")
+  email     String @default("")
+  /// Optional link to a CRM company (the professional's firm). PLAIN nullable FK
+  /// (SetNull); same-org is enforced in the action inside withOrg, since a
+  /// composite SetNull would fight org_id's NOT NULL (mirrors key_relationships).
+  companyId String? @map("company_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FK (project_id, org_id) -> projects(id, org_id): a team member can
+  // never straddle orgs. Cascade (a member dies with the project).
+  project      Project      @relation(fields: [projectId, orgId], references: [id, orgId], onDelete: Cascade)
+  company      Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([projectId])
+  @@map("project_team_members")
 }
 
 /// First-class object — the product's core verb (spec §3.8). Generates the board report.

@@ -26,6 +26,7 @@ import {
   DeliverablesCard,
   type DeliverableRow,
 } from "./_deliverables";
+import { TeamCard, type TeamMemberRow } from "./_team";
 
 // Project detail — the seat of company participation. project_links carries
 // composite FKs to projects(id, org_id) and companies(id, org_id), so a link can
@@ -84,6 +85,14 @@ export default async function ProjectDetailPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });
+    // Professional team = the individual professionals staffing the project (a
+    // roster distinct from projectLinks, which are CRM companies in pipeline
+    // roles). RLS-scoped; the optional company link is joined for its name.
+    const teamMembers = await tx.projectTeamMember.findMany({
+      where: { projectId: id },
+      include: { company: { select: { name: true } } },
+      orderBy: { createdAt: "asc" },
+    });
     // Deliverables = action_items attached to this project, plus the "they owe"
     // owner pool (contacts at a company on the project). Both reads are RLS-scoped.
     const deliverables = await tx.actionItem.findMany({
@@ -121,11 +130,12 @@ export default async function ProjectDetailPage({
               company: { select: { name: true } },
             },
           });
-    return { project, companies, deliverables, projectContacts, newsItems };
+    return { project, companies, teamMembers, deliverables, projectContacts, newsItems };
   });
 
   if (data == null) notFound();
-  const { project, companies, deliverables, projectContacts, newsItems } = data;
+  const { project, companies, teamMembers, deliverables, projectContacts, newsItems } =
+    data;
 
   // Staff owners = org members ("we owe"). org_memberships has no RLS, so scope
   // it explicitly by org (mirrors owner reassignment on the company profile).
@@ -146,6 +156,15 @@ export default async function ProjectDetailPage({
     status: d.status,
     direction: d.ownerUserId ? "we_owe" : "they_owe",
     ownerName: d.ownerUser?.name ?? d.ownerContact?.name ?? "Unassigned",
+  }));
+  const teamRows: TeamMemberRow[] = teamMembers.map((m) => ({
+    id: m.id,
+    role: m.role,
+    name: m.name,
+    org: m.org,
+    email: m.email,
+    companyId: m.companyId,
+    companyName: m.company?.name ?? null,
   }));
 
   const linkedIds = new Set(project.projectLinks.map((l) => l.companyId));
@@ -290,6 +309,12 @@ export default async function ProjectDetailPage({
           </Table>
         )}
       </Card>
+
+      <TeamCard
+        projectId={project.id}
+        members={teamRows}
+        companies={companies}
+      />
 
       <DeliverablesCard
         projectId={project.id}
