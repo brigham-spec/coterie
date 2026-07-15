@@ -66,6 +66,7 @@ model Organization {
   affiliations           Affiliation[]
   keyRelationships       KeyRelationship[]
   projectTeamMembers     ProjectTeamMember[]
+  fundingSources         FundingSource[]
   introDismissals        IntroDismissal[]
   unmatchedAttendees     UnmatchedAttendee[]
   aiRateLimit            AiRateLimit?
@@ -268,8 +269,6 @@ model Project {
   economicImpact Json     @default("{}") @map("economic_impact")
   /// { capitalSourcing, idaNavigation, realEstateSales, grantCfa }.
   hvServices     Json     @default("{}") @map("hv_services")
-  /// [{ name, amount, status }] — funding sources (demo `fundingSources`).
-  fundingSources Json     @default("[]") @map("funding_sources")
   /// [{ stage, date }] — stage transitions (Activity is company-scoped, not project).
   stageHistory   Json     @default("[]") @map("stage_history")
 
@@ -277,11 +276,12 @@ model Project {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization  Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  projectLinks  ProjectLink[]
-  introductions Introduction[]
-  events        Event[]
-  actionItems   ActionItem[]
-  teamMembers   ProjectTeamMember[]
+  projectLinks   ProjectLink[]
+  introductions  Introduction[]
+  events         Event[]
+  actionItems    ActionItem[]
+  teamMembers    ProjectTeamMember[]
+  fundingSources FundingSource[]
 
   // Composite-FK target for project_links (id, org_id).
   @@unique([id, orgId])
@@ -354,6 +354,41 @@ model ProjectTeamMember {
   @@index([orgId])
   @@index([projectId])
   @@map("project_team_members")
+}
+
+/// Funding sources & grants tracked on a project (projects-module parity; ported
+/// from the prototype's Funding Sources & Grants section). Each row is a state/
+/// federal/alternative capital program the project is pursuing — added manually
+/// or promoted from an AI suggestion. `category` (Grant|Loan|Tax Benefit|Bond|
+/// Equity) and `status` (Identified|Researching|Applied|Awarded|Declined) vocab
+/// lives in @/lib/funding. `aiSuggested` marks rows that came from AI Suggest.
+model FundingSource {
+  id                String  @id @default(uuid()) @db.Uuid
+  orgId             String  @map("org_id") @db.Uuid
+  projectId         String  @map("project_id") @db.Uuid
+  name              String
+  agency            String  @default("")
+  /// See @/lib/funding (FUNDING_CATEGORIES).
+  category          String  @default("Grant")
+  estimatedBenefit  String  @default("") @map("estimated_benefit")
+  /// See @/lib/funding (FUNDING_STATUSES).
+  status            String  @default("Identified")
+  rationale         String  @default("")
+  action            String  @default("")
+  notes             String  @default("")
+  aiSuggested       Boolean @default(false) @map("ai_suggested")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FK (project_id, org_id) -> projects(id, org_id): a funding source
+  // can never straddle orgs. Cascade (a source dies with the project).
+  project      Project      @relation(fields: [projectId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([projectId])
+  @@map("funding_sources")
 }
 
 /// First-class object — the product's core verb (spec §3.8). Generates the board report.

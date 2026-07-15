@@ -17,6 +17,11 @@ import {
 } from "@/lib/open-roles-engine";
 import { isProjectStage } from "@/lib/project-stages";
 import { isTeamRole } from "@/lib/team-roles";
+import { isFundingCategory, isFundingStatus } from "@/lib/funding";
+import {
+  generateFundingSuggestions,
+  type FundingSuggestion,
+} from "@/lib/funding-engine";
 
 // Projects and their company participants (build item 4). org_id is stamped from
 // context on every write (RLS WITH CHECK backstops it).
@@ -457,5 +462,202 @@ export async function scanOpenRole(
     if (err instanceof Anthropic.RateLimitError)
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not scan for candidates. Try again." };
+  }
+}
+
+// ── Funding Sources & Grants (projects-module parity, ported from the prototype's
+// Funding Sources & Grants section) ──────────────────────────────────────────
+// The state/federal/alternative capital programs a project is pursuing. Rows are
+// added manually or promoted ("tracked") from an AI suggestion. Every write
+// re-verifies the parent project (create) or the row itself (update/delete)
+// inside withOrg — a foreign id resolves null under RLS and the write is refused.
+// `suggestFundingSources` is the AI seam (useActionState; ephemeral); everything
+// else is a persisted void/throw action.
+
+function revalidateFunding(projectId: string): void {
+  revalidatePath(`/dashboard/projects/${projectId}`);
+}
+
+// Read the shared funding fields, normalizing category/status to the vocabulary
+// (an out-of-vocab value falls back to the common default rather than throwing —
+// the selects only ever emit valid values; this guards forged posts).
+function readFundingFields(formData: FormData): {
+  name: string;
+  agency: string;
+  category: string;
+  estimatedBenefit: string;
+  status: string;
+  rationale: string;
+  action: string;
+  notes: string;
+} {
+  const str = (key: string, max: number) =>
+    String(formData.get(key) ?? "").trim().slice(0, max);
+  const categoryRaw = str("category", 40);
+  const statusRaw = str("status", 40);
+  return {
+    name: str("name", 200),
+    agency: str("agency", 200),
+    category: isFundingCategory(categoryRaw) ? categoryRaw : "Grant",
+    estimatedBenefit: str("estimatedBenefit", 200),
+    status: isFundingStatus(statusRaw) ? statusRaw : "Identified",
+    rationale: str("rationale", 500),
+    action: str("action", 300),
+    notes: str("notes", 500),
+  };
+}
+
+// Create a funding source. Used by both the manual add form and the AI "Track"
+// button (which sends the suggestion's fields plus aiSuggested=true as hidden
+// inputs), so one create path covers both.
+export async function addFundingSource(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const fields = readFundingFields(formData);
+  const aiSuggested = String(formData.get("aiSuggested") ?? "") === "true";
+
+  if (!projectId) throw new Error("project is required");
+  if (!fields.name) throw new Error("a program name is required");
+
+  await withOrg(orgId, async (tx) => {
+    // RLS scopes the project to this org; a foreign id resolves to null.
+    const project = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (!project) throw new Error("project not found in this organization");
+
+    await tx.fundingSource.create({
+      data: { orgId, projectId, ...fields, aiSuggested },
+    });
+  });
+
+  revalidateFunding(projectId);
+}
+
+// Edit a funding source's fields. The edit form carries rationale/action as hidden
+// inputs (their existing values) so an operator edit doesn't wipe AI-provided text.
+export async function updateFundingSource(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const fundingSourceId = String(formData.get("fundingSourceId") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const fields = readFundingFields(formData);
+
+  if (!fundingSourceId || !projectId)
+    throw new Error("funding source and project are required");
+  if (!fields.name) throw new Error("a program name is required");
+
+  await withOrg(orgId, async (tx) => {
+    // RLS scopes the load to this org; a foreign id resolves to null.
+    const existing = await tx.fundingSource.findUnique({
+      where: { id: fundingSourceId },
+      select: { id: true },
+    });
+    if (!existing) throw new Error("funding source not found in this organization");
+
+    await tx.fundingSource.update({ where: { id: fundingSourceId }, data: fields });
+  });
+
+  revalidateFunding(projectId);
+}
+
+// Quick status change from the inline row select (mirrors updateProposalStatus).
+export async function updateFundingStatus(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const fundingSourceId = String(formData.get("fundingSourceId") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+
+  if (!fundingSourceId || !projectId)
+    throw new Error("funding source and project are required");
+  if (!isFundingStatus(status)) throw new Error("invalid funding status");
+
+  await withOrg(orgId, async (tx) => {
+    const existing = await tx.fundingSource.findUnique({
+      where: { id: fundingSourceId },
+      select: { id: true },
+    });
+    if (!existing) throw new Error("funding source not found in this organization");
+    await tx.fundingSource.update({ where: { id: fundingSourceId }, data: { status } });
+  });
+
+  revalidateFunding(projectId);
+}
+
+export async function deleteFundingSource(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const fundingSourceId = String(formData.get("fundingSourceId") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!fundingSourceId || !projectId)
+    throw new Error("funding source and project are required");
+
+  await withOrg(orgId, (tx) =>
+    tx.fundingSource.deleteMany({ where: { id: fundingSourceId, projectId } }),
+  );
+  revalidateFunding(projectId);
+}
+
+export type FundingSuggestState =
+  | { status: "idle" }
+  | { status: "ok"; suggestions: FundingSuggestion[] }
+  | { status: "error"; message: string };
+
+// Identify the programs this project qualifies for. Like the other useActionState
+// AI seams it returns state (not throwing) so a model/network failure renders
+// inline; results are EPHEMERAL — the operator tracks the ones they want via
+// addFundingSource. Re-verifies the project inside withOrg (RLS refuses foreign).
+export async function suggestFundingSources(
+  _prev: FundingSuggestState,
+  formData: FormData,
+): Promise<FundingSuggestState> {
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!projectId) return { status: "error", message: "missing project" };
+
+  const { orgId } = await requireOrgContext();
+
+  const project = await withOrg(orgId, (tx) =>
+    tx.project.findUnique({
+      where: { id: projectId },
+      select: {
+        name: true,
+        type: true,
+        stage: true,
+        county: true,
+        units: true,
+        value: true,
+        description: true,
+      },
+    }),
+  );
+
+  if (project == null)
+    return { status: "error", message: "project not found in this organization" };
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const suggestions = await generateFundingSuggestions({
+      name: project.name,
+      type: project.type,
+      stage: project.stage,
+      county: project.county,
+      industry: null,
+      value: project.value == null ? null : String(project.value),
+      units: project.units,
+      description: project.description || null,
+    });
+    return { status: "ok", suggestions };
+  } catch (err) {
+    console.error("funding suggestion failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not identify funding programs. Try again." };
   }
 }

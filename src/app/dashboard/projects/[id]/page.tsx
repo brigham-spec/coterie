@@ -27,6 +27,7 @@ import {
   type DeliverableRow,
 } from "./_deliverables";
 import { TeamCard, type TeamMemberRow } from "./_team";
+import { FundingCard, type FundingRow } from "./_funding";
 
 // Project detail — the seat of company participation. project_links carries
 // composite FKs to projects(id, org_id) and companies(id, org_id), so a link can
@@ -93,6 +94,11 @@ export default async function ProjectDetailPage({
       include: { company: { select: { name: true } } },
       orderBy: { createdAt: "asc" },
     });
+    // Funding sources & grants tracked on this project (RLS-scoped).
+    const fundingSources = await tx.fundingSource.findMany({
+      where: { projectId: id },
+      orderBy: { createdAt: "asc" },
+    });
     // Deliverables = action_items attached to this project, plus the "they owe"
     // owner pool (contacts at a company on the project). Both reads are RLS-scoped.
     const deliverables = await tx.actionItem.findMany({
@@ -130,12 +136,27 @@ export default async function ProjectDetailPage({
               company: { select: { name: true } },
             },
           });
-    return { project, companies, teamMembers, deliverables, projectContacts, newsItems };
+    return {
+      project,
+      companies,
+      teamMembers,
+      fundingSources,
+      deliverables,
+      projectContacts,
+      newsItems,
+    };
   });
 
   if (data == null) notFound();
-  const { project, companies, teamMembers, deliverables, projectContacts, newsItems } =
-    data;
+  const {
+    project,
+    companies,
+    teamMembers,
+    fundingSources,
+    deliverables,
+    projectContacts,
+    newsItems,
+  } = data;
 
   // Staff owners = org members ("we owe"). org_memberships has no RLS, so scope
   // it explicitly by org (mirrors owner reassignment on the company profile).
@@ -165,6 +186,18 @@ export default async function ProjectDetailPage({
     email: m.email,
     companyId: m.companyId,
     companyName: m.company?.name ?? null,
+  }));
+  const fundingRows: FundingRow[] = fundingSources.map((f) => ({
+    id: f.id,
+    name: f.name,
+    agency: f.agency,
+    category: f.category,
+    estimatedBenefit: f.estimatedBenefit,
+    status: f.status,
+    rationale: f.rationale,
+    action: f.action,
+    notes: f.notes,
+    aiSuggested: f.aiSuggested,
   }));
 
   const linkedIds = new Set(project.projectLinks.map((l) => l.companyId));
@@ -322,6 +355,8 @@ export default async function ProjectDetailPage({
         staff={staff}
         contacts={contactOptions}
       />
+
+      <FundingCard projectId={project.id} sources={fundingRows} />
 
       {project.projectLinks.length > 0 ? (
         <Card>
