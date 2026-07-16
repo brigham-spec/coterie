@@ -14,10 +14,15 @@ import { logMeeting, deleteMeeting } from "./actions";
 // would return on the next sync). This holds just local UI state; writes go
 // through the withOrg-scoped meeting actions, which revalidate.
 
+// Pin to UTC so a date-only meeting shows the same calendar day here (this card
+// renders client-side, in the browser's timezone) as it does in the server-
+// rendered relationship timeline on the profile page — otherwise a UTC-midnight
+// heldAt reads a day earlier in western browsers. Matches the commitments view.
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
   year: "numeric",
+  timeZone: "UTC",
 });
 
 type Contact = { id: string; name: string };

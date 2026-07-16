@@ -136,7 +136,10 @@ export default async function MeetingsPage() {
         </Card>
       ) : (
         meetings.map((meeting) => (
-          <Card key={meeting.id}>
+          // id anchors this card so deep links (e.g. the Commitments "Scan"
+          // button) can jump straight to it; scroll-mt keeps it clear of the top.
+          <div key={meeting.id} id={meeting.id} className="scroll-mt-4">
+          <Card>
             <CardHeader
               title={meeting.title}
               action={
@@ -246,6 +249,7 @@ export default async function MeetingsPage() {
               />
             </div>
           </Card>
+          </div>
         ))
       )}
     </div>

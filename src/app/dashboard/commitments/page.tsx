@@ -99,7 +99,7 @@ export default async function CommitmentsPage() {
                   </div>
                 </div>
                 <Link
-                  href="/dashboard/meetings"
+                  href={`/dashboard/meetings#${m.id}`}
                   className="flex-shrink-0 rounded-sm border border-line-2 bg-surface px-2.5 py-1.5 text-xs text-ink hover:border-gold-line"
                 >
                   Scan

@@ -24,6 +24,7 @@ vi.mock("@/lib/auth", () => ({
 const { updateCompany, changeCompanyStatus } = await import(
   "@/app/dashboard/companies/[id]/actions"
 );
+const { createCompany } = await import("@/app/dashboard/companies/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
 const orgB = { id: randomUUID(), name: `TENANT_B_${randomUUID()}` };
@@ -425,5 +426,25 @@ describe("changeCompanyStatus", () => {
       }),
     );
     expect(companyB!.status).toBe("member");
+  });
+});
+
+describe("createCompany", () => {
+  test("seeds the status history with the founding status (from: null)", async () => {
+    const name = `Seeded Co ${randomUUID()}`;
+    await createCompany(fd({ name, status: "prospect", industry: "Manufacturing" }));
+
+    const activities = await withOrg(orgA.id, async (tx) => {
+      const c = await tx.company.findFirst({
+        where: { name },
+        select: { id: true },
+      });
+      return tx.activity.findMany({
+        where: { companyId: c!.id, type: "status_changed" },
+        select: { payload: true },
+      });
+    });
+    expect(activities).toHaveLength(1);
+    expect(activities[0].payload).toMatchObject({ from: null, to: "prospect" });
   });
 });

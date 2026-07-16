@@ -63,6 +63,15 @@ export async function createProject(formData: FormData): Promise<void> {
         prospectLead: prospectLead === "" ? null : prospectLead,
         targetDate,
         value: valueRaw === "" ? null : valueRaw,
+        // Seed the stage trail with the founding stage so the timeline has a row
+        // from day one; updateStage appends to this same JSON (see below).
+        stageHistory: [
+          {
+            stage,
+            date: new Date().toISOString().slice(0, 10),
+            ts: Date.now(),
+          },
+        ],
       },
     }),
   );

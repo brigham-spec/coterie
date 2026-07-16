@@ -54,5 +54,10 @@ export async function updateMemberTiers(
   });
 
   revalidatePath("/dashboard/settings");
+  // The tier vocabulary also feeds the companies-list filter and every company
+  // profile's membership-tier <select>; revalidate those consumers too, or a
+  // newly added/removed tier stays stale on them until an unrelated cache bust.
+  revalidatePath("/dashboard/companies");
+  revalidatePath("/dashboard/companies/[id]", "page");
   return { status: "saved", tiers };
 }

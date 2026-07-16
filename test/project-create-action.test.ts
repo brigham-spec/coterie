@@ -65,4 +65,17 @@ describe("createProject field parity", () => {
       createProject(fd({ name: `Bad ${randomUUID()}`, stage: "concept", sqft: "12.5" })),
     ).rejects.toThrow("square footage must be a whole number");
   });
+
+  test("seeds stage_history with the founding stage", async () => {
+    const name = `Seeded ${randomUUID()}`;
+    await createProject(fd({ name, stage: "concept" }));
+
+    const created = await withOrg(orgA.id, (tx) =>
+      tx.project.findFirst({ where: { name }, select: { stageHistory: true } }),
+    );
+    const history = created!.stageHistory as Array<{ stage: string; date: string }>;
+    expect(history).toHaveLength(1);
+    expect(history[0].stage).toBe("concept");
+    expect(history[0].date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
 });
