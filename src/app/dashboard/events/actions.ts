@@ -10,6 +10,8 @@ import { optionalDate } from "@/lib/form-fields";
 import { getTagDef } from "@/lib/tags";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
 import {
+  RSVP_ATTENDED,
+  RSVP_CONFIRMED,
   isAttending,
   isEventType,
   isEventStage,
@@ -47,6 +49,7 @@ export async function createEvent(formData: FormData): Promise<void> {
   const theme = String(formData.get("theme") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const capacityRaw = String(formData.get("capacity") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
 
   if (!name || !type) throw new Error("name and type are required");
   if (!isEventType(type)) throw new Error("invalid event type");
@@ -56,8 +59,17 @@ export async function createEvent(formData: FormData): Promise<void> {
   if (capacityRaw !== "" && !Number.isInteger(Number(capacityRaw)))
     throw new Error("capacity must be a whole number");
 
-  await withOrg(orgId, (tx) =>
-    tx.event.create({
+  await withOrg(orgId, async (tx) => {
+    // Optional project tie is a plain FK — re-check it inside withOrg (RLS-scoped →
+    // null if foreign) so an event can't be linked to another tenant's project.
+    if (projectId) {
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { id: true },
+      });
+      if (!project) throw new Error("project not found");
+    }
+    await tx.event.create({
       data: {
         orgId,
         name,
@@ -68,11 +80,161 @@ export async function createEvent(formData: FormData): Promise<void> {
         theme: theme === "" ? null : theme,
         description,
         capacity: capacityRaw === "" ? null : Number(capacityRaw),
+        projectId: projectId === "" ? null : projectId,
       },
+    });
+  });
+
+  revalidatePath("/dashboard/events");
+}
+
+// Link an event to a project (or clear the link). projectId is a plain FK, so it's
+// re-checked inside withOrg (RLS-scoped → null if foreign) exactly like createEvent.
+export async function linkEventProject(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!eventId) throw new Error("event is required");
+
+  await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: { id: true },
+    });
+    if (!event) throw new Error("event not found");
+    if (projectId) {
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { id: true },
+      });
+      if (!project) throw new Error("project not found");
+    }
+    await tx.event.update({
+      where: { id: eventId },
+      data: { projectId: projectId === "" ? null : projectId },
+    });
+  });
+
+  revalidatePath("/dashboard/events");
+  revalidatePath(`/dashboard/events/${eventId}`);
+}
+
+// Set an event's cost (drives Projected ROI). The findUnique is withOrg-scoped, so a
+// foreign eventId resolves to null and is refused.
+export async function updateEventCost(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const costRaw = String(formData.get("cost") ?? "").trim();
+  if (!eventId) throw new Error("event is required");
+  if (costRaw !== "" && !(Number(costRaw) >= 0))
+    throw new Error("cost must be a non-negative number");
+
+  await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: { id: true },
+    });
+    if (!event) throw new Error("event not found");
+    // cost is a Decimal column — write the validated raw string so Prisma coerces it
+    // exactly (Number() would risk float drift on large dollar figures).
+    await tx.event.update({
+      where: { id: eventId },
+      data: { cost: costRaw === "" ? null : costRaw },
+    });
+  });
+
+  revalidatePath("/dashboard/events");
+  revalidatePath(`/dashboard/events/${eventId}`);
+}
+
+// Bulk RSVP transition after an event: every guest who confirmed is marked attended
+// (prototype "Mark All Confirmed as Attended", Coterie.html:8239). The updateMany is
+// withOrg-scoped so it only ever touches this tenant's invitees for this event.
+export async function markAllAttended(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  if (!eventId) throw new Error("event is required");
+
+  await withOrg(orgId, (tx) =>
+    tx.eventInvitee.updateMany({
+      where: { eventId, rsvp: RSVP_CONFIRMED },
+      data: { rsvp: RSVP_ATTENDED },
     }),
   );
 
+  // Confirmed→attended shifts the list's "Guests confirmed" tally too.
   revalidatePath("/dashboard/events");
+  revalidatePath(`/dashboard/events/${eventId}`);
+}
+
+// Log a member who joined as a direct result of an event (prototype draft.conversions,
+// Coterie.html:8361). A CRM company (companyId, re-checked inside withOrg → null if
+// foreign) snapshots its name + defaults ARR to its annualValue; an ad-hoc name is
+// also allowed. ARR (dollars) feeds the event's Projected ROI.
+export async function addConversion(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const nameInput = String(formData.get("name") ?? "").trim();
+  const noteInput = String(formData.get("note") ?? "").trim();
+  const arrRaw = String(formData.get("arr") ?? "").trim();
+  if (!eventId) throw new Error("event is required");
+  if (arrRaw !== "" && !(Number(arrRaw) >= 0))
+    throw new Error("ARR must be a non-negative number");
+
+  await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: { id: true },
+    });
+    if (!event) throw new Error("event not found");
+
+    let name = nameInput;
+    // arr is a Decimal column — keep it as a string (validated non-negative) so
+    // Prisma coerces it exactly; default to the linked company's annualValue via
+    // Decimal.toString() rather than Number() to avoid float drift.
+    let arr: string | null = arrRaw === "" ? null : arrRaw;
+    let linkedCompanyId: string | null = null;
+    if (companyId) {
+      const company = await tx.company.findUnique({
+        where: { id: companyId },
+        select: { name: true, annualValue: true },
+      });
+      if (!company) throw new Error("company not found");
+      linkedCompanyId = companyId;
+      name = name || company.name;
+      if (arr === null) arr = company.annualValue.toString();
+    }
+    if (!name) throw new Error("pick a member or name the new member");
+
+    await tx.eventConversion.create({
+      data: { orgId, eventId, companyId: linkedCompanyId, name, arr, note: noteInput },
+    });
+  });
+
+  revalidatePath("/dashboard/events");
+  revalidatePath(`/dashboard/events/${eventId}`);
+}
+
+// Remove a logged conversion. The delete is withOrg-scoped, so a foreign id matches
+// nothing (RLS no-op), never touching another tenant's rows.
+export async function removeConversion(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const conversionId = String(formData.get("conversionId") ?? "").trim();
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  if (!conversionId) throw new Error("conversion is required");
+
+  await withOrg(orgId, (tx) =>
+    tx.eventConversion.deleteMany({ where: { id: conversionId } }),
+  );
+
+  revalidatePath("/dashboard/events");
+  if (eventId) revalidatePath(`/dashboard/events/${eventId}`);
 }
 
 // Advance (or correct) an event's stage. The findUnique runs inside withOrg
@@ -110,6 +272,8 @@ export async function addInvitee(formData: FormData): Promise<void> {
   const contactId = String(formData.get("contactId") ?? "").trim();
   const externalName = String(formData.get("externalName") ?? "").trim();
   const externalOrg = String(formData.get("externalOrg") ?? "").trim();
+  const externalEmail = String(formData.get("externalEmail") ?? "").trim();
+  const externalTitle = String(formData.get("externalTitle") ?? "").trim();
   if (!eventId) throw new Error("event is required");
   if (!contactId && !externalName)
     throw new Error("pick a contact or name an external guest");
@@ -137,6 +301,8 @@ export async function addInvitee(formData: FormData): Promise<void> {
           eventId,
           externalName,
           externalOrg: externalOrg === "" ? null : externalOrg,
+          externalEmail: externalEmail === "" ? null : externalEmail,
+          externalTitle: externalTitle === "" ? null : externalTitle,
         },
       });
     }

@@ -39,11 +39,17 @@ export const TERMINAL_EVENT_STAGES: readonly string[] = ["completed", "cancelled
 /// brief, which only briefs people who'll actually be in the room).
 export type RsvpDef = EventDef & { attending: boolean };
 
+// Named RSVP values for the two states referenced outside the display table — the
+// post-event bulk transition (a Prisma where/data clause can't call isAttending) and
+// the UI gate that offers it. Kept here so mutation and gate share one source.
+export const RSVP_CONFIRMED = "confirmed";
+export const RSVP_ATTENDED = "attended";
+
 export const RSVP_STATES: readonly RsvpDef[] = [
   { value: "invited", label: "Invited", tone: "slate", attending: false },
-  { value: "confirmed", label: "Confirmed", tone: "teal", attending: true },
+  { value: RSVP_CONFIRMED, label: "Confirmed", tone: "teal", attending: true },
   { value: "declined", label: "Declined", tone: "red", attending: false },
-  { value: "attended", label: "Attended", tone: "gold", attending: true },
+  { value: RSVP_ATTENDED, label: "Attended", tone: "gold", attending: true },
   { value: "no_show", label: "No Show", tone: "red", attending: false },
 ];
 

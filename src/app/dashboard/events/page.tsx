@@ -37,20 +37,41 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
 });
 
-function loadEvents(orgId: string) {
-  return withOrg(orgId, (tx) =>
-    tx.event.findMany({
+function loadEventsData(orgId: string) {
+  return withOrg(orgId, async (tx) => {
+    const events = await tx.event.findMany({
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-      include: { invitees: { select: { rsvp: true } } },
-    }),
-  );
+      include: {
+        invitees: { select: { rsvp: true } },
+        conversions: { select: { arr: true } },
+      },
+    });
+    const projects = await tx.project.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+    // Members never on any guest list (via a CRM contact) — the "never invited"
+    // roster the prototype nudges you to include (Coterie.html:7584).
+    const members = await tx.company.findMany({
+      where: { status: "member" },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+    const invited = await tx.eventInvitee.findMany({
+      where: { contactId: { not: null } },
+      select: { contact: { select: { companyId: true } } },
+    });
+    return { events, projects, members, invited };
+  });
 }
 
-type EventRow = Awaited<ReturnType<typeof loadEvents>>[number];
+type EventRow = Awaited<
+  ReturnType<typeof loadEventsData>
+>["events"][number];
 
 export default async function EventsPage() {
   const ctx = await requireOrgContext();
-  const events = await loadEvents(ctx.orgId);
+  const { events, projects, members, invited } = await loadEventsData(ctx.orgId);
 
   const upcoming = events.filter(
     (e) => !TERMINAL_EVENT_STAGES.includes(e.stage),
@@ -61,6 +82,24 @@ export default async function EventsPage() {
     0,
   );
 
+  // New members + Net ROI across the whole calendar (prototype list stats,
+  // Coterie.html:7578). ARR/cost are dollars.
+  const newMembers = events.reduce((t, e) => t + e.conversions.length, 0);
+  const totalArr = events.reduce(
+    (t, e) => t + e.conversions.reduce((s, c) => s + (c.arr == null ? 0 : Number(c.arr)), 0),
+    0,
+  );
+  const totalCost = events.reduce(
+    (t, e) => t + (e.cost == null ? 0 : Number(e.cost)),
+    0,
+  );
+  const netRoi = totalArr - totalCost;
+
+  const invitedCompanyIds = new Set(
+    invited.map((i) => i.contact?.companyId).filter((v): v is string => v != null),
+  );
+  const neverInvited = members.filter((m) => !invitedCompanyIds.has(m.id));
+
   return (
     <div className="mx-auto w-full max-w-5xl">
       <div className="mb-6">
@@ -70,10 +109,15 @@ export default async function EventsPage() {
         />
       </div>
 
-      <div className="mb-4 grid grid-cols-3 gap-4">
+      <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <Metric label="Upcoming" value={String(upcoming.length)} />
         <Metric label="Total events" value={String(events.length)} />
         <Metric label="Guests confirmed" value={String(totalGuests)} />
+        <Metric label="New members" value={String(newMembers)} />
+        <Metric
+          label="Net ROI"
+          value={`${netRoi < 0 ? "-" : ""}$${(Math.abs(netRoi) / 1000).toFixed(0)}k`}
+        />
       </div>
 
       <Card>
@@ -117,6 +161,14 @@ export default async function EventsPage() {
               placeholder="0"
             />
             <Field name="theme" label="Theme" placeholder="Capital & construction" />
+            <SelectField name="projectId" label="Linked project" defaultValue="">
+              <option value="">None</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </SelectField>
             <Field
               name="description"
               label="Description"
@@ -146,6 +198,30 @@ export default async function EventsPage() {
           {past.length > 0 ? <EventTable title="Past" events={past} /> : null}
         </>
       )}
+
+      {neverInvited.length > 0 ? (
+        <Card>
+          <CardHeader
+            title={`Never invited to an event (${neverInvited.length})`}
+          />
+          <div className="flex flex-wrap gap-2 p-4">
+            {neverInvited.slice(0, 20).map((m) => (
+              <Link
+                key={m.id}
+                href={`/dashboard/companies/${m.id}`}
+                className="rounded-full bg-amber-bg px-2.5 py-0.5 text-[10px] text-amber-ink hover:underline"
+              >
+                {m.name}
+              </Link>
+            ))}
+            {neverInvited.length > 20 ? (
+              <span className="px-1 py-0.5 text-[10px] text-ink-3">
+                +{neverInvited.length - 20} more
+              </span>
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 }

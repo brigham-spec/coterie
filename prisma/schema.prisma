@@ -61,6 +61,7 @@ model Organization {
   integrationCredentials IntegrationCredential[]
   events                 Event[]
   eventInvitees          EventInvitee[]
+  eventConversions       EventConversion[]
   membershipProposals    MembershipProposal[]
   valueDelivered         ValueDelivered[]
   affiliations           Affiliation[]
@@ -190,6 +191,7 @@ model Company {
   projectTeamMembers    ProjectTeamMember[]
   dismissalsAsFocus     IntroDismissal[]     @relation("IntroDismissalFocus")
   dismissalsAsCandidate IntroDismissal[]     @relation("IntroDismissalCandidate")
+  eventConversions      EventConversion[]
 
   // Composite-FK target so tenant junctions (project_links) can reference
   // (id, org_id) and never point at a company in another org.
@@ -723,9 +725,10 @@ model Event {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  project      Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  organization Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
   invitees     EventInvitee[]
+  conversions  EventConversion[]
 
   // Composite-FK target for event_invitees (id, org_id).
   @@unique([id, orgId])
@@ -747,11 +750,14 @@ model EventInvitee {
   /// (a composite FK would force SetNull to null the required org_id) —
   /// app-layer re-checked inside withOrg on write, like contacts.companyId.
   contactId    String? @map("contact_id") @db.Uuid
-  externalName String? @map("external_name")
-  externalOrg  String? @map("external_org")
+  externalName  String? @map("external_name")
+  externalOrg   String? @map("external_org")
+  /// External-guest contact facts (prototype extEmail/extTitle) — null for CRM guests.
+  externalEmail String? @map("external_email")
+  externalTitle String? @map("external_title")
   /// invited, confirmed, declined, attended, no_show
-  rsvp         String  @default("invited")
-  notes        String  @default("")
+  rsvp          String  @default("invited")
+  notes         String  @default("")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -765,6 +771,34 @@ model EventInvitee {
   @@index([eventId])
   @@index([contactId])
   @@map("event_invitees")
+}
+
+/// A prospect/attendee who joined as a paying member as a direct result of an event
+/// (prototype draft.conversions, Coterie.html:8361). Carries the joining member's ARR
+/// (dollars, like companies.annual_value) — the data source for an event's Projected
+/// ROI and the network's New-members / Net-ROI metrics. Composite FK keeps it in the
+/// event's org; company_id is a plain FK (SetNull, re-checked inside withOrg) since a
+/// composite FK would force SetNull to null the required org_id — name is snapshotted.
+model EventConversion {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  eventId   String   @map("event_id") @db.Uuid
+  companyId String?  @map("company_id") @db.Uuid
+  name      String
+  arr       Decimal? @db.Decimal(14, 2)
+  note      String   @default("")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  event        Event        @relation(fields: [eventId, orgId], references: [id, orgId], onDelete: Cascade)
+  company      Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([eventId])
+  @@index([companyId])
+  @@map("event_conversions")
 }
 
 /// Membership proposals sent to companies (demo `hvedc_membership_proposals`).

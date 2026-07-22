@@ -5,10 +5,12 @@ import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import {
   EVENT_STAGES,
+  RSVP_CONFIRMED,
   RSVP_STATES,
   getEventType,
   getRsvpState,
 } from "@/lib/event-stages";
+import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import {
   Button,
   Card,
@@ -25,8 +27,13 @@ import {
 } from "@/components/ui";
 
 import {
+  addConversion,
   addInvitee,
+  linkEventProject,
+  markAllAttended,
+  removeConversion,
   removeInvitee,
+  updateEventCost,
   updateEventStage,
   updateInviteeRsvp,
 } from "../actions";
@@ -57,12 +64,17 @@ export default async function EventDetailPage({
     const event = await tx.event.findUnique({
       where: { id },
       include: {
+        project: { select: { id: true, name: true } },
         invitees: {
           include: {
             contact: {
               select: { name: true, title: true, company: { select: { name: true } } },
             },
           },
+          orderBy: { createdAt: "asc" },
+        },
+        conversions: {
+          include: { company: { select: { name: true } } },
           orderBy: { createdAt: "asc" },
         },
       },
@@ -72,11 +84,36 @@ export default async function EventDetailPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true, company: { select: { name: true } } },
     });
-    return { event, contacts };
+    const projects = await tx.project.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+    // Members (companies) available to log as a conversion — those not already logged.
+    const companies = await tx.company.findMany({
+      where: { status: { in: [...NETWORK_STATUSES, "prospect"] } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+    return { event, contacts, projects, companies };
   });
 
   if (data == null) notFound();
-  const { event, contacts } = data;
+  const { event, contacts, projects, companies } = data;
+
+  // Projected ROI (prototype roiSummary, Coterie.html:8340): net = ARR gained − cost;
+  // roi% only meaningful when a cost is entered. ARR/cost are dollars.
+  const cost = event.cost == null ? 0 : Number(event.cost);
+  const arrGained = event.conversions.reduce(
+    (t, c) => t + (c.arr == null ? 0 : Number(c.arr)),
+    0,
+  );
+  const roiNet = arrGained - cost;
+  const roiPct = cost > 0 ? Math.round((roiNet / cost) * 100) : null;
+
+  const loggedCompanyIds = new Set(
+    event.conversions.map((c) => c.companyId).filter((v): v is string => v != null),
+  );
+  const convertible = companies.filter((c) => !loggedCompanyIds.has(c.id));
 
   const invitedContactIds = new Set(
     event.invitees.map((i) => i.contactId).filter((v): v is string => v != null),
@@ -102,6 +139,7 @@ export default async function EventDetailPage({
       label: "Cost",
       value: event.cost == null ? null : `$${Number(event.cost).toLocaleString()}`,
     },
+    { label: "Project", value: event.project?.name ?? null },
   ];
 
   return (
@@ -134,29 +172,176 @@ export default async function EventDetailPage({
             </div>
           ))}
         </dl>
-        <form
-          action={updateEventStage}
-          className="flex flex-wrap items-end gap-3 border-t border-line px-4 py-3"
-        >
-          <input type="hidden" name="eventId" value={event.id} />
-          <SelectField
-            name="stage"
-            label="Advance stage"
-            defaultValue={event.stage}
-            className="min-w-[200px]"
-          >
-            {EVENT_STAGES.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </SelectField>
-          <Button type="submit">Update stage</Button>
-        </form>
+        <div className="flex flex-wrap items-end gap-6 border-t border-line px-4 py-3">
+          <form action={updateEventStage} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="eventId" value={event.id} />
+            <SelectField
+              name="stage"
+              label="Advance stage"
+              defaultValue={event.stage}
+              className="min-w-[200px]"
+            >
+              {EVENT_STAGES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </SelectField>
+            <Button type="submit">Update stage</Button>
+          </form>
+          <form action={linkEventProject} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="eventId" value={event.id} />
+            <SelectField
+              name="projectId"
+              label="Linked project"
+              defaultValue={event.projectId ?? ""}
+              className="min-w-[200px]"
+            >
+              <option value="">None</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </SelectField>
+            <Button type="submit">Link</Button>
+          </form>
+        </div>
       </Card>
 
       <Card>
-        <CardHeader title={`Guest list (${event.invitees.length})`} />
+        <CardHeader title="Cost & ROI" />
+        <div className="grid gap-4 p-4 sm:grid-cols-2">
+          <form action={updateEventCost} className="flex items-end gap-3">
+            <input type="hidden" name="eventId" value={event.id} />
+            <Field
+              name="cost"
+              label="Event cost ($)"
+              inputMode="numeric"
+              defaultValue={event.cost == null ? "" : String(Number(event.cost))}
+              placeholder="6000"
+              className="flex-1"
+            />
+            <Button type="submit">Save</Button>
+          </form>
+          <div className="flex flex-col justify-center rounded-md border border-line bg-surface px-4 py-3">
+            <div className="text-[9px] font-bold tracking-[0.08em] text-ink-3 uppercase">
+              Projected ROI
+            </div>
+            <div className="mt-1 flex items-baseline gap-2.5">
+              <span
+                className={`font-serif text-[18px] ${
+                  roiNet >= 0 ? "text-teal-ink" : "text-red-ink"
+                }`}
+              >
+                {cost === 0 && arrGained === 0
+                  ? "—"
+                  : `$${(Math.abs(roiNet) / 1000).toFixed(0)}k ${
+                      roiNet >= 0 ? "net gain" : "net loss"
+                    }`}
+              </span>
+              {roiPct != null ? (
+                <span className="text-[11px] text-ink-3">
+                  {roiPct >= 0 ? "+" : ""}
+                  {roiPct}% ROI
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-1 text-[10px] text-ink-3">
+              {cost ? `Cost: $${cost.toLocaleString()}` : "No cost entered"}
+              {arrGained ? ` · ARR gained: $${arrGained.toLocaleString()}` : ""}
+            </div>
+          </div>
+        </div>
+        <div className="border-t border-line px-4 py-3">
+          <div className="text-[10px] font-medium tracking-[0.06em] text-ink-3 uppercase">
+            New members from this event
+          </div>
+          <p className="mt-1 mb-3 text-[11px] leading-relaxed text-ink-3">
+            Log any prospect or attendee who joined as a paying member as a direct
+            result of this event. Their ARR counts toward the ROI above.
+          </p>
+          {event.conversions.length > 0 ? (
+            <ul className="mb-3 divide-y divide-line rounded-md border border-line">
+              {event.conversions.map((c) => (
+                <li key={c.id} className="flex items-center gap-3 px-3 py-2">
+                  <div className="flex-1">
+                    <div className="text-xs font-medium text-ink">
+                      {c.company?.name ?? c.name}
+                    </div>
+                    <div className="text-[10px] text-ink-3">
+                      {c.note || "Joined as a result of this event"}
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-ink-3">
+                    {c.arr == null
+                      ? "—"
+                      : `$${(Number(c.arr) / 1000).toFixed(0)}k/yr`}
+                  </div>
+                  <form action={removeConversion}>
+                    <input type="hidden" name="conversionId" value={c.id} />
+                    <input type="hidden" name="eventId" value={event.id} />
+                    <button
+                      type="submit"
+                      className="text-[11px] text-ink-3 hover:text-red-ink"
+                    >
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <form action={addConversion} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="eventId" value={event.id} />
+            <SelectField
+              name="companyId"
+              label="Member who joined"
+              defaultValue=""
+              className="min-w-[200px]"
+            >
+              <option value="">Select a member…</option>
+              {convertible.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </SelectField>
+            <Field
+              name="arr"
+              label="ARR ($, optional)"
+              inputMode="numeric"
+              placeholder="member's annual value"
+            />
+            <Field
+              name="note"
+              label="Note (optional)"
+              placeholder="Joined as Advisory after dinner"
+            />
+            <Button type="submit" variant="primary">
+              Log conversion
+            </Button>
+          </form>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title={`Guest list (${event.invitees.length})`}
+          action={
+            event.invitees.some((i) => i.rsvp === RSVP_CONFIRMED) ? (
+              <form action={markAllAttended}>
+                <input type="hidden" name="eventId" value={event.id} />
+                <button
+                  type="submit"
+                  className="text-[10px] font-medium tracking-[0.04em] text-ink-3 uppercase hover:text-gold"
+                >
+                  Mark confirmed as attended
+                </button>
+              </form>
+            ) : undefined
+          }
+        />
         {event.invitees.length === 0 ? (
           <p className="px-4 py-6 text-xs text-ink-3">No guests invited yet.</p>
         ) : (
@@ -174,19 +359,23 @@ export default async function EventDetailPage({
             {event.invitees.map((i) => {
               const name = i.contact?.name ?? i.externalName ?? "Guest";
               const org = i.contact?.company?.name ?? i.externalOrg ?? "—";
+              const title = i.contact?.title ?? i.externalTitle ?? null;
               const rsvp = getRsvpState(i.rsvp);
               return (
                 <Tr key={i.id}>
                   <Td className="font-medium">
                     {name}
-                    {i.contact?.title ? (
-                      <span className="ml-1 text-[10px] text-ink-3">
-                        {i.contact.title}
-                      </span>
+                    {title ? (
+                      <span className="ml-1 text-[10px] text-ink-3">{title}</span>
                     ) : null}
                     {i.contactId == null ? (
                       <span className="ml-1.5 text-[9px] text-ink-3 italic">
                         external
+                      </span>
+                    ) : null}
+                    {i.externalEmail ? (
+                      <span className="ml-1.5 text-[10px] text-ink-3">
+                        {i.externalEmail}
                       </span>
                     ) : null}
                   </Td>
@@ -258,6 +447,8 @@ export default async function EventDetailPage({
           </div>
           <Field name="externalName" label="Name" placeholder="Jamie Rivera" />
           <Field name="externalOrg" label="Organization" placeholder="Rivera Capital" />
+          <Field name="externalTitle" label="Title / Role" placeholder="Managing Partner" />
+          <Field name="externalEmail" label="Email" type="email" placeholder="jamie@rivera.co" />
           <div className="col-span-2 flex justify-end">
             <Button type="submit" variant="primary">
               Add guest

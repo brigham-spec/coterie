@@ -40,6 +40,11 @@ const {
   removeInvitee,
   generateBrief,
   draftOutreach,
+  linkEventProject,
+  updateEventCost,
+  markAllAttended,
+  addConversion,
+  removeConversion,
 } = await import("@/app/dashboard/events/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
@@ -48,6 +53,9 @@ const orgB = { id: randomUUID(), name: `TENANT_B_${randomUUID()}` };
 let aliceId: string; // orgA CRM contact — will confirm (should be briefed)
 let bobId: string; // orgA CRM contact — stays invited (should be skipped)
 let bContactId: string; // orgB CRM contact — cross-org smuggle target
+let companyAId: string; // orgA member company (conversion target)
+let projectAId: string; // orgA project (event link target)
+let projectBId: string; // orgB project — cross-org link smuggle target
 
 beforeAll(async () => {
   await prisma.organization.createMany({
@@ -78,23 +86,32 @@ beforeAll(async () => {
     });
     aliceId = company.contacts.find((c) => c.name === "Alice A")!.id;
     bobId = company.contacts.find((c) => c.name === "Bob A")!.id;
+    companyAId = company.id;
+    const projectA = await tx.project.create({
+      data: { orgId: orgA.id, name: "Mill Redevelopment", stage: "concept" },
+    });
+    projectAId = projectA.id;
   });
 
-  bContactId = (
-    await withOrg(orgB.id, (tx) =>
-      tx.company.create({
-        data: {
-          orgId: orgB.id,
-          name: "Member B",
-          status: "member",
-          industry: "Finance",
-          annualValue: 1000,
-          contacts: { create: { orgId: orgB.id, name: "Carol B", isPrimary: true } },
-        },
-        include: { contacts: true },
-      }),
-    )
-  ).contacts[0].id;
+  const orgBData = await withOrg(orgB.id, async (tx) => {
+    const company = await tx.company.create({
+      data: {
+        orgId: orgB.id,
+        name: "Member B",
+        status: "member",
+        industry: "Finance",
+        annualValue: 1000,
+        contacts: { create: { orgId: orgB.id, name: "Carol B", isPrimary: true } },
+      },
+      include: { contacts: true },
+    });
+    const project = await tx.project.create({
+      data: { orgId: orgB.id, name: "Foreign Project", stage: "concept" },
+    });
+    return { contactId: company.contacts[0].id, projectId: project.id };
+  });
+  bContactId = orgBData.contactId;
+  projectBId = orgBData.projectId;
 
   mockCtx.orgId = orgA.id;
   mockCtx.userName = "Host Person";
@@ -243,6 +260,108 @@ describe("event + guest-list actions", () => {
       tx.eventInvitee.findMany({ where: { eventId } }),
     );
     expect(remaining.map((i) => i.contactId)).not.toContain(bobId);
+  });
+
+  test("persists external guest email + title", async () => {
+    await createEvent(fd({ name: "Ext Event", type: "roundtable" }));
+    const eventId = await findEventId("Ext Event");
+    await addInvitee(
+      fd({
+        eventId,
+        externalName: "Jamie Rivera",
+        externalOrg: "Rivera Capital",
+        externalEmail: "jamie@rivera.co",
+        externalTitle: "Managing Partner",
+      }),
+    );
+    const invitee = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, externalName: "Jamie Rivera" } }),
+    );
+    expect(invitee?.externalEmail).toBe("jamie@rivera.co");
+    expect(invitee?.externalTitle).toBe("Managing Partner");
+  });
+
+  test("links an event to a project, refusing a foreign one", async () => {
+    await createEvent(
+      fd({ name: "Linked Event", type: "site_visit", projectId: projectAId }),
+    );
+    const eventId = await findEventId("Linked Event");
+    const linked = await withOrg(orgA.id, (tx) =>
+      tx.event.findUnique({ where: { id: eventId }, select: { projectId: true } }),
+    );
+    expect(linked?.projectId).toBe(projectAId);
+
+    // orgB's project is invisible to orgA (RLS-scoped re-check) → refused.
+    await expect(
+      linkEventProject(fd({ eventId, projectId: projectBId })),
+    ).rejects.toThrow();
+    // Clearing the link is allowed.
+    await linkEventProject(fd({ eventId, projectId: "" }));
+    const cleared = await withOrg(orgA.id, (tx) =>
+      tx.event.findUnique({ where: { id: eventId }, select: { projectId: true } }),
+    );
+    expect(cleared?.projectId).toBeNull();
+  });
+
+  test("marks only confirmed guests as attended", async () => {
+    await createEvent(fd({ name: "Attendance Event", type: "panel" }));
+    const eventId = await findEventId("Attendance Event");
+    await addInvitee(fd({ eventId, contactId: aliceId }));
+    await addInvitee(fd({ eventId, externalName: "Declining Guest" }));
+
+    const aliceInv = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, contactId: aliceId } }),
+    );
+    await updateInviteeRsvp(
+      fd({ eventId, inviteeId: aliceInv!.id, rsvp: "confirmed" }),
+    );
+
+    await markAllAttended(fd({ eventId }));
+
+    const rows = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findMany({ where: { eventId } }),
+    );
+    const alice = rows.find((r) => r.contactId === aliceId);
+    const external = rows.find((r) => r.contactId == null);
+    expect(alice?.rsvp).toBe("attended"); // was confirmed
+    expect(external?.rsvp).toBe("invited"); // untouched (never confirmed)
+  });
+
+  test("logs a conversion snapshotting name + defaulting ARR to annualValue", async () => {
+    await createEvent(fd({ name: "ROI Event", type: "member_dinner" }));
+    const eventId = await findEventId("ROI Event");
+    await updateEventCost(fd({ eventId, cost: "6000" }));
+    // No arr supplied → defaults to the company's annualValue (1000).
+    await addConversion(fd({ eventId, companyId: companyAId }));
+
+    const conv = await withOrg(orgA.id, (tx) =>
+      tx.eventConversion.findFirst({ where: { eventId } }),
+    );
+    expect(conv?.companyId).toBe(companyAId);
+    expect(conv?.name).toBe("Member A");
+    expect(Number(conv?.arr)).toBe(1000);
+
+    const ev = await withOrg(orgA.id, (tx) =>
+      tx.event.findUnique({ where: { id: eventId }, select: { cost: true } }),
+    );
+    expect(Number(ev?.cost)).toBe(6000);
+
+    // Remove it — scoped delete.
+    await removeConversion(fd({ eventId, conversionId: conv!.id }));
+    const after = await withOrg(orgA.id, (tx) =>
+      tx.eventConversion.findMany({ where: { eventId } }),
+    );
+    expect(after).toHaveLength(0);
+  });
+
+  test("refuses a conversion for a company in another tenant", async () => {
+    const eventId = await findEventId("ROI Event");
+    const bCompanyId = (await withOrg(orgB.id, (tx) =>
+      tx.company.findFirst({ where: { name: "Member B" }, select: { id: true } }),
+    ))!.id;
+    await expect(
+      addConversion(fd({ eventId, companyId: bCompanyId })),
+    ).rejects.toThrow();
   });
 
   test("the persisted event is invisible to another tenant (RLS)", async () => {
