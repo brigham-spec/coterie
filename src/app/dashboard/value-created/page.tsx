@@ -44,7 +44,19 @@ function loadValueData(orgId: string) {
   return withOrg(orgId, async (tx) => {
     const projects = await tx.project.findMany({
       orderBy: { name: "asc" },
-      include: {
+      // Only the columns the rollup reads — economic_impact feeds the impact
+      // tiles; hv_services is not consumed here (service-fee revenue comes from
+      // company `services`), so it's left out.
+      select: {
+        id: true,
+        name: true,
+        stage: true,
+        county: true,
+        description: true,
+        value: true,
+        realizedValue: true,
+        stageHistory: true,
+        economicImpact: true,
         projectLinks: { include: { company: { select: { name: true } } } },
       },
     });

@@ -11,6 +11,7 @@ import {
   type RevenueInvoice,
   type RevenueProposal,
 } from "@/lib/revenue";
+import { parseHvServices, sumActiveServiceFees } from "@/lib/hv-services";
 import { Card, CardHeader, PageTitle, TagBadge } from "@/components/ui";
 
 // Revenue analytics (slice 11.11, prototype revenueView Coterie.html:3580) — the
@@ -60,14 +61,34 @@ function loadRevenueData(orgId: string) {
         createdAt: true,
       },
     });
-    return { invoices, companies, proposals };
+    // Project service fees are HVEDC's earned-fee income on the pipeline (distinct
+    // from membership dues) — only active service lines carry a fee.
+    const projects = await tx.project.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, hvServices: true },
+    });
+    return { invoices, companies, proposals, projects };
   });
 }
 
 export default async function RevenuePage() {
   const ctx = await requireOrgContext();
-  const { invoices, companies, proposals } = await loadRevenueData(ctx.orgId);
+  const { invoices, companies, proposals, projects } = await loadRevenueData(
+    ctx.orgId,
+  );
   const now = new Date();
+
+  // Per-project active service fees, largest first; the whole roster totals the
+  // pipeline's earned service-fee income.
+  const serviceFeeProjects = projects
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      fees: sumActiveServiceFees(parseHvServices(p.hvServices)),
+    }))
+    .filter((p) => p.fees > 0)
+    .sort((a, b) => b.fees - a.fees);
+  const serviceFeeTotal = serviceFeeProjects.reduce((t, p) => t + p.fees, 0);
 
   const revInvoices: RevenueInvoice[] = invoices.map((inv) => ({
     id: inv.id,
@@ -153,6 +174,35 @@ export default async function RevenuePage() {
           />
         </div>
       </Card>
+
+      {serviceFeeProjects.length > 0 ? (
+        <Card>
+          <CardHeader
+            title="Project service fees"
+            action={
+              <TagBadge tone="teal" label={money(serviceFeeTotal) + " active"} />
+            }
+          />
+          <ul className="divide-y divide-line">
+            {serviceFeeProjects.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center justify-between gap-3 px-4 py-2.5"
+              >
+                <Link
+                  href={`/dashboard/projects/${p.id}`}
+                  className="min-w-0 truncate text-[12.5px] font-medium text-ink hover:text-gold"
+                >
+                  {p.name}
+                </Link>
+                <span className="shrink-0 text-[12px] font-semibold text-teal-ink">
+                  {dollars.format(p.fees)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader title="Cash flow" />

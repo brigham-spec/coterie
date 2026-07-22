@@ -1,7 +1,11 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
+
+import type { Prisma } from "@/generated/prisma/client";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
@@ -22,6 +26,17 @@ import {
   generateFundingSuggestions,
   type FundingSuggestion,
 } from "@/lib/funding-engine";
+import {
+  normalizeGrantStatus,
+  parseImpactForm,
+  serializeImpactForm,
+  type Grant,
+} from "@/lib/value-created";
+import {
+  HV_SERVICE_DEFS,
+  normalizeFeeStatus,
+  normalizeServiceStatus,
+} from "@/lib/hv-services";
 
 // Projects and their company participants (build item 4). org_id is stamped from
 // context on every write (RLS WITH CHECK backstops it).
@@ -33,10 +48,12 @@ export async function createProject(formData: FormData): Promise<void> {
   const stage = String(formData.get("stage") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const type = String(formData.get("type") ?? "").trim();
+  const industry = String(formData.get("industry") ?? "").trim();
   const county = String(formData.get("county") ?? "").trim();
   const unitsRaw = String(formData.get("units") ?? "").trim();
   const sqftRaw = String(formData.get("sqft") ?? "").trim();
   const prospectLead = String(formData.get("prospectLead") ?? "").trim();
+  const developerMemberId = String(formData.get("developerMemberId") ?? "").trim();
   const targetDate = optionalDate(formData, "targetDate");
   const valueRaw = String(formData.get("value") ?? "").trim();
 
@@ -49,18 +66,23 @@ export async function createProject(formData: FormData): Promise<void> {
   if (sqftRaw !== "" && !Number.isInteger(Number(sqftRaw)))
     throw new Error("square footage must be a whole number");
 
-  await withOrg(orgId, (tx) =>
-    tx.project.create({
+  await withOrg(orgId, async (tx) => {
+    // The developer link, when set, must resolve to a company in this tenant
+    // (developer_member_id is a plain FK whose referential check bypasses RLS).
+    const developerId = await resolveLinkedCompany(tx, developerMemberId);
+    await tx.project.create({
       data: {
         orgId,
         name,
         stage,
         description,
         type: type === "" ? null : type,
+        industry: industry === "" ? null : industry,
         county: county === "" ? null : county,
         units: unitsRaw === "" ? null : Number(unitsRaw),
         sqft: sqftRaw === "" ? null : Number(sqftRaw),
         prospectLead: prospectLead === "" ? null : prospectLead,
+        developerMemberId: developerId,
         targetDate,
         value: valueRaw === "" ? null : valueRaw,
         // Seed the stage trail with the founding stage so the timeline has a row
@@ -73,8 +95,8 @@ export async function createProject(formData: FormData): Promise<void> {
           },
         ],
       },
-    }),
-  );
+    });
+  });
 
   revalidatePath("/dashboard/projects");
 }
@@ -270,9 +292,10 @@ function readTeamFields(formData: FormData): {
   };
 }
 
-// Resolve the optional CRM company link, verifying it belongs to this tenant.
-// Blank clears to null. Runs inside the caller's withOrg tx (RLS-scoped).
-async function resolveTeamCompany(
+// Resolve an optional CRM company link (a team member's firm, a project's
+// developer), verifying it belongs to this tenant. Blank clears to null. Runs
+// inside the caller's withOrg tx (RLS-scoped, so a foreign id resolves null).
+async function resolveLinkedCompany(
   tx: Parameters<Parameters<typeof withOrg>[1]>[0],
   companyId: string,
 ): Promise<string | null> {
@@ -305,7 +328,7 @@ export async function addTeamMember(formData: FormData): Promise<void> {
     });
     if (!project) throw new Error("project not found in this organization");
 
-    const linkedCompanyId = await resolveTeamCompany(tx, companyId);
+    const linkedCompanyId = await resolveLinkedCompany(tx, companyId);
 
     await tx.projectTeamMember.create({
       data: { orgId, projectId, role, name, org, email, companyId: linkedCompanyId },
@@ -336,7 +359,7 @@ export async function updateTeamMember(formData: FormData): Promise<void> {
     });
     if (!existing) throw new Error("team member not found in this organization");
 
-    const linkedCompanyId = await resolveTeamCompany(tx, companyId);
+    const linkedCompanyId = await resolveLinkedCompany(tx, companyId);
 
     await tx.projectTeamMember.update({
       where: { id: memberId },
@@ -634,6 +657,7 @@ export async function suggestFundingSources(
       select: {
         name: true,
         type: true,
+        industry: true,
         stage: true,
         county: true,
         units: true,
@@ -653,7 +677,7 @@ export async function suggestFundingSources(
       type: project.type,
       stage: project.stage,
       county: project.county,
-      industry: null,
+      industry: project.industry,
       value: project.value == null ? null : String(project.value),
       units: project.units,
       description: project.description || null,
@@ -669,4 +693,191 @@ export async function suggestFundingSources(
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not identify funding programs. Try again." };
   }
+}
+
+// ── Project profile details (projects-module parity) ─────────────────────────
+// The editable profile facts a project accrues after creation: its sector
+// (industry), the developer/lead — either a CRM company (developer_member_id) OR
+// free-text (prospect_lead) — captured on the detail page. RLS scopes the update
+// to this org; the developer link is re-verified in-tenant.
+function readIntFromNumber(raw: string): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
+}
+
+export async function updateProjectDetails(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const industry = String(formData.get("industry") ?? "").trim().slice(0, 200);
+  const prospectLead = String(formData.get("prospectLead") ?? "").trim().slice(0, 200);
+  const developerMemberId = String(formData.get("developerMemberId") ?? "").trim();
+
+  if (!projectId) throw new Error("project is required");
+
+  await withOrg(orgId, async (tx) => {
+    const project = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (!project) throw new Error("project not found in this organization");
+
+    const developerId = await resolveLinkedCompany(tx, developerMemberId);
+
+    await tx.project.update({
+      where: { id: projectId },
+      data: {
+        industry: industry === "" ? null : industry,
+        prospectLead: prospectLead === "" ? null : prospectLead,
+        developerMemberId: developerId,
+      },
+    });
+  });
+
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  revalidatePath("/dashboard/projects");
+}
+
+// ── Economic impact (projects-module parity, ported from the prototype's
+// "Economic Impact" section) ─────────────────────────────────────────────────
+// A project's regional impact — jobs, construction cost, a tax abatement, and a
+// list of state grants — stored on the economic_impact Json column. These feed
+// the Value Created rollup (@/lib/value-created). Grants are their own numeric
+// list here (distinct from the qualitative FundingSource table). Every write
+// reads the current Json, mutates it, and writes the full object back, so the
+// scalar-and-grants shape is always internally consistent. All money in dollars.
+function revalidateImpact(projectId: string): void {
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  revalidatePath("/dashboard/value-created");
+}
+
+// Load the current impact form inside a tx (RLS-scoped), refusing a foreign id.
+async function loadImpactForm(
+  tx: Parameters<Parameters<typeof withOrg>[1]>[0],
+  projectId: string,
+) {
+  const project = await tx.project.findUnique({
+    where: { id: projectId },
+    select: { economicImpact: true },
+  });
+  if (!project) throw new Error("project not found in this organization");
+  return parseImpactForm(project.economicImpact);
+}
+
+// Update the scalar impact fields + tax abatement, preserving the grants list.
+export async function updateEconomicImpact(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!projectId) throw new Error("project is required");
+
+  const permanentJobs = readIntFromNumber(String(formData.get("permanentJobs") ?? ""));
+  const constructionJobs = readIntFromNumber(String(formData.get("constructionJobs") ?? ""));
+  const constructionCost = readIntFromNumber(String(formData.get("constructionCost") ?? ""));
+  const taxAbatementActive = String(formData.get("taxAbatementActive") ?? "") === "on";
+  const taxAbatementValue = readIntFromNumber(String(formData.get("taxAbatementValue") ?? ""));
+
+  await withOrg(orgId, async (tx) => {
+    const form = await loadImpactForm(tx, projectId);
+    const next = serializeImpactForm({
+      ...form,
+      permanentJobs,
+      constructionJobs,
+      constructionCost,
+      taxAbatementActive,
+      taxAbatementValue,
+    });
+    await tx.project.update({
+      where: { id: projectId },
+      data: { economicImpact: next as Prisma.InputJsonValue },
+    });
+  });
+
+  revalidateImpact(projectId);
+}
+
+export async function addProjectGrant(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim().slice(0, 200);
+  const amount = readIntFromNumber(String(formData.get("amount") ?? ""));
+  const status = normalizeGrantStatus(String(formData.get("status") ?? "").trim());
+
+  if (!projectId) throw new Error("project is required");
+  if (!name) throw new Error("a grant program name is required");
+
+  const grant: Grant = { id: randomUUID(), name, amount, status };
+
+  await withOrg(orgId, async (tx) => {
+    const form = await loadImpactForm(tx, projectId);
+    const next = serializeImpactForm({ ...form, grants: [...form.grants, grant] });
+    await tx.project.update({
+      where: { id: projectId },
+      data: { economicImpact: next as Prisma.InputJsonValue },
+    });
+  });
+
+  revalidateImpact(projectId);
+}
+
+export async function removeProjectGrant(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const grantId = String(formData.get("grantId") ?? "").trim();
+  if (!projectId || !grantId) throw new Error("project and grant are required");
+
+  await withOrg(orgId, async (tx) => {
+    const form = await loadImpactForm(tx, projectId);
+    const next = serializeImpactForm({
+      ...form,
+      grants: form.grants.filter((g) => g.id !== grantId),
+    });
+    await tx.project.update({
+      where: { id: projectId },
+      data: { economicImpact: next as Prisma.InputJsonValue },
+    });
+  });
+
+  revalidateImpact(projectId);
+}
+
+// ── HVEDC services (projects-module parity, ported from the prototype's "HVEDC
+// Services on this Project") ─────────────────────────────────────────────────
+// What HVEDC is doing for a project across five service lines, each with a fee.
+// Active fees flow into Revenue reporting (@/lib/hv-services sumActiveServiceFees).
+// Stored on the hv_services Json column; the whole five-line object is written at
+// once from the edit form. Status vocab is normalized at this write boundary.
+export async function updateHvServices(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!projectId) throw new Error("project is required");
+
+  const services: Record<string, unknown> = {};
+  for (const def of HV_SERVICE_DEFS) {
+    services[def.key] = {
+      active: String(formData.get(`${def.key}_active`) ?? "") === "on",
+      status: normalizeServiceStatus(String(formData.get(`${def.key}_status`) ?? "").trim()),
+      description: String(formData.get(`${def.key}_description`) ?? "").trim().slice(0, 300),
+      fee: readIntFromNumber(String(formData.get(`${def.key}_fee`) ?? "")),
+      feeStatus: normalizeFeeStatus(String(formData.get(`${def.key}_feeStatus`) ?? "").trim()),
+    };
+  }
+
+  await withOrg(orgId, async (tx) => {
+    const project = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (!project) throw new Error("project not found in this organization");
+    await tx.project.update({
+      where: { id: projectId },
+      data: { hvServices: services as Prisma.InputJsonValue },
+    });
+  });
+
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  revalidatePath("/dashboard/revenue");
 }

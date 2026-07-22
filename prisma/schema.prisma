@@ -189,6 +189,7 @@ model Company {
   keyRelationships      KeyRelationship[]    @relation("KeyRelationshipOwner")
   linkedFromKeyRels     KeyRelationship[]    @relation("KeyRelationshipLink")
   projectTeamMembers    ProjectTeamMember[]
+  developedProjects     Project[]            @relation("ProjectDeveloper")
   dismissalsAsFocus     IntroDismissal[]     @relation("IntroDismissalFocus")
   dismissalsAsCandidate IntroDismissal[]     @relation("IntroDismissalCandidate")
   eventConversions      EventConversion[]
@@ -256,8 +257,11 @@ model Project {
   value       Decimal?  @db.Decimal(14, 2)
 
   // ── Slice 11.0 additive expansion (all nullable / defaulted; backfilled) ──
-  /// Project type / industry (demo `type`).
+  /// Project type / phase category (demo `type`).
   type           String?
+  /// Sector / industry — distinct from `type` (demo `industry`). Feeds funding-
+  /// source suggestions and the profile facts.
+  industry       String?
   /// Location (demo `county`).
   county         String?
   /// Units / keys — pipeline metric (demo `units`).
@@ -268,6 +272,10 @@ model Project {
   realizedValue  Decimal? @map("realized_value") @db.Decimal(14, 2)
   /// Lead org/name if not yet a member (demo `prospectLead`).
   prospectLead   String?  @map("prospect_lead")
+  /// The developer/lead as a CRM company, when one exists (demo `developerMemberId`).
+  /// PLAIN nullable FK (SetNull); same-org enforced in the action inside withOrg,
+  /// since a composite SetNull would fight org_id's NOT NULL (mirrors team members).
+  developerMemberId String? @map("developer_member_id") @db.Uuid
   /// { permanentJobs, constructionJobs, constructionCost, taxAbatement, grants[] }.
   economicImpact Json     @default("{}") @map("economic_impact")
   /// { capitalSourcing, idaNavigation, realEstateSales, grantCfa }.
@@ -279,6 +287,7 @@ model Project {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization  Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  developer      Company?            @relation("ProjectDeveloper", fields: [developerMemberId], references: [id], onDelete: SetNull)
   projectLinks   ProjectLink[]
   introductions  Introduction[]
   events         Event[]

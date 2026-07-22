@@ -6,28 +6,7 @@
 // or malformed reads as zero / inactive rather than throwing.
 
 import { TERMINAL_STAGES } from "@/lib/project-stages";
-
-// ── Numbers ────────────────────────────────────────────────────────────────
-// Coerce an unknown Json value to a finite number, else 0. Accepts numeric strings
-// (economic_impact is hand-entered / migrated, so values may arrive as strings).
-function num(v: unknown): number {
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-  if (typeof v === "string") {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-  return 0;
-}
-
-function str(v: unknown): string {
-  return typeof v === "string" ? v.trim() : "";
-}
-
-function record(v: unknown): Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : {};
-}
+import { numFromJson as num, strFromJson as str, recordFromJson as record } from "@/lib/json-coerce";
 
 // ── Economic impact ─────────────────────────────────────────────────────────
 // Aggregated regional impact for one project. All monetary fields in dollars.
@@ -92,6 +71,73 @@ export function impactIsEmpty(i: EconomicImpact): boolean {
     i.taxAbatementValue === 0 &&
     i.grantsSecured === 0
   );
+}
+
+// ── Editable impact form ────────────────────────────────────────────────────
+// parseEconomicImpact returns the ROLLUP (abatement dropped unless active, grants
+// filtered to secured) — lossy, so it can't prefill an edit form. parseImpactForm
+// returns the RAW editable fields the detail card writes back verbatim.
+export const GRANT_STATUSES = ["Applied", "Awarded", "Received", "Declined"] as const;
+
+// Each grant carries a stable id so a row can be removed by id (not fragile index).
+export type Grant = { id: string; name: string; amount: number; status: string };
+
+export type ImpactForm = {
+  permanentJobs: number;
+  constructionJobs: number;
+  constructionCost: number;
+  taxAbatementActive: boolean;
+  taxAbatementValue: number;
+  grants: Grant[];
+};
+
+const GRANT_STATUS_SET = new Set<string>(GRANT_STATUSES);
+
+export function normalizeGrantStatus(v: string): string {
+  return GRANT_STATUS_SET.has(v) ? v : "Applied";
+}
+
+/// Coerce a project's economic_impact Json into the raw editable form shape.
+export function parseImpactForm(raw: unknown): ImpactForm {
+  const o = record(raw);
+  const abatement = record(o.taxAbatement);
+  const grants = Array.isArray(o.grants) ? o.grants : [];
+  return {
+    permanentJobs: num(o.permanentJobs),
+    constructionJobs: num(o.constructionJobs),
+    constructionCost: num(o.constructionCost),
+    taxAbatementActive: abatement.active === true,
+    taxAbatementValue: num(abatement.totalValue),
+    grants: grants.map((g) => {
+      const grant = record(g);
+      return {
+        id: str(grant.id),
+        name: str(grant.name),
+        amount: num(grant.amount),
+        status: normalizeGrantStatus(str(grant.status)),
+      };
+    }),
+  };
+}
+
+/// Serialize an ImpactForm back to the economic_impact Json shape parseEconomicImpact
+/// (the rollup) and parseImpactForm both read. The write boundary for the edit card.
+export function serializeImpactForm(form: ImpactForm): Record<string, unknown> {
+  return {
+    permanentJobs: form.permanentJobs,
+    constructionJobs: form.constructionJobs,
+    constructionCost: form.constructionCost,
+    taxAbatement: {
+      active: form.taxAbatementActive,
+      totalValue: form.taxAbatementValue,
+    },
+    grants: form.grants.map((g) => ({
+      id: g.id,
+      name: g.name,
+      amount: g.amount,
+      status: g.status,
+    })),
+  };
 }
 
 // ── Services (IDA advisory + capital placement) ─────────────────────────────

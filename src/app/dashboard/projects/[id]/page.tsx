@@ -7,10 +7,13 @@ import { prisma } from "@/lib/prisma";
 import { PROJECT_STAGES, TERMINAL_STAGES } from "@/lib/project-stages";
 import { buildStageTimeline } from "@/lib/stage-history";
 import { openRoles } from "@/lib/disciplines";
+import { parseImpactForm } from "@/lib/value-created";
+import { parseHvServices } from "@/lib/hv-services";
 import {
   Button,
   Card,
   CardHeader,
+  Field,
   PageTitle,
   SelectField,
   StatusBadge,
@@ -20,7 +23,7 @@ import {
   Tr,
 } from "@/components/ui";
 
-import { linkCompany, updateStage } from "../actions";
+import { linkCompany, updateProjectDetails, updateStage } from "../actions";
 import { OpenRoles } from "./_open-roles";
 import {
   DeliverablesCard,
@@ -28,6 +31,8 @@ import {
 } from "./_deliverables";
 import { TeamCard, type TeamMemberRow } from "./_team";
 import { FundingCard, type FundingRow } from "./_funding";
+import { EconomicImpactCard } from "./_economic-impact";
+import { HvServicesCard } from "./_hv-services";
 
 // Project detail — the seat of company participation. project_links carries
 // composite FKs to projects(id, org_id) and companies(id, org_id), so a link can
@@ -75,6 +80,7 @@ export default async function ProjectDetailPage({
     const project = await tx.project.findUnique({
       where: { id },
       include: {
+        developer: { select: { id: true, name: true } },
         projectLinks: {
           include: { company: { select: { name: true, status: true } } },
           orderBy: { role: "asc" },
@@ -206,6 +212,14 @@ export default async function ProjectDetailPage({
   // Stage history reads the trail updateStage appends to; newest-first for display.
   const timeline = buildStageTimeline(project.stageHistory);
 
+  // Economic impact + HVEDC services — the editable Json columns feeding Value
+  // Created and Revenue reporting. Parsed to the raw form shape for the cards.
+  const impact = parseImpactForm(project.economicImpact);
+  const services = parseHvServices(project.hvServices);
+
+  // Companies eligible as the developer/lead (any in the tenant).
+  const developerId = project.developerMemberId ?? "";
+
   // Open roles = disciplines not yet staffed on the team. Only meaningful while the
   // project is live — a completed / on-hold project isn't hiring.
   const isActive = !TERMINAL_STAGES.includes(project.stage);
@@ -213,6 +227,7 @@ export default async function ProjectDetailPage({
 
   const facts: Array<{ label: string; value: string | null }> = [
     { label: "Type", value: project.type },
+    { label: "Industry", value: project.industry },
     { label: "County", value: project.county },
     {
       label: "Units / keys",
@@ -233,6 +248,7 @@ export default async function ProjectDetailPage({
           ? null
           : currency.format(Number(project.realizedValue)),
     },
+    { label: "Developer (member)", value: project.developer?.name ?? null },
     { label: "Developer / lead", value: project.prospectLead },
     {
       label: "Target date",
@@ -289,6 +305,48 @@ export default async function ProjectDetailPage({
           </SelectField>
           <Button type="submit">Update stage</Button>
         </form>
+        <details className="group border-t border-line">
+          <summary className="cursor-pointer list-none px-4 py-3 text-xs text-ink-3 hover:text-ink">
+            <span className="group-open:hidden">+ Edit details</span>
+            <span className="hidden group-open:inline">Cancel</span>
+          </summary>
+          <form
+            action={updateProjectDetails}
+            className="grid grid-cols-2 gap-4 border-t border-line p-4"
+          >
+            <input type="hidden" name="projectId" value={project.id} />
+            <Field
+              name="industry"
+              label="Industry"
+              defaultValue={project.industry ?? ""}
+              placeholder="Hospitality"
+            />
+            <SelectField
+              name="developerMemberId"
+              label="Developer (member)"
+              defaultValue={developerId}
+            >
+              <option value="">None</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </SelectField>
+            <Field
+              name="prospectLead"
+              label="Developer / lead (off-network)"
+              defaultValue={project.prospectLead ?? ""}
+              placeholder="Lead org or developer"
+              className="col-span-2"
+            />
+            <div className="col-span-2 flex justify-end">
+              <Button type="submit" variant="primary">
+                Save details
+              </Button>
+            </div>
+          </form>
+        </details>
       </Card>
 
       {timeline.length > 0 ? (
@@ -357,6 +415,10 @@ export default async function ProjectDetailPage({
       />
 
       <FundingCard projectId={project.id} sources={fundingRows} />
+
+      <EconomicImpactCard projectId={project.id} impact={impact} />
+
+      <HvServicesCard projectId={project.id} services={services} />
 
       {project.projectLinks.length > 0 ? (
         <Card>

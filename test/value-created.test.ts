@@ -6,8 +6,12 @@ import {
   facilitatedValue,
   impactIsEmpty,
   isActiveStage,
+  normalizeGrantStatus,
   parseEconomicImpact,
+  parseImpactForm,
   parseServices,
+  serializeImpactForm,
+  type ImpactForm,
   type ValueCompany,
   type ValueProject,
 } from "@/lib/value-created";
@@ -85,6 +89,87 @@ describe("parseEconomicImpact", () => {
     expect(parseEconomicImpact("nope")).toEqual(ZERO_IMPACT);
     expect(parseEconomicImpact([1, 2, 3])).toEqual(ZERO_IMPACT);
     expect(parseEconomicImpact({ grants: "not-array" }).grantsSecured).toBe(0);
+  });
+});
+
+describe("normalizeGrantStatus", () => {
+  it("keeps an in-vocab status and defaults the rest to Applied", () => {
+    expect(normalizeGrantStatus("Awarded")).toBe("Awarded");
+    expect(normalizeGrantStatus("Received")).toBe("Received");
+    expect(normalizeGrantStatus("bogus")).toBe("Applied");
+    expect(normalizeGrantStatus("")).toBe("Applied");
+  });
+});
+
+describe("parseImpactForm / serializeImpactForm", () => {
+  it("reads the raw editable shape, coercing numeric strings", () => {
+    const form = parseImpactForm({
+      permanentJobs: 40,
+      constructionJobs: "25",
+      constructionCost: "1000000",
+      taxAbatement: { active: true, totalValue: "500" },
+      grants: [{ id: "g1", name: "CFA", amount: "100", status: "Awarded" }],
+    });
+    expect(form.permanentJobs).toBe(40);
+    expect(form.constructionJobs).toBe(25);
+    expect(form.constructionCost).toBe(1_000_000);
+    expect(form.taxAbatementActive).toBe(true);
+    expect(form.taxAbatementValue).toBe(500);
+    expect(form.grants).toEqual([
+      { id: "g1", name: "CFA", amount: 100, status: "Awarded" },
+    ]);
+  });
+
+  it("normalizes an out-of-vocab grant status to Applied", () => {
+    const form = parseImpactForm({
+      grants: [{ id: "g1", name: "X", amount: 5, status: "bogus" }],
+    });
+    expect(form.grants[0].status).toBe("Applied");
+  });
+
+  it("reads malformed / missing shapes as an empty form", () => {
+    expect(parseImpactForm(null)).toEqual({
+      permanentJobs: 0,
+      constructionJobs: 0,
+      constructionCost: 0,
+      taxAbatementActive: false,
+      taxAbatementValue: 0,
+      grants: [],
+    });
+    expect(parseImpactForm({ grants: "not-array" }).grants).toEqual([]);
+  });
+
+  it("round-trips through serialize, preserving grant ids", () => {
+    const form: ImpactForm = {
+      permanentJobs: 12,
+      constructionJobs: 8,
+      constructionCost: 750_000,
+      taxAbatementActive: true,
+      taxAbatementValue: 25_000,
+      grants: [
+        { id: "a", name: "Grant A", amount: 100, status: "Awarded" },
+        { id: "b", name: "Grant B", amount: 200, status: "Applied" },
+      ],
+    };
+    expect(parseImpactForm(serializeImpactForm(form))).toEqual(form);
+  });
+
+  it("serializes to the shape the rollup reads (tax abatement + awarded grants)", () => {
+    const form: ImpactForm = {
+      permanentJobs: 5,
+      constructionJobs: 0,
+      constructionCost: 0,
+      taxAbatementActive: true,
+      taxAbatementValue: 500,
+      grants: [
+        { id: "a", name: "A", amount: 100, status: "Awarded" },
+        { id: "b", name: "B", amount: 999, status: "Applied" },
+      ],
+    };
+    const rollup = parseEconomicImpact(serializeImpactForm(form));
+    expect(rollup.permanentJobs).toBe(5);
+    expect(rollup.taxAbatementValue).toBe(500);
+    expect(rollup.grantsSecured).toBe(100);
   });
 });
 

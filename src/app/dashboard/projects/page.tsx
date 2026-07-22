@@ -53,19 +53,36 @@ const stageHeadTone: Record<string, string> = {
   red: "text-red-ink",
 };
 
-type ProjectRow = Awaited<ReturnType<typeof loadProjects>>[number];
+type ProjectRow = Awaited<ReturnType<typeof loadProjects>>["projects"][number];
 
 function loadProjects(orgId: string) {
-  return withOrg(orgId, (tx) =>
-    tx.project.findMany({
+  return withOrg(orgId, async (tx) => {
+    const projects = await tx.project.findMany({
       orderBy: { name: "asc" },
-      include: {
+      // Only the columns the board/list render — not the economic_impact /
+      // hv_services JSON blobs (those are read on the detail page).
+      select: {
+        id: true,
+        name: true,
+        stage: true,
+        type: true,
+        county: true,
+        units: true,
+        value: true,
+        targetDate: true,
+        prospectLead: true,
         projectLinks: {
           include: { company: { select: { name: true } } },
         },
       },
-    }),
-  );
+    });
+    // The roster for the developer/lead picker on the create form.
+    const companies = await tx.company.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+    return { projects, companies };
+  });
 }
 
 export default async function ProjectsPage({
@@ -78,7 +95,7 @@ export default async function ProjectsPage({
   const view =
     (typeof sp.view === "string" ? sp.view : "") === "list" ? "list" : "board";
 
-  const projects = await loadProjects(ctx.orgId);
+  const { projects, companies } = await loadProjects(ctx.orgId);
 
   const totalValue = projects.reduce((t, p) => t + Number(p.value ?? 0), 0);
   const totalUnits = projects.reduce((t, p) => t + (p.units ?? 0), 0);
@@ -151,7 +168,8 @@ export default async function ProjectsPage({
                 </option>
               ))}
             </SelectField>
-            <Field name="type" label="Type" placeholder="Hospitality" />
+            <Field name="type" label="Type" placeholder="Mixed-use" />
+            <Field name="industry" label="Industry" placeholder="Hospitality" />
             <Field name="county" label="County" placeholder="Dutchess" />
             <Field
               name="units"
@@ -172,9 +190,21 @@ export default async function ProjectsPage({
               inputMode="decimal"
             />
             <Field name="targetDate" label="Target date" type="date" />
+            <SelectField
+              name="developerMemberId"
+              label="Developer (member)"
+              defaultValue=""
+            >
+              <option value="">None</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </SelectField>
             <Field
               name="prospectLead"
-              label="Developer / lead"
+              label="Developer / lead (off-network)"
               placeholder="Lead org or developer"
               className="col-span-2"
             />
