@@ -418,6 +418,9 @@ model Introduction {
   madeOn          DateTime? @map("made_on") @db.Date
   /// If the intro advanced a specific project.
   projectId       String?   @map("project_id") @db.Uuid
+  /// If the intro was made at an event. Plain FK to events.id (SetNull) — an
+  /// intro is first-class and outlives the event; app-layer re-checked withOrg.
+  eventId         String?   @map("event_id") @db.Uuid
   notes           String    @default("")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -427,12 +430,14 @@ model Introduction {
   partyA         Contact          @relation("IntroPartyA", fields: [partyAContactId], references: [id])
   partyB         Contact          @relation("IntroPartyB", fields: [partyBContactId], references: [id])
   project        Project?         @relation(fields: [projectId], references: [id])
+  event          Event?           @relation(fields: [eventId], references: [id], onDelete: SetNull)
   valueDelivered ValueDelivered[]
 
   @@index([orgId])
   @@index([partyAContactId])
   @@index([partyBContactId])
   @@index([projectId])
+  @@index([eventId])
   @@map("introductions")
 }
 
@@ -506,6 +511,8 @@ model ActionItem {
   projectId      String?   @map("project_id") @db.Uuid
   /// Null unless this item is a manual commitment logged on a company profile.
   companyId      String?   @map("company_id") @db.Uuid
+  /// Null unless this item is a follow-up logged on an event debrief.
+  eventId        String?   @map("event_id") @db.Uuid
   text           String
   /// open, done, dropped
   status         String    @default("open")
@@ -528,6 +535,10 @@ model ActionItem {
   // commitment can never straddle orgs (mirrors project_id). Cascade — a
   // company's manual commitments die with it.
   company      Company?     @relation(fields: [companyId, orgId], references: [id, orgId], onDelete: Cascade)
+  // Composite FK (event_id, org_id) -> events(id, org_id): a follow-up can never
+  // straddle orgs (mirrors project_id/company_id). Cascade — an event's follow-up
+  // items die with it.
+  event        Event?       @relation(fields: [eventId, orgId], references: [id, orgId], onDelete: Cascade)
   ownerUser    User?        @relation("ActionItemOwnerUser", fields: [ownerUserId], references: [id])
   ownerContact Contact?     @relation("ActionItemOwnerContact", fields: [ownerContactId], references: [id])
 
@@ -535,6 +546,7 @@ model ActionItem {
   @@index([orgId, status, dueDate])
   @@index([orgId, projectId])
   @@index([orgId, companyId])
+  @@index([orgId, eventId])
   @@map("action_items")
 }
 
@@ -734,10 +746,12 @@ model Event {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  project      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  invitees     EventInvitee[]
-  conversions  EventConversion[]
+  organization  Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project       Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  invitees      EventInvitee[]
+  conversions   EventConversion[]
+  actionItems   ActionItem[]
+  introductions Introduction[]
 
   // Composite-FK target for event_invitees (id, org_id).
   @@unique([id, orgId])

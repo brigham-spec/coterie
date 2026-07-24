@@ -4,14 +4,19 @@ import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { optionalDate } from "@/lib/form-fields";
 import { getTagDef } from "@/lib/tags";
+import { isIntroStage } from "@/lib/intro-stages";
+import { COMMITMENT_STATUSES } from "@/lib/commitments";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
+import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import {
   RSVP_ATTENDED,
   RSVP_CONFIRMED,
+  getEventType,
   isAttending,
   isEventType,
   isEventStage,
@@ -27,6 +32,11 @@ import {
   type EventIdea,
   type IdeaMember,
 } from "@/lib/event-ideas";
+import {
+  generateGuestSuggestions,
+  type GuestCandidate,
+  type SuggestedGuest,
+} from "@/lib/event-guest-suggest";
 import {
   generateOutreachEmail,
   type OutreachGuest,
@@ -579,6 +589,178 @@ export async function suggestEvents(
   }
 }
 
+// AI guest-list curation (ported from the prototype's "AI Suggest Guest List",
+// Coterie.html:8210). In ONE withOrg tx it loads the event, the network contacts
+// not yet on the list (with their company profile + a never-invited flag), the
+// names already invited, and recent meeting intelligence, then the engine picks
+// the best-fitting guests with a one-line reason each. Unlike the ephemeral AI
+// features this one PERSISTS: each validated pick becomes an EventInvitee with
+// the reason as its note. A second withOrg pass re-checks the current guest list
+// so a race can't double-invite. Returns state (not throwing) for inline render.
+
+export type SuggestGuestsState =
+  | { status: "idle" }
+  | { status: "ok"; added: number }
+  | { status: "empty" }
+  | { status: "error"; message: string };
+
+export async function suggestGuestList(
+  _prev: SuggestGuestsState,
+  formData: FormData,
+): Promise<SuggestGuestsState> {
+  const { orgId, orgName } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  if (!eventId) return { status: "error", message: "Pick an event." };
+
+  const data = await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: {
+        name: true,
+        type: true,
+        theme: true,
+        description: true,
+        capacity: true,
+      },
+    });
+    if (!event) return null;
+    // Contacts already on this event's list — skipped as candidates; their names
+    // give the engine the "who's already coming" context.
+    const invitees = await tx.eventInvitee.findMany({
+      where: { eventId },
+      select: {
+        contactId: true,
+        externalName: true,
+        contact: { select: { name: true } },
+      },
+    });
+    // Companies that have appeared on ANY event guest list (via a CRM contact) —
+    // the complement flags candidates whose company has never been invited. Ask
+    // the DB for distinct company ids so this doesn't fan out over every invitee
+    // row across every event.
+    const everInvited = await tx.contact.findMany({
+      where: { eventInvitees: { some: {} } },
+      select: { companyId: true },
+      distinct: ["companyId"],
+    });
+    // Network contacts eligible to invite (active member tiers), with the company
+    // profile the engine reasons over.
+    const contacts = await tx.contact.findMany({
+      where: { company: { status: { in: [...NETWORK_STATUSES] } } },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        company: {
+          select: {
+            id: true,
+            name: true,
+            industry: true,
+            lookingFor: true,
+            canOffer: true,
+            networkTags: true,
+          },
+        },
+      },
+    });
+    const meetings = await tx.meeting.findMany({
+      orderBy: { heldAt: "desc" },
+      take: 8,
+      select: { title: true, summary: true },
+    });
+    return { event, invitees, everInvited, contacts, meetings };
+  });
+
+  if (data === null) return { status: "error", message: "Event not found." };
+
+  const invitedContactIds = new Set(
+    data.invitees.map((i) => i.contactId).filter((v): v is string => v != null),
+  );
+  const alreadyInvited = data.invitees
+    .map((i) => i.contact?.name ?? i.externalName ?? "")
+    .filter((n) => n !== "");
+  const everInvitedCompanyIds = new Set(
+    data.everInvited.map((c) => c.companyId),
+  );
+
+  const candidates: GuestCandidate[] = data.contacts
+    .filter((c) => !invitedContactIds.has(c.id))
+    .map((c) => ({
+      contactId: c.id,
+      name: c.name,
+      company: c.company.name,
+      industry: c.company.industry,
+      lookingFor: c.company.lookingFor,
+      canOffer: c.company.canOffer,
+      tags: c.company.networkTags
+        .map((k) => getTagDef(k).label)
+        .filter((l) => l.length > 0),
+      neverInvited: !everInvitedCompanyIds.has(c.company.id),
+    }));
+
+  // Everyone eligible is already invited (or there's no network) → nothing to add.
+  if (candidates.length === 0) return { status: "empty" };
+
+  let suggestions: SuggestedGuest[];
+  try {
+    await enforceAiRateLimit(orgId);
+    suggestions = await generateGuestSuggestions({
+      orgName,
+      event: {
+        name: data.event.name,
+        typeLabel: getEventType(data.event.type).label,
+        theme: data.event.theme || data.event.description || null,
+        capacity: data.event.capacity,
+      },
+      alreadyInvited,
+      candidates,
+      recentMeetings: data.meetings.map((m) => ({
+        title: m.title,
+        summary: m.summary,
+      })),
+    });
+  } catch (err) {
+    console.error("guest suggestion failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not suggest guests. Try again." };
+  }
+
+  // parseGuestSuggestions already dropped invented ids, but re-assert against the
+  // candidate set (defense in depth) before writing.
+  const validIds = new Set(candidates.map((c) => c.contactId));
+  const picks = suggestions.filter((s) => validIds.has(s.contactId));
+  if (picks.length === 0) return { status: "empty" };
+
+  const added = await withOrg(orgId, async (tx) => {
+    // Re-read the current invited set so a concurrent add can't be double-invited.
+    const current = await tx.eventInvitee.findMany({
+      where: { eventId, contactId: { not: null } },
+      select: { contactId: true },
+    });
+    const invited = new Set(current.map((i) => i.contactId));
+    const toCreate = picks.filter((p) => !invited.has(p.contactId));
+    if (toCreate.length === 0) return 0;
+    await tx.eventInvitee.createMany({
+      data: toCreate.map((p) => ({
+        orgId,
+        eventId,
+        contactId: p.contactId,
+        notes: p.reason,
+      })),
+    });
+    return toCreate.length;
+  });
+
+  revalidatePath(`/dashboard/events/${eventId}`);
+  return added === 0 ? { status: "empty" } : { status: "ok", added };
+}
+
 // Event outreach email draft (gap-audit cluster D, ported from the prototype's
 // generateInviteEmail). In ONE withOrg tx (RLS-scoped) it loads the event, the one
 // invited CRM guest with their company context and recent meeting topics, and the
@@ -713,4 +895,189 @@ export async function draftOutreach(
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not draft the invitation. Try again." };
   }
+}
+
+// ── Post-event debrief ──────────────────────────────────────────────────────
+// The prototype captured a free-text event recap in the event modal. Here it's
+// the event.notes column (already present, defaults ""). The findUnique runs
+// inside withOrg (RLS-scoped), so a foreign eventId resolves to null and is
+// refused; the update is likewise scoped.
+
+export async function updateEventNotes(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+  if (!eventId) throw new Error("event is required");
+
+  await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: { id: true },
+    });
+    if (!event) throw new Error("event not found");
+    await tx.event.update({ where: { id: eventId }, data: { notes } });
+  });
+
+  revalidatePath(`/dashboard/events/${eventId}`);
+}
+
+// ── Event follow-ups (action items surfaced from a debrief) ──────────────────
+// A follow-up is an action_item anchored to the event (event_id). Like a company
+// commitment it carries a direction: "we owe" (org staff -> ownerUserId) or "they
+// owe" (a guest of THIS event -> ownerContactId), mapped to the owner-XOR column
+// and re-validated server-side. The event_id composite FK keeps the row in the
+// event's org. Follow-ups also surface on the global Commitments workspace, so we
+// revalidate it alongside the event.
+
+function revalidateFollowUp(eventId: string): void {
+  revalidatePath(`/dashboard/events/${eventId}`);
+  revalidatePath("/dashboard/commitments");
+  revalidatePath("/dashboard");
+}
+
+export async function addEventActionItem(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const text = String(formData.get("text") ?? "")
+    .trim()
+    .slice(0, 500);
+  const direction = String(formData.get("direction") ?? "").trim();
+  const ownerId = String(formData.get("ownerId") ?? "").trim();
+  const dueDate = optionalDate(formData, "dueDate");
+
+  if (!eventId) throw new Error("event is required");
+  if (!text) throw new Error("a follow-up is required");
+  if (direction !== "we_owe" && direction !== "they_owe")
+    throw new Error("invalid direction");
+  if (!ownerId) throw new Error("an owner is required");
+
+  await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: { id: true },
+    });
+    if (!event) throw new Error("event not found");
+
+    let ownerUserId: string | null = null;
+    let ownerContactId: string | null = null;
+    if (direction === "we_owe") {
+      // org_memberships carry no RLS — scope explicitly by org+user.
+      const member = await prisma.orgMembership.findUnique({
+        where: { orgId_userId: { orgId, userId: ownerId } },
+        select: { userId: true },
+      });
+      if (!member) throw new Error("owner is not a member of this organization");
+      ownerUserId = ownerId;
+    } else {
+      // A "they owe" owner must be a guest on this event.
+      const invitee = await tx.eventInvitee.findFirst({
+        where: { eventId, contactId: ownerId },
+        select: { id: true },
+      });
+      if (!invitee) throw new Error("owner is not a guest on this event");
+      ownerContactId = ownerId;
+    }
+
+    await tx.actionItem.create({
+      data: {
+        orgId,
+        eventId,
+        text,
+        status: "open",
+        dueDate,
+        ownerUserId,
+        ownerContactId,
+      },
+    });
+  });
+
+  revalidateFollowUp(eventId);
+}
+
+export async function updateEventActionItemStatus(
+  formData: FormData,
+): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  if (!id || !eventId) throw new Error("follow-up and event are required");
+  if (!(COMMITMENT_STATUSES as readonly string[]).includes(status))
+    throw new Error("invalid status");
+
+  await withOrg(orgId, (tx) =>
+    tx.actionItem.updateMany({ where: { id, eventId }, data: { status } }),
+  );
+  revalidateFollowUp(eventId);
+}
+
+export async function deleteEventActionItem(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  if (!id || !eventId) throw new Error("follow-up and event are required");
+
+  await withOrg(orgId, (tx) =>
+    tx.actionItem.deleteMany({ where: { id, eventId } }),
+  );
+  revalidateFollowUp(eventId);
+}
+
+// ── Introductions made at an event ──────────────────────────────────────────
+// Logs a first-class Introduction (build item 4) anchored to the event it was
+// made at (event_id). Mirrors createIntroduction: both parties are re-verified
+// withOrg-scoped (plain FKs bypass RLS), must differ, and the status must be a
+// valid intro stage. source="manual". Both the event and the introductions board
+// reflect the new row.
+
+export async function logIntroductionAtEvent(
+  formData: FormData,
+): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const partyAContactId = String(formData.get("partyAContactId") ?? "").trim();
+  const partyBContactId = String(formData.get("partyBContactId") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  const madeOn = optionalDate(formData, "madeOn");
+
+  if (!eventId) throw new Error("event is required");
+  if (!partyAContactId || !partyBContactId)
+    throw new Error("both parties are required");
+  if (!status) throw new Error("status is required");
+  if (!isIntroStage(status)) throw new Error("invalid introduction status");
+  if (partyAContactId === partyBContactId)
+    throw new Error("the two parties must be different contacts");
+
+  await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: { id: true },
+    });
+    if (!event) throw new Error("event not found");
+
+    // Sequential: one pooled connection per tx, so no concurrent queries.
+    const a = await tx.contact.findUnique({ where: { id: partyAContactId } });
+    const b = await tx.contact.findUnique({ where: { id: partyBContactId } });
+    if (!a || !b) throw new Error("contact not found in this organization");
+
+    await tx.introduction.create({
+      data: {
+        orgId,
+        partyAContactId,
+        partyBContactId,
+        status,
+        source: "manual",
+        eventId,
+        madeOn,
+      },
+    });
+  });
+
+  revalidatePath(`/dashboard/events/${eventId}`);
+  revalidatePath("/dashboard/introductions");
 }

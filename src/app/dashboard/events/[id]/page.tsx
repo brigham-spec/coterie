@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireOrgContext } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import {
   EVENT_STAGES,
@@ -39,6 +40,12 @@ import {
 } from "../actions";
 import { GuestBrief } from "./_guest-brief";
 import { Outreach } from "./_outreach";
+import { SuggestGuests } from "./_suggest-guests";
+import {
+  Debrief,
+  type EventIntro,
+  type FollowUp,
+} from "./_debrief";
 
 // Event detail — the seat of the guest list (slice 11.7). event_invitees carries a
 // composite FK to events(id, org_id) so a guest can never straddle orgs; the optional
@@ -59,6 +66,14 @@ export default async function EventDetailPage({
 }) {
   const { id } = await params;
   const ctx = await requireOrgContext();
+
+  // Org staff = org members (platform table, no RLS). Kicked off first so it runs
+  // alongside the RLS-scoped withOrg batch below.
+  const staffPromise = prisma.orgMembership.findMany({
+    where: { orgId: ctx.orgId },
+    orderBy: { user: { name: "asc" } },
+    select: { user: { select: { id: true, name: true } } },
+  });
 
   const data = await withOrg(ctx.orgId, async (tx) => {
     const event = await tx.event.findUnique({
@@ -94,11 +109,37 @@ export default async function EventDetailPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });
-    return { event, contacts, projects, companies };
+    // Post-event debrief: the follow-up commitments and introductions anchored to
+    // this event (both carry event_id).
+    const followUpRows = await tx.actionItem.findMany({
+      where: { eventId: id },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        text: true,
+        status: true,
+        dueDate: true,
+        ownerUser: { select: { name: true } },
+        ownerContact: { select: { name: true } },
+      },
+    });
+    const introRows = await tx.introduction.findMany({
+      where: { eventId: id },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        status: true,
+        madeOn: true,
+        partyA: { select: { name: true } },
+        partyB: { select: { name: true } },
+      },
+    });
+    return { event, contacts, projects, companies, followUpRows, introRows };
   });
 
   if (data == null) notFound();
-  const { event, contacts, projects, companies } = data;
+  const { event, contacts, projects, companies, followUpRows, introRows } = data;
+  const staffRows = await staffPromise;
 
   // Projected ROI (prototype roiSummary, Coterie.html:8340): net = ARR gained − cost;
   // roi% only meaningful when a cost is entered. ARR/cost are dollars.
@@ -125,6 +166,31 @@ export default async function EventDetailPage({
   const outreachGuests = event.invitees
     .filter((i) => i.contactId != null && i.contact != null)
     .map((i) => ({ id: i.id, name: i.contact!.name }));
+
+  // Network guests keyed by CONTACT id — the pool for follow-up "they owe" owners
+  // and for introductions made in the room (both write contact ids, not invitee ids).
+  const guestContacts = event.invitees
+    .filter((i) => i.contactId != null && i.contact != null)
+    .map((i) => ({ id: i.contactId!, name: i.contact!.name }));
+
+  const staff = staffRows.map((r) => r.user);
+
+  const followUps: FollowUp[] = followUpRows.map((f) => ({
+    id: f.id,
+    text: f.text,
+    status: f.status,
+    dueDate: f.dueDate,
+    ownerName: f.ownerUser?.name ?? f.ownerContact?.name ?? null,
+    direction: f.ownerUser != null ? "we_owe" : "they_owe",
+  }));
+
+  const intros: EventIntro[] = introRows.map((i) => ({
+    id: i.id,
+    partyAName: i.partyA.name,
+    partyBName: i.partyB.name,
+    status: i.status,
+    madeOn: i.madeOn,
+  }));
 
   const facts: Array<{ label: string; value: string | null }> = [
     { label: "Type", value: getEventType(event.type).label },
@@ -420,9 +486,20 @@ export default async function EventDetailPage({
         )}
       </Card>
 
+      <SuggestGuests eventId={event.id} />
+
       <GuestBrief eventId={event.id} />
 
       <Outreach eventId={event.id} guests={outreachGuests} />
+
+      <Debrief
+        eventId={event.id}
+        notes={event.notes}
+        followUps={followUps}
+        intros={intros}
+        staff={staff}
+        guests={guestContacts}
+      />
 
       <Card>
         <CardHeader title="Add a guest" />
