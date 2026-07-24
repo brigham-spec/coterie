@@ -1,25 +1,37 @@
 import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
-import { buildCommitmentBoard, type Commitment } from "@/lib/commitments";
-import { Button, Card, CardHeader, PageTitle } from "@/components/ui";
+import {
+  commitmentDueLabel,
+  filterCommitments,
+  groupByOwner,
+  ownerFacets,
+  shapeCommitments,
+  splitBySide,
+  type Commitment,
+  type CommitmentFilters,
+} from "@/lib/commitments";
+import { Card, CardHeader, PageTitle } from "@/components/ui";
 
-import { updateCommitment } from "./actions";
+import { CommitmentFilters as FilterBar } from "./_filters";
+import { LogCommitment, type ContactOption, type StaffOption } from "./_log";
+import { CommitmentRow, type CommitmentRowData } from "./_commitment-row";
 
-// Commitments (parity: commitmentsView 12617) — the follow-through queue. Every
-// open action item, split by who owes it (our staff vs. a network contact) and
-// ordered most-overdue-first so the thing that has slipped furthest is on top.
-// Check-off (done) or dismiss (dropped) each from here; source meeting is shown
-// for context. One withOrg pass (RLS-scoped); the ordering lives in a pure,
-// unit-tested helper (@/lib/commitments).
+// Commitments (parity: commitmentsView 12617) — the follow-through workspace.
+// Every action item, split by who owes it (our staff vs. a network contact) and
+// ordered most-overdue-first. Three URL-state views: List (we owe / they owe),
+// Board (kanban by staff owner + "They owe us"), and Completed (the done/dropped
+// ledger). Search + urgency + owner chips filter the open set. One withOrg pass
+// (RLS-scoped) loads the rows; the shaping/filtering is pure and unit-tested
+// (@/lib/commitments).
 //
 // Scan (parity: scanForCommitments 12690) — the prototype's button re-read every
 // meeting's notes to surface commitments. Here extraction is a persisted, per-
 // meeting AI flow (see /dashboard/meetings), so instead of duplicating that
 // review surface we point at the gap it fills: meetings that carry notes but
-// have never had commitments pulled from them. Each links to the meetings page
-// where the existing extract/review/save flow lives.
+// have never had commitments pulled from them.
 
 // A recorded meeting needs at least this much summary text to be worth scanning.
 const MIN_NOTES = 20;
@@ -31,35 +43,96 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
-export default async function CommitmentsPage() {
+function one(value: string | string[] | undefined): string {
+  return typeof value === "string" ? value : "";
+}
+
+export default async function CommitmentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const ctx = await requireOrgContext();
+  const sp = await searchParams;
+  const rawView = one(sp.view);
+  const view = rawView === "board" || rawView === "completed" ? rawView : "list";
+  const rawUrgency = one(sp.urgency);
+  const filters: CommitmentFilters = {
+    q: one(sp.q),
+    urgency: rawUrgency === "overdue" || rawUrgency === "soon" ? rawUrgency : "",
+    owner: one(sp.owner),
+  };
 
-  const [rows, unscanned] = await withOrg(ctx.orgId, async (tx) => [
-    await tx.actionItem.findMany({
-      where: { status: "open" },
-      select: {
-        id: true,
-        text: true,
-        dueDate: true,
-        ownerUser: { select: { name: true } },
-        ownerContact: {
-          select: { name: true, company: { select: { name: true } } },
-        },
-        meeting: { select: { title: true } },
-      },
-    }),
-    // Meetings with notes but no commitments ever pulled — the scan gap.
-    await tx.meeting.findMany({
-      where: { summary: { not: null }, actionItems: { none: {} } },
-      orderBy: { heldAt: "desc" },
-      take: 8,
-      select: { id: true, title: true, heldAt: true, summary: true },
-    }),
-  ]);
+  const commitmentSelect = {
+    id: true,
+    text: true,
+    status: true,
+    dueDate: true,
+    ownerUser: { select: { id: true, name: true } },
+    ownerContact: {
+      select: { name: true, company: { select: { name: true } } },
+    },
+    meeting: { select: { title: true } },
+  } as const;
 
-  const board = buildCommitmentBoard(rows, new Date());
+  // Org staff = org members (platform table, no RLS — read off bare prisma).
+  // Kicked off first so it runs alongside the RLS-scoped withOrg batch below.
+  const staffPromise = prisma.orgMembership.findMany({
+    where: { orgId: ctx.orgId },
+    orderBy: { user: { name: "asc" } },
+    select: { user: { select: { id: true, name: true } } },
+  });
 
-  // A whitespace-only summary is not worth surfacing.
+  const [openRows, completedRows, contactRows, unscanned] = await withOrg(
+    ctx.orgId,
+    async (tx) => [
+      // Every open item — stats, board, and owner facets all need the full set.
+      await tx.actionItem.findMany({
+        where: { status: "open" },
+        orderBy: { updatedAt: "desc" },
+        select: commitmentSelect,
+      }),
+      // The completed ledger is display-only; bound it to the most recent 50.
+      await tx.actionItem.findMany({
+        where: { status: { not: "open" } },
+        orderBy: { updatedAt: "desc" },
+        take: 50,
+        select: commitmentSelect,
+      }),
+      // Contacts for the "they owe" picker on the log form.
+      await tx.contact.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, company: { select: { name: true } } },
+      }),
+      // Meetings with notes but no commitments ever pulled — the scan gap.
+      await tx.meeting.findMany({
+        where: { summary: { not: null }, actionItems: { none: {} } },
+        orderBy: { heldAt: "desc" },
+        take: 8,
+        select: { id: true, title: true, heldAt: true, summary: true },
+      }),
+    ],
+  );
+  const staffRows = await staffPromise;
+
+  const now = new Date();
+  const open = shapeCommitments(openRows, now);
+  const completed = shapeCommitments(completedRows, now);
+
+  const openCount = open.length;
+  const overdueCount = open.filter((c) => c.urgency === "overdue").length;
+  const weOweCount = open.filter((c) => c.side === "we_owe").length;
+
+  const owners = ownerFacets(open);
+  const filteredOpen = filterCommitments(open, filters);
+  const { weOwe, theyOwe } = splitBySide(filteredOpen);
+
+  const staff: StaffOption[] = staffRows.map((r) => r.user);
+  const contacts: ContactOption[] = contactRows.map((c) => ({
+    id: c.id,
+    label: `${c.name} · ${c.company.name}`,
+  }));
+
   const toScan = unscanned.filter(
     (m) => (m.summary ?? "").trim().length >= MIN_NOTES,
   );
@@ -73,13 +146,18 @@ export default async function CommitmentsPage() {
         />
       </div>
 
-      <div className="mb-4 grid grid-cols-3 gap-4">
-        <Metric label="Open" value={String(board.openCount)} />
-        <Metric label="Overdue" value={String(board.overdueCount)} tone="red" />
-        <Metric label="We owe" value={String(board.weOwe.length)} />
+      <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Metric label="Open" value={String(openCount)} />
+        <Metric label="Overdue" value={String(overdueCount)} tone="red" />
+        <Metric label="We owe" value={String(weOweCount)} />
+        <Metric label="Completed" value={String(completed.length)} />
       </div>
 
-      {toScan.length > 0 ? (
+      <LogCommitment staff={staff} contacts={contacts} />
+
+      <FilterBar owners={owners} />
+
+      {view === "list" && toScan.length > 0 ? (
         <Card>
           <CardHeader title={`Meetings to scan (${toScan.length})`} />
           <p className="px-4 pt-3 text-xs text-ink-3">
@@ -110,14 +188,53 @@ export default async function CommitmentsPage() {
         </Card>
       ) : null}
 
-      <Section title="We owe" items={board.weOwe} emptyLabel="Nothing outstanding on our side." />
-      <Section
-        title="They owe"
-        items={board.theyOwe}
-        emptyLabel="No open commitments from the network."
-      />
+      {view === "completed" ? (
+        <CompletedView completed={filterCommitments(completed, { q: filters.q, urgency: "", owner: "" })} />
+      ) : view === "board" ? (
+        <BoardView weOwe={weOwe} theyOwe={theyOwe} />
+      ) : (
+        <>
+          <Section title="We owe" items={weOwe} emptyLabel="Nothing outstanding on our side." />
+          <Section
+            title="They owe"
+            items={theyOwe}
+            emptyLabel="No open commitments from the network."
+          />
+        </>
+      )}
     </div>
   );
+}
+
+// ── View shapes ─────────────────────────────────────────────────────────────
+
+function toRow(c: Commitment): CommitmentRowData {
+  const meta = [
+    c.ownerName,
+    c.companyName,
+    c.meetingTitle ? `from ${c.meetingTitle}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  let dueLabel = "No due date";
+  let dueOverdue = false;
+  let dueTitle = "";
+  if (c.dueDate !== null && c.dueInDays !== null) {
+    dueOverdue = c.dueInDays < 0;
+    dueLabel = commitmentDueLabel(c.dueInDays) ?? dueLabel;
+    dueTitle = dateFmt.format(c.dueDate);
+  }
+
+  return {
+    id: c.id,
+    text: c.text,
+    meta,
+    dueLabel,
+    dueOverdue,
+    dueTitle,
+    dueDateInput: c.dueDate ? c.dueDate.toISOString().slice(0, 10) : "",
+  };
 }
 
 function Section({
@@ -137,34 +254,7 @@ function Section({
       ) : (
         <ul>
           {items.map((c) => (
-            <li
-              key={c.id}
-              className="flex items-start gap-3 border-b border-line px-4 py-3 last:border-b-0"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] text-ink">{c.text}</div>
-                <div className="mt-0.5 text-[10px] text-ink-3">
-                  {c.ownerName}
-                  {c.companyName ? ` · ${c.companyName}` : ""}
-                  {c.meetingTitle ? ` · from ${c.meetingTitle}` : ""}
-                </div>
-              </div>
-              <Due c={c} />
-              <div className="flex flex-shrink-0 gap-1.5">
-                <form action={updateCommitment}>
-                  <input type="hidden" name="id" value={c.id} />
-                  <input type="hidden" name="status" value="done" />
-                  <Button type="submit" variant="primary">
-                    Done
-                  </Button>
-                </form>
-                <form action={updateCommitment}>
-                  <input type="hidden" name="id" value={c.id} />
-                  <input type="hidden" name="status" value="dropped" />
-                  <Button type="submit">Dismiss</Button>
-                </form>
-              </div>
-            </li>
+            <CommitmentRow key={c.id} c={toRow(c)} />
           ))}
         </ul>
       )}
@@ -172,30 +262,90 @@ function Section({
   );
 }
 
-function Due({ c }: { c: Commitment }) {
-  if (c.dueDate === null || c.dueInDays === null) {
-    return (
-      <span className="flex-shrink-0 self-center text-[10px] whitespace-nowrap text-ink-3">
-        No due date
-      </span>
-    );
-  }
-  const overdue = c.dueInDays < 0;
-  const label =
-    c.dueInDays < 0
-      ? `${Math.abs(c.dueInDays)}d overdue`
-      : c.dueInDays === 0
-        ? "Due today"
-        : `Due in ${c.dueInDays}d`;
+function CompletedView({ completed }: { completed: Commitment[] }) {
   return (
-    <span
-      className={`flex-shrink-0 self-center text-right text-[10px] whitespace-nowrap ${
-        overdue ? "font-semibold text-red-ink" : "text-ink-3"
-      }`}
-      title={dateFmt.format(c.dueDate)}
-    >
-      {label}
-    </span>
+    <Card>
+      <CardHeader title={`Completed (${completed.length})`} />
+      {completed.length === 0 ? (
+        <p className="px-4 py-6 text-xs text-ink-3">
+          Nothing resolved yet. Done and dismissed commitments land here.
+        </p>
+      ) : (
+        <ul>
+          {completed.map((c) => (
+            <CommitmentRow key={c.id} c={toRow(c)} completed />
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function BoardView({
+  weOwe,
+  theyOwe,
+}: {
+  weOwe: Commitment[];
+  theyOwe: Commitment[];
+}) {
+  const columns = groupByOwner(weOwe);
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-2">
+      {columns.map((col) => (
+        <BoardColumn key={col.id} title={col.name} items={col.items} />
+      ))}
+      <BoardColumn title="They owe us" items={theyOwe} tone="teal" />
+    </div>
+  );
+}
+
+function BoardColumn({
+  title,
+  items,
+  tone,
+}: {
+  title: string;
+  items: Commitment[];
+  tone?: "teal";
+}) {
+  return (
+    <div className="w-[240px] shrink-0">
+      <div className="mb-2 flex items-center justify-between border-b-2 border-line pb-1.5">
+        <span
+          className={`text-[9px] font-semibold tracking-[0.08em] uppercase ${
+            tone === "teal" ? "text-teal-ink" : "text-ink-2"
+          }`}
+        >
+          {title}
+        </span>
+        <span className="text-[10px] text-ink-3">{items.length}</span>
+      </div>
+      <div className="flex flex-col gap-2">
+        {items.length === 0 ? (
+          <p className="px-1 text-[10px] text-ink-3 italic opacity-60">—</p>
+        ) : (
+          items.map((c) => <BoardCard key={c.id} c={c} />)
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BoardCard({ c }: { c: Commitment }) {
+  const overdue = c.dueInDays !== null && c.dueInDays < 0;
+  const dueLabel = commitmentDueLabel(c.dueInDays);
+  return (
+    <div className="rounded-md border border-line bg-surface p-2.5 shadow-card">
+      <div className="text-[12px] text-ink">{c.text}</div>
+      <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-ink-3">
+        <span className="truncate">{c.companyName ?? c.ownerName}</span>
+        {dueLabel ? (
+          <span className={overdue ? "font-semibold text-red-ink" : ""}>
+            {dueLabel}
+          </span>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

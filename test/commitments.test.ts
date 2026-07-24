@@ -1,9 +1,18 @@
 import { describe, expect, test } from "vitest";
 
-import { buildCommitmentBoard, type RawCommitment } from "@/lib/commitments";
+import {
+  filterCommitments,
+  groupByOwner,
+  ownerFacets,
+  shapeCommitments,
+  splitBySide,
+  type Commitment,
+  type RawCommitment,
+} from "@/lib/commitments";
 
-// Pure-logic tests for the commitments board shaping: side classification,
-// most-overdue-first ordering, undated-last, and the open/overdue counts.
+// Pure-logic tests for the commitments workspace shaping: side classification,
+// urgency bucketing, most-overdue-first ordering, the search/urgency/owner
+// filters, and the owner facets + board grouping.
 
 // Fixed "now" = 2026-07-09. Both `now` and the due dates are built on the UTC
 // calendar so dueInDays = (dueDay - 9) is deterministic in EVERY timezone —
@@ -12,12 +21,13 @@ import { buildCommitmentBoard, type RawCommitment } from "@/lib/commitments";
 const now = new Date(Date.UTC(2026, 6, 9));
 const dueOn = (day: number) => new Date(Date.UTC(2026, 6, day));
 
-function staffItem(over: Partial<RawCommitment>): RawCommitment {
+function staffItem(over: Partial<RawCommitment> & { owner?: string }): RawCommitment {
   return {
     id: over.id ?? "s",
     text: over.text ?? "staff item",
+    status: over.status ?? "open",
     dueDate: over.dueDate ?? null,
-    ownerUser: { name: "Staffer" },
+    ownerUser: { id: over.owner ?? "u1", name: `Staffer ${over.owner ?? "u1"}` },
     ownerContact: null,
     meeting: over.meeting ?? null,
   };
@@ -27,6 +37,7 @@ function contactItem(over: Partial<RawCommitment>): RawCommitment {
   return {
     id: over.id ?? "c",
     text: over.text ?? "contact item",
+    status: over.status ?? "open",
     dueDate: over.dueDate ?? null,
     ownerUser: null,
     ownerContact: { name: "Guest", company: { name: "Acme" } },
@@ -34,71 +45,136 @@ function contactItem(over: Partial<RawCommitment>): RawCommitment {
   };
 }
 
-describe("buildCommitmentBoard", () => {
-  test("splits items by owner side", () => {
-    const board = buildCommitmentBoard(
-      [staffItem({ id: "a" }), contactItem({ id: "b" })],
-      now,
-    );
-    expect(board.weOwe.map((c) => c.id)).toEqual(["a"]);
-    expect(board.theyOwe.map((c) => c.id)).toEqual(["b"]);
-  });
+function shapeOpen(rows: RawCommitment[]): Commitment[] {
+  return shapeCommitments(rows, now).filter((c) => c.status === "open");
+}
 
-  test("orders most-overdue first, undated last", () => {
-    const board = buildCommitmentBoard(
+describe("shapeCommitments", () => {
+  test("classifies side, computes signed dueInDays, and buckets urgency", () => {
+    const items = shapeCommitments(
       [
-        contactItem({ id: "upcoming", dueDate: dueOn(20) }),
-        contactItem({ id: "undated", dueDate: null }),
-        contactItem({ id: "overdue", dueDate: dueOn(1) }),
-        contactItem({ id: "soon", dueDate: dueOn(10) }),
-      ],
-      now,
-    );
-    expect(board.theyOwe.map((c) => c.id)).toEqual([
-      "overdue",
-      "soon",
-      "upcoming",
-      "undated",
-    ]);
-  });
-
-  test("computes signed dueInDays and overdue count", () => {
-    const board = buildCommitmentBoard(
-      [
-        contactItem({ id: "past", dueDate: dueOn(1) }),
+        staffItem({ id: "past", dueDate: dueOn(1) }),
         contactItem({ id: "today", dueDate: dueOn(9) }),
-        contactItem({ id: "future", dueDate: dueOn(15) }),
+        contactItem({ id: "soon", dueDate: dueOn(15) }),
+        contactItem({ id: "later", dueDate: dueOn(30) }),
         contactItem({ id: "none", dueDate: null }),
       ],
       now,
     );
-    const byId = Object.fromEntries(board.theyOwe.map((c) => [c.id, c.dueInDays]));
-    expect(byId.past).toBe(-8);
-    expect(byId.today).toBe(0);
-    expect(byId.future).toBe(6);
-    expect(byId.none).toBeNull();
-    expect(board.overdueCount).toBe(1);
-    expect(board.openCount).toBe(4);
+    const byId = Object.fromEntries(items.map((c) => [c.id, c]));
+    expect(byId.past.side).toBe("we_owe");
+    expect(byId.past.dueInDays).toBe(-8);
+    expect(byId.past.urgency).toBe("overdue");
+    expect(byId.today.urgency).toBe("soon");
+    expect(byId.today.dueInDays).toBe(0);
+    expect(byId.soon.urgency).toBe("soon");
+    expect(byId.later.urgency).toBe("later");
+    expect(byId.none.urgency).toBe("none");
+    expect(byId.none.dueInDays).toBeNull();
   });
 
-  test("carries company for they-owe, null for we-owe, and passes meeting title", () => {
-    const board = buildCommitmentBoard(
+  test("carries the staff owner id for we-owe, null for they-owe", () => {
+    const items = shapeCommitments(
+      [staffItem({ id: "s", owner: "u9" }), contactItem({ id: "c" })],
+      now,
+    );
+    const byId = Object.fromEntries(items.map((c) => [c.id, c]));
+    expect(byId.s.ownerId).toBe("u9");
+    expect(byId.c.ownerId).toBeNull();
+    expect(byId.c.companyName).toBe("Acme");
+  });
+
+  test("normalizes an out-of-vocab status to open and skips owner-less rows", () => {
+    const items = shapeCommitments(
       [
-        staffItem({ id: "s", meeting: { title: "Board sync" } }),
-        contactItem({ id: "c" }),
+        staffItem({ id: "weird", status: "bogus" }),
+        {
+          id: "x",
+          text: "orphan",
+          status: "open",
+          dueDate: null,
+          ownerUser: null,
+          ownerContact: null,
+          meeting: null,
+        },
       ],
       now,
     );
-    expect(board.weOwe[0].companyName).toBeNull();
-    expect(board.weOwe[0].meetingTitle).toBe("Board sync");
-    expect(board.theyOwe[0].companyName).toBe("Acme");
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe("weird");
+    expect(items[0].status).toBe("open");
+  });
+});
+
+describe("splitBySide", () => {
+  test("splits into we-owe / they-owe, most-overdue first, undated last", () => {
+    const items = shapeOpen([
+      contactItem({ id: "upcoming", dueDate: dueOn(20) }),
+      contactItem({ id: "undated", dueDate: null }),
+      contactItem({ id: "overdue", dueDate: dueOn(1) }),
+      staffItem({ id: "mine", dueDate: dueOn(5) }),
+    ]);
+    const { weOwe, theyOwe } = splitBySide(items);
+    expect(weOwe.map((c) => c.id)).toEqual(["mine"]);
+    expect(theyOwe.map((c) => c.id)).toEqual(["overdue", "upcoming", "undated"]);
+  });
+});
+
+describe("filterCommitments", () => {
+  const items = shapeOpen([
+    staffItem({ id: "a", text: "Send the grant packet", owner: "u1", dueDate: dueOn(1) }),
+    staffItem({ id: "b", text: "Draft the MOU", owner: "u2", dueDate: dueOn(12) }),
+    contactItem({ id: "c", text: "Return the signed lease", dueDate: dueOn(2) }),
+  ]);
+
+  test("search matches text, owner, company, and meeting", () => {
+    expect(
+      filterCommitments(items, { q: "grant", urgency: "", owner: "" }).map((c) => c.id),
+    ).toEqual(["a"]);
+    expect(
+      filterCommitments(items, { q: "acme", urgency: "", owner: "" }).map((c) => c.id),
+    ).toEqual(["c"]);
   });
 
-  test("skips a malformed owner-less row", () => {
-    const board = buildCommitmentBoard(
-      [{ id: "x", text: "orphan", dueDate: null, ownerUser: null, ownerContact: null, meeting: null }],
-      now,
-    );
-    expect(board.openCount).toBe(0);
+  test("urgency chip restricts to a bucket", () => {
+    expect(
+      filterCommitments(items, { q: "", urgency: "overdue", owner: "" })
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual(["a", "c"]);
+    expect(
+      filterCommitments(items, { q: "", urgency: "soon", owner: "" }).map((c) => c.id),
+    ).toEqual(["b"]);
+  });
+
+  test("owner chip restricts to a staff owner and never matches they-owe", () => {
+    expect(
+      filterCommitments(items, { q: "", urgency: "", owner: "u2" }).map((c) => c.id),
+    ).toEqual(["b"]);
+    expect(
+      filterCommitments(items, { q: "", urgency: "", owner: "u1" }).map((c) => c.id),
+    ).toEqual(["a"]);
+  });
+});
+
+describe("ownerFacets / groupByOwner", () => {
+  const items = shapeOpen([
+    staffItem({ id: "a", owner: "u2" }),
+    staffItem({ id: "b", owner: "u1" }),
+    staffItem({ id: "c", owner: "u1" }),
+    contactItem({ id: "d" }),
+  ]);
+
+  test("ownerFacets lists distinct staff owners with counts, sorted by name", () => {
+    const facets = ownerFacets(items);
+    expect(facets.map((f) => f.id)).toEqual(["u1", "u2"]);
+    expect(facets.find((f) => f.id === "u1")?.count).toBe(2);
+  });
+
+  test("groupByOwner buckets we-owe into per-owner columns", () => {
+    const { weOwe } = splitBySide(items);
+    const cols = groupByOwner(weOwe);
+    expect(cols.map((c) => c.id)).toEqual(["u1", "u2"]);
+    expect(cols[0].items.map((c) => c.id).sort()).toEqual(["b", "c"]);
   });
 });
