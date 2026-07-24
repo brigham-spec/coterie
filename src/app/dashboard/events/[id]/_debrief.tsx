@@ -10,6 +10,7 @@ import {
   SelectField,
   Textarea,
 } from "@/components/ui";
+import { isActiveCommitment } from "@/lib/commitments";
 import { INTRO_STAGES, getIntroStageDef } from "@/lib/intro-stages";
 
 import {
@@ -118,8 +119,8 @@ function FollowUpsCard({
   guests: Person[];
 }) {
   const [adding, setAdding] = useState(false);
-  const open = followUps.filter((f) => f.status === "open");
-  const closed = followUps.filter((f) => f.status !== "open");
+  const open = followUps.filter((f) => isActiveCommitment(f.status));
+  const closed = followUps.filter((f) => !isActiveCommitment(f.status));
 
   return (
     <Card>
@@ -213,10 +214,17 @@ function FollowUpItem({
   eventId: string;
   item: FollowUp;
 }) {
+  const waiting = item.status === "waiting";
+
   return (
-    <li className="text-xs text-ink-2">
+    <li className={`text-xs text-ink-2${waiting ? " border-l-2 border-gold-line pl-2" : ""}`}>
       <div>{item.text}</div>
       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-ink-3">
+        {waiting ? (
+          <span className="font-semibold tracking-[0.06em] text-gold uppercase">
+            Waiting
+          </span>
+        ) : null}
         <span>{item.direction === "we_owe" ? "We owe" : "They owe"}</span>
         {item.ownerName ? <span>· {item.ownerName}</span> : null}
         {item.dueDate ? <span>· due {dateFmt.format(item.dueDate)}</span> : null}
@@ -231,6 +239,17 @@ function FollowUpItem({
             className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
           >
             Done
+          </button>
+        </form>
+        <form action={updateEventActionItemStatus}>
+          <input type="hidden" name="id" value={item.id} />
+          <input type="hidden" name="eventId" value={eventId} />
+          <input type="hidden" name="status" value={waiting ? "open" : "waiting"} />
+          <button
+            type="submit"
+            className="text-[10px] font-medium tracking-[0.06em] text-ink-3 uppercase hover:underline"
+          >
+            {waiting ? "Resume" : "Waiting"}
           </button>
         </form>
         <form action={updateEventActionItemStatus}>

@@ -33,6 +33,24 @@ function readContactTags(formData: FormData): string[] {
     .filter((t) => CONTACT_TAG_KEYS.has(t));
 }
 
+// Extra emails beyond the primary (used for Fireflies attendee matching). The
+// editor submits a comma/newline-separated field; normalize to lowercase,
+// keep only plausible addresses (an "@"), and de-dupe. The primary email is
+// excluded so it isn't stored twice.
+function readAdditionalEmails(formData: FormData): string[] {
+  const primary = (optionalText(formData, "email") ?? "").toLowerCase();
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of String(formData.get("additionalEmails") ?? "").split(/[\n,]/)) {
+    const email = raw.trim().toLowerCase();
+    if (!email.includes("@")) continue;
+    if (email === primary || seen.has(email)) continue;
+    seen.add(email);
+    out.push(email);
+  }
+  return out;
+}
+
 function revalidateContact(companyId: string): void {
   revalidatePath(`/dashboard/companies/${companyId}`);
   revalidatePath("/dashboard/contacts");
@@ -62,6 +80,7 @@ export async function createContact(formData: FormData): Promise<void> {
         linkedin: optionalUrl(formData, "linkedin"),
         notes: String(formData.get("notes") ?? "").trim(),
         tags: readContactTags(formData),
+        additionalEmails: readAdditionalEmails(formData),
       },
     });
   });
@@ -94,6 +113,7 @@ export async function updateContact(formData: FormData): Promise<void> {
         linkedin: optionalUrl(formData, "linkedin"),
         notes: String(formData.get("notes") ?? "").trim(),
         tags: readContactTags(formData),
+        additionalEmails: readAdditionalEmails(formData),
       },
     });
     return contact.companyId;

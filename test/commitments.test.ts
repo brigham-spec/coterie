@@ -104,6 +104,11 @@ describe("shapeCommitments", () => {
     expect(items[0].id).toBe("weird");
     expect(items[0].status).toBe("open");
   });
+
+  test("preserves the in-vocab waiting status", () => {
+    const items = shapeCommitments([staffItem({ id: "w", status: "waiting" })], now);
+    expect(items[0].status).toBe("waiting");
+  });
 });
 
 describe("splitBySide", () => {

@@ -25,6 +25,7 @@ export type ContactRow = {
   name: string;
   title: string | null;
   email: string | null;
+  additionalEmails: string[];
   phone: string | null;
   linkedin: string | null;
   notes: string;
@@ -129,6 +130,11 @@ function ContactItem({ contact }: { contact: ContactRow }) {
               .filter(Boolean)
               .join(" · ") || "No details yet"}
           </div>
+          {contact.additionalEmails.length > 0 ? (
+            <div className="mt-0.5 text-[10px] text-ink-3">
+              Also: {contact.additionalEmails.join(", ")}
+            </div>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {!contact.isPrimary ? (
@@ -226,6 +232,12 @@ function ContactForm({
           name="linkedin"
           label="LinkedIn"
           defaultValue={defaults?.linkedin ?? ""}
+          className="col-span-2"
+        />
+        <Field
+          name="additionalEmails"
+          label="Additional emails (comma-separated)"
+          defaultValue={defaults?.additionalEmails.join(", ") ?? ""}
           className="col-span-2"
         />
       </div>

@@ -8,7 +8,7 @@ import { getTagDef } from "@/lib/tags";
 import { getIntroStageDef } from "@/lib/intro-stages";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { buildRelationshipTimeline } from "@/lib/relationship-timeline";
-import { readMemberTiers } from "@/lib/member-tiers";
+import { readMemberTierDefs } from "@/lib/member-tiers";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import {
   Button,
@@ -79,7 +79,7 @@ export default async function CompanyDetailPage({
     }),
   ]);
   const staff = staffRows.map((m) => ({ id: m.user.id, name: m.user.name }));
-  const memberTiers = readMemberTiers(org?.settings);
+  const tierDefs = readMemberTierDefs(org?.settings);
 
   // Reads share one pooled connection inside the tx, so run them in sequence —
   // concurrent queries on a single pg client serialize and can stall the load.
@@ -93,12 +93,14 @@ export default async function CompanyDetailPage({
     statusChanges,
     valueDelivered,
     linkOptions,
+    referralOptions,
     projects,
   } = await withOrg(ctx.orgId, async (tx) => {
       const company = await tx.company.findUnique({
         where: { id },
         include: {
           owner: { select: { name: true } },
+          referredBy: { select: { id: true, name: true } },
           contacts: { orderBy: { name: "asc" } },
           affiliations: { orderBy: { createdAt: "asc" } },
           keyRelationships: {
@@ -125,19 +127,22 @@ export default async function CompanyDetailPage({
           statusChanges: [],
           valueDelivered: [],
           linkOptions: [],
+          referralOptions: [],
           projects: [],
         };
       }
-      // Companies offered in Their Network's link dropdown — only needed (and
-      // loaded) for strategic partners. This tenant's companies minus the
-      // partner itself and closed-out (former) relationships.
+      // In-network companies offered in the Referred-by picker — this tenant's
+      // companies minus the company itself. Their Network's link dropdown wants
+      // the same list minus closed-out (former) relationships (strategic partners
+      // only), so derive it here instead of issuing a second near-identical query.
+      const referralOptions = await tx.company.findMany({
+        where: { id: { not: id } },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, status: true },
+      });
       const linkOptions =
         company.status === "strategic_partner"
-          ? await tx.company.findMany({
-              where: { id: { not: id }, status: { not: "former" } },
-              orderBy: { name: "asc" },
-              select: { id: true, name: true },
-            })
+          ? referralOptions.filter((c) => c.status !== "former")
           : [];
       const contactIds = company.contacts.map((c) => c.id);
       // This company's introductions from the ledger, either party. madeOn/
@@ -285,6 +290,7 @@ export default async function CompanyDetailPage({
         statusChanges,
         valueDelivered,
         linkOptions,
+        referralOptions,
         projects,
       };
     });
@@ -376,6 +382,35 @@ export default async function CompanyDetailPage({
             })}
           </div>
         ) : null}
+        {company.likelihood != null || company.referredById != null || company.referredByExternal ? (
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-ink-3">
+            {company.likelihood != null ? (
+              <span className="flex items-center gap-1.5">
+                Likelihood
+                <span className="flex gap-0.5" aria-label={`${company.likelihood} of 5`}>
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <span
+                      key={i}
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        i <= company.likelihood! ? "bg-gold" : "bg-line-2"
+                      }`}
+                    />
+                  ))}
+                </span>
+              </span>
+            ) : null}
+            {company.referredById != null ? (
+              <Link
+                href={`/dashboard/companies/${company.referredById}`}
+                className="text-gold hover:underline"
+              >
+                ↗ Referred by {company.referredBy?.name}
+              </Link>
+            ) : company.referredByExternal ? (
+              <span>↗ Referred by {company.referredByExternal}</span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <DetailsCard
@@ -383,6 +418,12 @@ export default async function CompanyDetailPage({
           id: company.id,
           status: company.status,
           tier: company.tier,
+          tierLocked: company.tierLocked,
+          likelihood: company.likelihood,
+          referredById: company.referredById,
+          referredByExternal: company.referredByExternal,
+          referredByName: company.referredBy?.name ?? null,
+          consulting: company.consulting,
           temperature: company.temperature,
           industry: company.industry,
           annualValue: Number(company.annualValue),
@@ -401,7 +442,8 @@ export default async function CompanyDetailPage({
           ownerUserId: company.ownerUserId,
         }}
         staff={staff}
-        memberTiers={memberTiers}
+        tierDefs={tierDefs}
+        referralOptions={referralOptions}
       />
 
       {company.status === "prospect" ? (
@@ -516,6 +558,7 @@ export default async function CompanyDetailPage({
           name: c.name,
           title: c.title,
           email: c.email,
+          additionalEmails: c.additionalEmails,
           phone: c.phone,
           linkedin: c.linkedin,
           notes: c.notes,

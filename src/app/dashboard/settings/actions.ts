@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { normalizeMemberTiers } from "@/lib/member-tiers";
+import { type MemberTier, normalizeMemberTierDefs } from "@/lib/member-tiers";
 
 // Org settings mutations. organizations carries NO RLS (it's platform data, not
 // tenant data — see @/lib/auth), so these write as the plain app_user
@@ -12,18 +12,21 @@ import { normalizeMemberTiers } from "@/lib/member-tiers";
 // admin-only: staff can read the settings surface but the write is gated on the
 // Clerk-derived role, failing closed for anyone else.
 
-// useActionState result. On success we echo the NORMALIZED tiers back so the
+// useActionState result. On success we echo the NORMALIZED tier defs back so the
 // editor can show the admin exactly what was stored (blanks/dupes dropped,
-// labels/list capped) instead of leaving them to spot the difference on reload.
+// labels/list capped, thresholds coerced) instead of leaving them to spot the
+// difference on reload.
 export type UpdateTiersState =
   | { status: "idle" }
-  | { status: "saved"; tiers: string[] }
+  | { status: "saved"; tiers: MemberTier[] }
   | { status: "error"; message: string };
 
-// Persist the org's member-tier vocabulary. The editor submits one tier per
-// line; we normalize (trim / drop blanks / de-dupe / cap) through the shared
-// helper, then merge into the settings JSON so other keys are preserved. The
-// admin gate still fails closed — a non-admin write is refused before any query.
+// Persist the org's member-tier vocabulary. The editor submits one label + one
+// optional minimum-annual-value threshold per row (paired by index); we zip and
+// normalize (trim / drop blanks / de-dupe / cap / coerce thresholds) through the
+// shared helper, then merge into the settings JSON so other keys are preserved.
+// The admin gate still fails closed — a non-admin write is refused before any
+// query.
 export async function updateMemberTiers(
   _prev: UpdateTiersState,
   formData: FormData,
@@ -35,8 +38,17 @@ export async function updateMemberTiers(
       message: "Only an admin can change organization settings.",
     };
 
-  const tiers = normalizeMemberTiers(
-    String(formData.get("tiers") ?? "").split("\n"),
+  const labels = formData.getAll("label").map(String);
+  const mins = formData.getAll("minValue").map(String);
+  const tiers = normalizeMemberTierDefs(
+    labels.map((label, i) => {
+      const raw = (mins[i] ?? "").trim();
+      const num = raw === "" ? null : Number(raw);
+      return {
+        label,
+        minValue: num !== null && Number.isFinite(num) ? num : null,
+      };
+    }),
   );
 
   const org = await prisma.organization.findUnique({

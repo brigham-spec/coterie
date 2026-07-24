@@ -8,8 +8,26 @@
 
 const DAY = 86_400_000;
 
-export type CommitmentStatus = "open" | "done" | "dropped";
-export const COMMITMENT_STATUSES: CommitmentStatus[] = ["open", "done", "dropped"];
+// "waiting" is an active-but-blocked follow-up (we've done our part and are
+// waiting on the other side) — it still counts as outstanding, unlike "done"
+// (completed) and "dropped" (dismissed). ACTIVE_COMMITMENT_STATUSES is the
+// single source both the workspace queries and the profile/debrief cards read
+// to split outstanding from resolved.
+export type CommitmentStatus = "open" | "waiting" | "done" | "dropped";
+export const COMMITMENT_STATUSES: CommitmentStatus[] = [
+  "open",
+  "waiting",
+  "done",
+  "dropped",
+];
+export const ACTIVE_COMMITMENT_STATUSES: CommitmentStatus[] = ["open", "waiting"];
+
+/// Is a commitment still outstanding (open or waiting) vs. resolved (done or
+/// dropped)? The single home for the active/closed split the workspace queries
+/// and the profile/debrief cards all read.
+export function isActiveCommitment(status: string): boolean {
+  return (ACTIVE_COMMITMENT_STATUSES as string[]).includes(status);
+}
 
 /// Urgency buckets drive the filter chips and the overdue styling. `soon` is the
 /// next week (due today through +7d); `later` is further out; `none` is undated.
@@ -97,7 +115,9 @@ export function commitmentDueLabel(dueInDays: number | null): string | null {
 }
 
 function toStatus(raw: string): CommitmentStatus {
-  return raw === "done" || raw === "dropped" ? raw : "open";
+  return (COMMITMENT_STATUSES as string[]).includes(raw)
+    ? (raw as CommitmentStatus)
+    : "open";
 }
 
 /// Most-overdue-first: dated items ascending by dueInDays (most negative wins),

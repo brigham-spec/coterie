@@ -161,6 +161,20 @@ model Company {
   /// Nested/evolving service tracking: { ida:{…}, capital:{…} }.
   services       Json      @default("{}")
 
+  // ── S7 profile-field parity (all nullable / defaulted) ──
+  /// Prospect likelihood 1–5 (demo `lk`) — pips on the row + prospects filter.
+  likelihood         Int?     @db.SmallInt
+  /// When true the tier is pinned manually; otherwise it's auto-assigned from
+  /// annualValue against the org's configured tier thresholds on each save.
+  tierLocked         Boolean  @default(false) @map("tier_locked")
+  /// In-network referrer (demo `referredById`). Self-FK, SetNull, re-checked
+  /// in-org at the app layer inside withOrg (plain FK bypasses RLS).
+  referredById       String?  @map("referred_by_id") @db.Uuid
+  /// External referrer name when the referrer isn't in the network.
+  referredByExternal String?  @map("referred_by_external")
+  /// Consulting / IDA engagement note (demo `cons`) — drives the list badge.
+  consulting         String?
+
   // ── P6 partnership section (strategic_partner companies only) ──
   /// What kind of partner: Government Agency, Economic Dev, Financial Institution…
   partnerCategory     String @default("") @map("partner_category")
@@ -193,6 +207,8 @@ model Company {
   dismissalsAsFocus     IntroDismissal[]     @relation("IntroDismissalFocus")
   dismissalsAsCandidate IntroDismissal[]     @relation("IntroDismissalCandidate")
   eventConversions      EventConversion[]
+  referredBy            Company?             @relation("CompanyReferral", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals             Company[]            @relation("CompanyReferral")
 
   // Composite-FK target so tenant junctions (project_links) can reference
   // (id, org_id) and never point at a company in another org.
@@ -200,6 +216,7 @@ model Company {
   @@index([orgId])
   @@index([orgId, status])
   @@index([orgId, emailDomain])
+  @@index([orgId, referredById])
   @@map("companies")
 }
 
@@ -223,6 +240,8 @@ model Contact {
   linkedin String?
   /// Contact tags: decision_maker, hnw, family_office, … (demo `tags`).
   tags     String[] @default([])
+  /// Extra emails beyond the primary (demo `emails[]`) — widens Fireflies match.
+  additionalEmails String[] @default([]) @map("additional_emails")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

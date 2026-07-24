@@ -12,7 +12,8 @@ import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
 import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES, isCompanyStatus } from "@/lib/company-statuses";
-import { readMemberTiers } from "@/lib/member-tiers";
+import { autoAssignTier, readMemberTierDefs } from "@/lib/member-tiers";
+import { COMMITMENT_STATUSES } from "@/lib/commitments";
 import { isProposalStatus } from "@/lib/proposal-statuses";
 import { isValueKind } from "@/lib/value-kinds";
 import { optionalDate, optionalUrl, assertHttpUrl } from "@/lib/form-fields";
@@ -1383,13 +1384,29 @@ export async function updateCompany(formData: FormData): Promise<void> {
       throw new Error("owner is not a member of this organization");
   }
 
-  // tier: the org's own member-standing label. Blank clears it; a set value must
-  // be one the org has configured (organizations carries no RLS, so read it as a
-  // plain query scoped by orgId). A stored value no longer in the configured set
-  // (a since-removed tier) is left selectable and validated against the row
-  // below, so an unrelated save doesn't reject it.
-  const tier = optionalText(formData, "tier");
-  const memberTiers = tier === null ? [] : readMemberTiers(
+  // likelihood: prospect conviction 1–5 (mirrors the DB CHECK). Blank clears it.
+  const likelihood = optionalInt(formData, "likelihood");
+  if (likelihood !== null && (likelihood < 1 || likelihood > 5))
+    throw new Error("likelihood must be between 1 and 5");
+
+  // Referral source: either an in-network company (referredById, re-checked
+  // in-org inside withOrg since the self-FK bypasses RLS) or a free-text external
+  // name — never both, so a picked in-network referrer wins and clears the text.
+  const referredById = optionalText(formData, "referredById");
+  const referredByExternal =
+    referredById !== null ? null : optionalText(formData, "referredByExternal");
+  if (referredById === companyId)
+    throw new Error("a company cannot refer itself");
+
+  const consulting = optionalText(formData, "consulting");
+
+  // tier: the org's own member-standing label. When unlocked (the default) a
+  // member's tier is auto-assigned from annualValue against the org's configured
+  // sliding thresholds; locking it (or any non-member status) falls back to the
+  // hand-picked value. organizations carries no RLS, so read settings as a plain
+  // query scoped by orgId.
+  const tierLocked = formData.get("tierLocked") != null;
+  const tierDefs = readMemberTierDefs(
     (
       await prisma.organization.findUnique({
         where: { id: orgId },
@@ -1397,12 +1414,23 @@ export async function updateCompany(formData: FormData): Promise<void> {
       })
     )?.settings,
   );
+  const tierLabels = tierDefs.map((t) => t.label);
+  const autoTierEligible = !tierLocked && status === "member";
+  const manualTier = optionalText(formData, "tier");
+  const tier = autoTierEligible
+    ? autoAssignTier(Number(annualValue), tierDefs)
+    : manualTier;
 
   const data = {
     status,
     industry,
     annualValue,
     tier,
+    tierLocked,
+    likelihood,
+    referredById,
+    referredByExternal,
+    consulting,
     temperature,
     website: optionalText(formData, "website"),
     emailDomain: optionalText(formData, "emailDomain"),
@@ -1425,13 +1453,26 @@ export async function updateCompany(formData: FormData): Promise<void> {
     });
     if (current == null) return false;
 
-    // A set tier must be configured, or the row's existing value (unchanged).
+    // A hand-picked tier must be configured, or the row's existing value
+    // (unchanged) — a since-removed tier survives an unrelated save. Auto-assigned
+    // tiers come straight from the configured defs, so they need no check.
     if (
+      !autoTierEligible &&
       tier !== null &&
       tier !== current.tier &&
-      !memberTiers.includes(tier)
+      !tierLabels.includes(tier)
     )
       throw new Error("tier is not configured for this organization");
+
+    // referredById must name a company in THIS org (the self-FK bypasses RLS).
+    if (referredById !== null) {
+      const referrer = await tx.company.findUnique({
+        where: { id: referredById },
+        select: { id: true },
+      });
+      if (referrer == null)
+        throw new Error("referrer is not a company in this organization");
+    }
 
     await tx.company.update({ where: { id: companyId }, data });
 
@@ -2267,7 +2308,7 @@ export async function updateCommitmentStatus(formData: FormData): Promise<void> 
   const companyId = String(formData.get("companyId") ?? "").trim();
   const status = String(formData.get("status") ?? "").trim();
   if (!id || !companyId) throw new Error("commitment and company are required");
-  if (!["open", "done", "dropped"].includes(status))
+  if (!(COMMITMENT_STATUSES as string[]).includes(status))
     throw new Error("invalid status");
 
   await withOrg(orgId, (tx) =>

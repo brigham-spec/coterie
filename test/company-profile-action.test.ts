@@ -58,8 +58,20 @@ const companyBId = randomUUID();
 beforeAll(async () => {
   await prisma.organization.createMany({
     data: [
-      // orgA configures member tiers so the tier write-boundary accepts "Director".
-      { ...orgA, orgType: "edc", settings: { memberTiers: ["Chairman", "Director", "Advisory"] } },
+      // orgA configures ranked member tiers so the write-boundary accepts these
+      // labels AND a member's tier auto-assigns from annualValue (25000 clears
+      // Director's 20000 threshold but not Chairman's 50000).
+      {
+        ...orgA,
+        orgType: "edc",
+        settings: {
+          memberTiers: [
+            { label: "Chairman", minValue: 50000 },
+            { label: "Director", minValue: 20000 },
+            { label: "Advisory", minValue: 1 },
+          ],
+        },
+      },
       { ...orgB, orgType: "chamber" },
     ],
   });

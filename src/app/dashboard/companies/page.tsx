@@ -68,6 +68,13 @@ function one(value: string | string[] | undefined): string {
   return typeof value === "string" ? value : "";
 }
 
+// Consulting / IDA engagement → list badge (mirrors the prototype): an "IDA"
+// mention gets its own tag, any other non-empty note reads as "Consulting".
+function consultingTag(consulting: string | null): string | null {
+  if (!consulting) return null;
+  return /\bida\b/i.test(consulting) ? "IDA" : "Consulting";
+}
+
 export default async function CompaniesPage({
   searchParams,
 }: {
@@ -81,6 +88,7 @@ export default async function CompaniesPage({
   const ownerFilter = one(sp.owner);
   const tagFilter = one(sp.tag);
   const tierFilter = one(sp.tier);
+  const likelihoodFilter = Number(one(sp.likelihood)) || 0;
   const sort = one(sp.sort) || "name";
 
   // Companies (RLS-scoped) and the org's configured member tiers (organizations
@@ -148,7 +156,10 @@ export default async function CompaniesPage({
     )
     .filter((c) => (ownerFilter ? c.ownerUserId === ownerFilter : true))
     .filter((c) => (tagFilter ? c.networkTags.includes(tagFilter) : true))
-    .filter((c) => (tierFilter ? c.tier === tierFilter : true));
+    .filter((c) => (tierFilter ? c.tier === tierFilter : true))
+    .filter((c) =>
+      likelihoodFilter ? (c.likelihood ?? 0) >= likelihoodFilter : true,
+    );
 
   const rows = [...filtered].sort((a, b) => {
     if (sort === "value") return Number(b.annualValue) - Number(a.annualValue);
@@ -170,6 +181,7 @@ export default async function CompaniesPage({
     if (ownerFilter) params.set("owner", ownerFilter);
     if (tagFilter) params.set("tag", tagFilter);
     if (tierFilter) params.set("tier", tierFilter);
+    if (likelihoodFilter) params.set("likelihood", String(likelihoodFilter));
     if (sort !== "name") params.set("sort", sort);
     const query = params.toString();
     return query ? `/dashboard/companies?${query}` : "/dashboard/companies";
@@ -296,6 +308,26 @@ export default async function CompaniesPage({
                     <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] font-normal text-ink-3">
                       <StatusBadge status={c.status} />
                       {c.industry ? <span>{c.industry}</span> : null}
+                      {consultingTag(c.consulting) ? (
+                        <span className="rounded-sm border border-line-2 px-1.5 py-0.5 text-[9.5px] tracking-[0.04em] text-ink-2 uppercase">
+                          {consultingTag(c.consulting)}
+                        </span>
+                      ) : null}
+                      {c.likelihood != null ? (
+                        <span
+                          className="flex gap-0.5"
+                          aria-label={`Likelihood ${c.likelihood} of 5`}
+                        >
+                          {[1, 2, 3, 4, 5].map((i) => (
+                            <span
+                              key={i}
+                              className={`h-1 w-1 rounded-full ${
+                                i <= c.likelihood! ? "bg-gold" : "bg-line-2"
+                              }`}
+                            />
+                          ))}
+                        </span>
+                      ) : null}
                     </div>
                   </Td>
                   <Td>{c.owner?.name ?? "—"}</Td>

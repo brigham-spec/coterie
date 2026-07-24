@@ -35,6 +35,7 @@ export function CompanyFilters({
   const owner = params.get("owner") ?? "";
   const tag = params.get("tag") ?? "";
   const tier = params.get("tier") ?? "";
+  const likelihood = params.get("likelihood") ?? "";
   const sort = params.get("sort") ?? "name";
 
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,6 +113,19 @@ export function CompanyFilters({
           ))}
         </select>
       ) : null}
+      <select
+        value={likelihood}
+        onChange={(e) => push({ likelihood: e.target.value })}
+        aria-label="Filter by likelihood"
+        className={control}
+      >
+        <option value="">Any likelihood</option>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <option key={n} value={String(n)}>
+            {`\u2265 ${n}`}
+          </option>
+        ))}
+      </select>
       <select
         value={sort}
         onChange={(e) => push({ sort: e.target.value })}

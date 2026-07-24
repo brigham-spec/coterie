@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Button, Card, CardHeader, Field, SelectField, Textarea } from "@/components/ui";
+import { isActiveCommitment } from "@/lib/commitments";
 
 import {
   addCommitment,
@@ -57,10 +58,10 @@ export function CommitmentsCard({
 }) {
   const [adding, setAdding] = useState(false);
 
-  const open = commitments.filter((c) => c.status === "open");
+  const open = commitments.filter((c) => isActiveCommitment(c.status));
   const weOwe = open.filter((c) => c.ownerUserId != null);
   const theyOwe = open.filter((c) => c.ownerUserId == null);
-  const closed = commitments.filter((c) => c.status !== "open");
+  const closed = commitments.filter((c) => !isActiveCommitment(c.status));
 
   return (
     <Card>
@@ -226,10 +227,17 @@ function CommitmentItem({
     );
   }
 
+  const waiting = item.status === "waiting";
+
   return (
-    <li className="text-xs text-ink-2">
+    <li className={`text-xs text-ink-2${waiting ? " border-l-2 border-gold-line pl-2" : ""}`}>
       <div>{item.text}</div>
       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-ink-3">
+        {waiting ? (
+          <span className="font-semibold tracking-[0.06em] text-gold uppercase">
+            Waiting
+          </span>
+        ) : null}
         {item.ownerName ? <span>{item.ownerName}</span> : null}
         {item.projectName ? <span>· {item.projectName}</span> : null}
         {item.dueDate ? <span>· due {dateFmt.format(item.dueDate)}</span> : null}
@@ -244,6 +252,17 @@ function CommitmentItem({
             className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
           >
             Done
+          </button>
+        </form>
+        <form action={updateCommitmentStatus}>
+          <input type="hidden" name="id" value={item.id} />
+          <input type="hidden" name="companyId" value={companyId} />
+          <input type="hidden" name="status" value={waiting ? "open" : "waiting"} />
+          <button
+            type="submit"
+            className="text-[10px] font-medium tracking-[0.06em] text-ink-3 uppercase hover:underline"
+          >
+            {waiting ? "Resume" : "Waiting"}
           </button>
         </form>
         <form action={updateCommitmentStatus}>

@@ -4,6 +4,7 @@ import { requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import {
+  ACTIVE_COMMITMENT_STATUSES,
   commitmentDueLabel,
   filterCommitments,
   groupByOwner,
@@ -86,15 +87,16 @@ export default async function CommitmentsPage({
   const [openRows, completedRows, contactRows, unscanned] = await withOrg(
     ctx.orgId,
     async (tx) => [
-      // Every open item — stats, board, and owner facets all need the full set.
+      // Every outstanding item (open + waiting) — stats, board, and owner facets
+      // all need the full active set.
       await tx.actionItem.findMany({
-        where: { status: "open" },
+        where: { status: { in: ACTIVE_COMMITMENT_STATUSES } },
         orderBy: { updatedAt: "desc" },
         select: commitmentSelect,
       }),
-      // The completed ledger is display-only; bound it to the most recent 50.
+      // The resolved ledger is display-only; bound it to the most recent 50.
       await tx.actionItem.findMany({
-        where: { status: { not: "open" } },
+        where: { status: { notIn: ACTIVE_COMMITMENT_STATUSES } },
         orderBy: { updatedAt: "desc" },
         take: 50,
         select: commitmentSelect,

@@ -11,16 +11,17 @@ import {
   Textarea,
 } from "@/components/ui";
 import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
+import { autoAssignTier, type MemberTier } from "@/lib/member-tiers";
 import { ORG_TAGS } from "@/lib/tags";
 
 import { updateCompany, changeCompanyStatus } from "./actions";
 
-// Editable Details card (profile-parity P1). The company detail page is
-// otherwise read-only; this owns the view/edit toggle for the company's own
-// fields plus the lifecycle shortcuts (Convert / Archive / Restore). All writes
-// go through the withOrg-scoped server actions — this holds only local UI state
-// (whether the form is open). After a successful save the server revalidates and
-// this closes the form.
+// Editable Details card (profile-parity P1 + S7 field parity). The company
+// detail page is otherwise read-only; this owns the view/edit toggle for the
+// company's own fields plus the lifecycle shortcuts (Convert / Archive /
+// Restore). All writes go through the withOrg-scoped server actions — this holds
+// only local UI state (whether the form is open, and the live tier preview).
+// After a successful save the server revalidates and this closes the form.
 
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -32,6 +33,12 @@ export type DetailsCompany = {
   id: string;
   status: string;
   tier: string | null;
+  tierLocked: boolean;
+  likelihood: number | null;
+  referredById: string | null;
+  referredByExternal: string | null;
+  referredByName: string | null;
+  consulting: string | null;
   temperature: number | null;
   industry: string;
   annualValue: number;
@@ -51,15 +58,18 @@ export type DetailsCompany = {
 };
 
 export type StaffOption = { id: string; name: string };
+export type ReferralOption = { id: string; name: string };
 
 export function DetailsCard({
   company,
   staff,
-  memberTiers,
+  tierDefs,
+  referralOptions,
 }: {
   company: DetailsCompany;
   staff: StaffOption[];
-  memberTiers: string[];
+  tierDefs: MemberTier[];
+  referralOptions: ReferralOption[];
 }) {
   const [editing, setEditing] = useState(false);
 
@@ -68,7 +78,8 @@ export function DetailsCard({
       <EditForm
         company={company}
         staff={staff}
-        memberTiers={memberTiers}
+        tierDefs={tierDefs}
+        referralOptions={referralOptions}
         onDone={() => setEditing(false)}
       />
     );
@@ -83,9 +94,19 @@ function ReadView({
   company: DetailsCompany;
   onEdit: () => void;
 }) {
+  const referredBy =
+    company.referredByName ?? company.referredByExternal ?? null;
+
   const facts: Array<{ label: string; value: string | null }> = [
     { label: "Industry", value: company.industry },
-    { label: "Tier", value: company.tier },
+    {
+      label: "Tier",
+      value: company.tier
+        ? company.tierLocked
+          ? `${company.tier} (locked)`
+          : company.tier
+        : null,
+    },
     { label: "Owner", value: company.ownerName },
     {
       label: "Annual value",
@@ -104,6 +125,8 @@ function ReadView({
       label: "Counties",
       value: company.counties.length ? company.counties.join(", ") : null,
     },
+    { label: "Referred by", value: referredBy },
+    { label: "Consulting", value: company.consulting },
     { label: "Source", value: company.source },
     { label: "Email domain", value: company.emailDomain },
     { label: "Website", value: company.website },
@@ -203,23 +226,37 @@ function LifecycleBar({ company }: { company: DetailsCompany }) {
 function EditForm({
   company,
   staff,
-  memberTiers,
+  tierDefs,
+  referralOptions,
   onDone,
 }: {
   company: DetailsCompany;
   staff: StaffOption[];
-  memberTiers: string[];
+  tierDefs: MemberTier[];
+  referralOptions: ReferralOption[];
   onDone: () => void;
 }) {
   const tagSet = new Set(company.networkTags);
+  const tierLabels = tierDefs.map((t) => t.label);
 
   // Offer the org's configured tiers, plus a blank "unset" option. If the stored
   // tier isn't in the configured list (a legacy value, or one since removed),
   // keep it selectable so an unrelated save doesn't silently drop it.
   const tierOptions =
-    company.tier && !memberTiers.includes(company.tier)
-      ? [company.tier, ...memberTiers]
-      : memberTiers;
+    company.tier && !tierLabels.includes(company.tier)
+      ? [company.tier, ...tierLabels]
+      : tierLabels;
+
+  // Track status / annualValue / lock so the tier field can preview the sliding
+  // auto-assignment: a member's tier is derived from annual value unless the lock
+  // is set. Locking (or any non-member status) reveals the manual <select>.
+  const [status, setStatus] = useState(company.status);
+  const [annualValue, setAnnualValue] = useState(String(company.annualValue));
+  const [locked, setLocked] = useState(company.tierLocked);
+  const autoTier = status === "member" && !locked;
+  const previewTier = autoTier
+    ? autoAssignTier(Number(annualValue) || 0, tierDefs)
+    : null;
 
   return (
     <Card>
@@ -237,7 +274,8 @@ function EditForm({
           <SelectField
             name="status"
             label="Status"
-            defaultValue={company.status}
+            value={status}
+            onChange={(e) => setStatus(e.currentTarget.value)}
           >
             {COMPANY_STATUS_DEFS.map((s) => (
               <option key={s.value} value={s.value}>
@@ -251,18 +289,26 @@ function EditForm({
             defaultValue={company.industry}
             required
           />
-          <SelectField
-            name="tier"
-            label="Tier"
-            defaultValue={company.tier ?? ""}
-          >
-            <option value="">—</option>
-            {tierOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </SelectField>
+          {autoTier ? (
+            <div>
+              <span className="mb-1.5 block text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase">
+                Tier
+              </span>
+              <div className="rounded border border-line px-2 py-1.5 text-xs text-ink">
+                {previewTier ?? "—"}
+                <span className="ml-1.5 text-[10px] text-ink-3">auto</span>
+              </div>
+            </div>
+          ) : (
+            <SelectField name="tier" label="Tier" defaultValue={company.tier ?? ""}>
+              <option value="">—</option>
+              {tierOptions.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </SelectField>
+          )}
           <SelectField
             name="ownerUserId"
             label="Owner"
@@ -281,7 +327,8 @@ function EditForm({
             type="number"
             min={0}
             step="1"
-            defaultValue={String(company.annualValue)}
+            value={annualValue}
+            onChange={(e) => setAnnualValue(e.currentTarget.value)}
           />
           <Field
             name="temperature"
@@ -290,6 +337,14 @@ function EditForm({
             min={0}
             max={100}
             defaultValue={company.temperature == null ? "" : String(company.temperature)}
+          />
+          <Field
+            name="likelihood"
+            label="Likelihood (1–5)"
+            type="number"
+            min={1}
+            max={5}
+            defaultValue={company.likelihood == null ? "" : String(company.likelihood)}
           />
           <Field
             name="memberSince"
@@ -301,6 +356,28 @@ function EditForm({
             name="dealSize"
             label="Deal size"
             defaultValue={company.dealSize ?? ""}
+          />
+          <SelectField
+            name="referredById"
+            label="Referred by (in network)"
+            defaultValue={company.referredById ?? ""}
+          >
+            <option value="">—</option>
+            {referralOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </SelectField>
+          <Field
+            name="referredByExternal"
+            label="Referred by (external)"
+            defaultValue={company.referredByExternal ?? ""}
+          />
+          <Field
+            name="consulting"
+            label="Consulting / IDA"
+            defaultValue={company.consulting ?? ""}
           />
           <Field
             name="source"
@@ -324,6 +401,22 @@ function EditForm({
             className="col-span-2 sm:col-span-3"
           />
         </div>
+
+        {status === "member" ? (
+          <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-ink-2">
+            <input
+              type="checkbox"
+              name="tierLocked"
+              checked={locked}
+              onChange={(e) => setLocked(e.currentTarget.checked)}
+            />
+            Lock tier manually (otherwise auto-assigned from annual value)
+          </label>
+        ) : locked ? (
+          // Preserve a set lock on non-member statuses (the checkbox only shows
+          // for members). Absent = unlocked, so only emit the field when locked.
+          <input type="hidden" name="tierLocked" value="on" />
+        ) : null}
 
         <Textarea
           name="lookingFor"

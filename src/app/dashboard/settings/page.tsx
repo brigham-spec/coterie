@@ -1,6 +1,6 @@
 import { requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { readMemberTiers } from "@/lib/member-tiers";
+import { readMemberTierDefs } from "@/lib/member-tiers";
 import { Card, CardHeader, PageTitle } from "@/components/ui";
 
 import { TiersForm } from "./_tiers-form";
@@ -18,8 +18,13 @@ export default async function SettingsPage() {
     where: { id: ctx.orgId },
     select: { settings: true },
   });
-  const tiers = readMemberTiers(org?.settings);
+  const tiers = readMemberTierDefs(org?.settings);
   const isAdmin = ctx.role === "admin";
+  const valueFmt = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -48,8 +53,16 @@ export default async function SettingsPage() {
           ) : (
             <ul className="flex flex-col gap-1.5">
               {tiers.map((t) => (
-                <li key={t} className="text-xs text-ink">
-                  {t}
+                <li
+                  key={t.label}
+                  className="flex items-center justify-between gap-3 text-xs text-ink"
+                >
+                  <span>{t.label}</span>
+                  <span className="text-ink-3">
+                    {t.minValue === null
+                      ? "unranked"
+                      : `≥ ${valueFmt.format(t.minValue)}`}
+                  </span>
                 </li>
               ))}
             </ul>
