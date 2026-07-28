@@ -87,6 +87,10 @@ export default async function IntroductionsPage({
   const sp = await searchParams;
   const rawStage = one(sp.stage);
   const stageFilter = INTRO_STAGES.some((s) => s.value === rawStage) ? rawStage : "";
+  // Draft-email prefill from a ledger row (item 21): the two parties' contact ids.
+  // Validated against the loaded contact pool below before they seed the form.
+  const rawDraftA = one(sp.draftA);
+  const rawDraftB = one(sp.draftB);
 
   // Sequential reads: one pooled connection per tx, so no concurrent queries.
   const {
@@ -216,6 +220,13 @@ export default async function IntroductionsPage({
     : null;
   const proactiveFresh = isProactiveCacheFresh(proactiveCache?.generatedAt);
 
+  // Only honour a prefill whose contacts still exist in the pool (a deleted party
+  // or a forged id falls back to the placeholder). Distinct ids only.
+  const hasContact = (id: string) => id !== "" && contacts.some((c) => c.id === id);
+  const prefillA = hasContact(rawDraftA) ? rawDraftA : "";
+  const prefillB =
+    hasContact(rawDraftB) && rawDraftB !== prefillA ? rawDraftB : "";
+
   return (
     <div className="mx-auto w-full max-w-5xl">
       <div className="mb-6">
@@ -307,13 +318,18 @@ export default async function IntroductionsPage({
         </Card>
       ) : (
         <>
-          <IntroEmailDraft
-            contacts={contacts.map((c) => ({
-              id: c.id,
-              name: c.name,
-              org: c.company.name,
-            }))}
-          />
+          <div id="draft-email" className="scroll-mt-4">
+            <IntroEmailDraft
+              key={`${prefillA}:${prefillB}`}
+              contacts={contacts.map((c) => ({
+                id: c.id,
+                name: c.name,
+                org: c.company.name,
+              }))}
+              prefillA={prefillA}
+              prefillB={prefillB}
+            />
+          </div>
           <Card>
             <CardHeader title="Log an introduction" />
             <form
@@ -458,6 +474,13 @@ export default async function IntroductionsPage({
               >
                 {ledger.map((i) => {
                   const stale = isIntroStale(i.status, i.updatedAt, now);
+                  // Prefill the draft-email form with this row's parties, keeping
+                  // the current stage filter and jumping to the form (item 21).
+                  const draftParams = new URLSearchParams();
+                  if (stageFilter) draftParams.set("stage", stageFilter);
+                  draftParams.set("draftA", i.partyAContactId);
+                  draftParams.set("draftB", i.partyBContactId);
+                  const draftHref = `/dashboard/introductions?${draftParams.toString()}#draft-email`;
                   return (
                     <Tr key={i.id}>
                       <Td>
@@ -534,6 +557,12 @@ export default async function IntroductionsPage({
                             Save
                           </Button>
                         </form>
+                        <Link
+                          href={draftHref}
+                          className="mt-1.5 inline-block text-[10.5px] font-medium text-teal-ink hover:underline"
+                        >
+                          Draft email
+                        </Link>
                       </Td>
                     </Tr>
                   );

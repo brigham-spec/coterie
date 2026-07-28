@@ -17,7 +17,19 @@ type ContactOption = { id: string; name: string; org: string };
 
 const initialState: IntroEmailState = { status: "idle" };
 
-export function IntroEmailDraft({ contacts }: { contacts: ContactOption[] }) {
+// `prefillA` / `prefillB` seed the party selects when the user hits "Draft email"
+// on a ledger row (item 21). The page remounts this component when they change
+// (keyed on the pair) so the defaults take effect; the empty string means no
+// prefill, leaving the placeholder selected.
+export function IntroEmailDraft({
+  contacts,
+  prefillA = "",
+  prefillB = "",
+}: {
+  contacts: ContactOption[];
+  prefillA?: string;
+  prefillB?: string;
+}) {
   const [state, formAction, isPending] = useActionState(
     draftIntroEmail,
     initialState,
@@ -30,7 +42,7 @@ export function IntroEmailDraft({ contacts }: { contacts: ContactOption[] }) {
         <SelectField
           name="partyAContactId"
           label="Party A — who you're introducing"
-          defaultValue=""
+          defaultValue={prefillA}
           required
         >
           <option value="" disabled>
@@ -45,7 +57,7 @@ export function IntroEmailDraft({ contacts }: { contacts: ContactOption[] }) {
         <SelectField
           name="partyBContactId"
           label="Party B — who they're introduced to"
-          defaultValue=""
+          defaultValue={prefillB}
           required
         >
           <option value="" disabled>
