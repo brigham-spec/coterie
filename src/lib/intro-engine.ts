@@ -86,6 +86,13 @@ export function introScopeStatuses(scope: string): readonly string[] {
   return scope === "full" ? INTRO_SCOPE_FULL_STATUSES : NETWORK_STATUSES;
 }
 
+/// PURE: the canonical scope key. Mirrors introScopeStatuses' rule — anything but
+/// "full" collapses to the conservative "members" pool — so a forged value can't
+/// mint a distinct cache row.
+export function canonicalIntroScope(scope: string): "members" | "full" {
+  return scope === "full" ? "full" : "members";
+}
+
 /// PURE: eligible candidate ids — every company except the focus itself and any
 /// company already introduced to it (dedup handled by the caller's Set).
 export function eligibleCandidateIds(

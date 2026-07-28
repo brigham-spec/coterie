@@ -6,6 +6,7 @@ import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import {
+  canonicalIntroScope,
   generateProactivePairings,
   introScopeStatuses,
   pairKey,
@@ -112,11 +113,32 @@ export async function scanNetworkIntros(
       excludedPairs,
       meetingContext,
     );
-    return {
-      status: "ok",
-      pairings,
-      meetingIntelligenceActive: meetingContext !== "",
-    };
+    const meetingIntelligenceActive = meetingContext !== "";
+
+    // Cache the snapshot so the Urgent Signals panel renders it instantly and only
+    // re-fires this scan once it goes stale (item 13). A SECOND withOrg pass — the
+    // first tx can't be held across the Anthropic call. Keyed by canonical scope so
+    // members / full never overwrite each other.
+    const cacheScope = canonicalIntroScope(scope);
+    await withOrg(orgId, (tx) =>
+      tx.proactiveScanCache.upsert({
+        where: { orgId_scope: { orgId, scope: cacheScope } },
+        create: {
+          orgId,
+          scope: cacheScope,
+          pairings,
+          meetingIntelligenceActive,
+          generatedAt: new Date(),
+        },
+        update: {
+          pairings,
+          meetingIntelligenceActive,
+          generatedAt: new Date(),
+        },
+      }),
+    );
+
+    return { status: "ok", pairings, meetingIntelligenceActive };
   } catch (err) {
     console.error("proactive intro scan failed", err);
     if (err instanceof AiRateLimitError)

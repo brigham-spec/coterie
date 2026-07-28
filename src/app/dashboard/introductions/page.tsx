@@ -13,6 +13,8 @@ import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import { openRoles } from "@/lib/disciplines";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { introProfileStrength } from "@/lib/intro-profile-strength";
+import { isProactiveCacheFresh } from "@/lib/proactive-cache";
+import type { ProactivePairing } from "@/lib/intro-engine";
 import {
   INTRO_CONNECTION_TYPES,
   conversionRate,
@@ -41,7 +43,11 @@ import {
 import { createIntroduction, updateIntroduction } from "./actions";
 import { confirmIntroAdvance } from "../companies/[id]/actions";
 import { IntroEmailDraft } from "./_intro-email";
-import { IntroEngine } from "./_engine";
+import {
+  IntroEngine,
+  UrgentSignalsPanel,
+  type ProactiveCacheSnapshot,
+} from "./_engine";
 
 // Introductions — the product's core verb, and the prototype's flagship module
 // (Coterie.html:14566 "Introduction Intelligence"). This page is the unified
@@ -83,8 +89,14 @@ export default async function IntroductionsPage({
   const stageFilter = INTRO_STAGES.some((s) => s.value === rawStage) ? rawStage : "";
 
   // Sequential reads: one pooled connection per tx, so no concurrent queries.
-  const { contacts, companies, projects, introductions, pendingIntros } =
-    await withOrg(ctx.orgId, async (tx) => {
+  const {
+    contacts,
+    companies,
+    projects,
+    introductions,
+    pendingIntros,
+    proactiveCache,
+  } = await withOrg(ctx.orgId, async (tx) => {
       const contacts = await tx.contact.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true, company: { select: { name: true } } },
@@ -126,7 +138,24 @@ export default async function IntroductionsPage({
         },
       });
       const pendingIntros = await loadPendingIntroDetections(tx);
-      return { contacts, companies, projects, introductions, pendingIntros };
+      // Last members-scope proactive scan (item 13) — feeds the Urgent Signals
+      // panel instantly; the panel itself decides whether to re-scan once it's stale.
+      const proactiveCache = await tx.proactiveScanCache.findUnique({
+        where: { orgId_scope: { orgId: ctx.orgId, scope: "members" } },
+        select: {
+          pairings: true,
+          meetingIntelligenceActive: true,
+          generatedAt: true,
+        },
+      });
+      return {
+        contacts,
+        companies,
+        projects,
+        introductions,
+        pendingIntros,
+        proactiveCache,
+      };
     });
 
   const valueCreated = introductions.filter(
@@ -174,6 +203,18 @@ export default async function IntroductionsPage({
       })),
     }))
     .filter((p) => p.openRoles.length > 0);
+
+  // Urgent Signals seed (item 13): the cached members-scope scan, if any. The
+  // pairings were written by our own scanNetworkIntros and are re-validated by the
+  // panel's parser on any rescan, so reading them back as ProactivePairing[] is safe.
+  const proactiveSnapshot: ProactiveCacheSnapshot | null = proactiveCache
+    ? {
+        pairings: proactiveCache.pairings as unknown as ProactivePairing[],
+        generatedAt: proactiveCache.generatedAt.toISOString(),
+        meetingIntelligenceActive: proactiveCache.meetingIntelligenceActive,
+      }
+    : null;
+  const proactiveFresh = isProactiveCacheFresh(proactiveCache?.generatedAt);
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -235,6 +276,16 @@ export default async function IntroductionsPage({
           </div>
         </div>
       ) : null}
+
+      {/* Situation Room (item 13): the standing proactive briefing, auto-loaded
+          from the org cache and rescanned on mount only when stale. */}
+      <div className="mb-4">
+        <UrgentSignalsPanel
+          initial={proactiveSnapshot}
+          fresh={proactiveFresh}
+          hostName={ctx.userName}
+        />
+      </div>
 
       {/* The three matching modes over the network's own reasoning. */}
       <IntroEngine

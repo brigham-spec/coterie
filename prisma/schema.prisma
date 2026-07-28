@@ -71,6 +71,7 @@ model Organization {
   introDismissals        IntroDismissal[]
   unmatchedAttendees     UnmatchedAttendee[]
   aiRateLimit            AiRateLimit?
+  proactiveScanCaches    ProactiveScanCache[]
 
   @@map("organizations")
 }
@@ -1081,4 +1082,31 @@ model AiRateLimit {
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@map("ai_rate_limits")
+}
+
+/// Proactive-scan cache (S6c, item 13 — the prototype's PROACTIVE_INTROS_KEY /
+/// saveProactiveIntros). Persists the last network intro scan per (org, scope) so
+/// the Urgent Signals panel renders instantly and only re-fires the AI scan once
+/// the cache goes stale (isProactiveCacheFresh, 4h TTL). Ephemeral analysis, not a
+/// source of truth — pairings are stored as JSON exactly as generateProactivePairings
+/// returned them, re-validated on read. Tenant-scoped: org_id + RLS. References only
+/// organizations, so the org_id FK + RLS are the full isolation story.
+model ProactiveScanCache {
+  orgId                     String   @map("org_id") @db.Uuid
+  /// members | full — matches introScopeStatuses; one cached scan per scope.
+  scope                     String
+  /// The scan payload: ProactivePairing[] as returned by generateProactivePairings.
+  pairings                  Json     @default("[]")
+  /// Whether recent meeting intelligence grounded this scan (drives the panel badge).
+  meetingIntelligenceActive Boolean  @default(false) @map("meeting_intelligence_active")
+  /// When the scan was produced — drives the 4h freshness check.
+  generatedAt               DateTime @map("generated_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, scope])
+  @@map("proactive_scan_caches")
 }

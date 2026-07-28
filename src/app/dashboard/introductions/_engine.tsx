@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import { Button, Card, CardHeader, StatusBadge, cn } from "@/components/ui";
 import type { IntroSuggestion, ProactivePairing } from "@/lib/intro-engine";
@@ -115,6 +122,159 @@ export function IntroEngine({
           <CatalystMode projects={projects} />
         ) : (
           <NetworkMode hostName={hostName} />
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// ── Urgent Signals panel (item 13) ────────────────────────────────────────────
+// The prototype's standing "Situation Room" above the engine (Coterie.html:14581):
+// a briefing that auto-loads the last members-scope network scan from the org cache
+// and only re-fires the AI scan once the snapshot has gone stale (4h). It renders
+// the same PairingCard grid as the on-demand Network Scan mode, but as an always-on
+// panel rather than a mode the user has to pick.
+export type ProactiveCacheSnapshot = {
+  pairings: ProactivePairing[];
+  generatedAt: string; // ISO — when the cached scan was produced
+  meetingIntelligenceActive: boolean;
+};
+
+function relativeAge(fromMs: number, now: number): string {
+  const mins = Math.max(0, Math.round((now - fromMs) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.round(mins / 60)}h ago`;
+}
+
+export function UrgentSignalsPanel({
+  initial,
+  fresh,
+  hostName,
+}: {
+  initial: ProactiveCacheSnapshot | null;
+  // Whether `initial` is within the freshness TTL. When false the panel shows any
+  // stale cache immediately and auto-fires one rescan on mount.
+  fresh: boolean;
+  hostName: string;
+}) {
+  // Last-known-good briefing (seeded from the cache). A rescan only supersedes it on
+  // success — a transient AI failure must never wipe a useful cached view (that would
+  // defeat the whole point of caching), so errors surface alongside it, not over it.
+  const [snapshot, setSnapshot] = useState<{
+    pairings: ProactivePairing[];
+    meetingIntelligenceActive: boolean;
+  } | null>(
+    initial
+      ? {
+          pairings: initial.pairings,
+          meetingIntelligenceActive: initial.meetingIntelligenceActive,
+        }
+      : null,
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [analyzedAt, setAnalyzedAt] = useState<number | null>(
+    initial ? Date.parse(initial.generatedAt) : null,
+  );
+  const [pending, startTransition] = useTransition();
+  const autoFired = useRef(false);
+  // Wall clock captured on mount (never during render — that would be impure and
+  // could disagree with the server-rendered HTML on hydration). Drives the relative
+  // "analyzed Xm ago" label; only its coarse minutes/hours resolution is shown.
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setNowMs(Date.now()));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const run = useCallback(() => {
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("scope", "members");
+      const next = await scanNetworkIntros({ status: "idle" }, fd);
+      if (next.status === "ok") {
+        setSnapshot({
+          pairings: next.pairings,
+          meetingIntelligenceActive: next.meetingIntelligenceActive,
+        });
+        setError(null);
+        setAnalyzedAt(Date.now());
+        setNowMs(Date.now());
+      } else if (next.status === "error") {
+        setError(next.message);
+      }
+    });
+  }, []);
+
+  // Auto-scan once on mount when the cache is stale or absent (item 13). Ref-guarded
+  // so React's dev-mode double-invoke of effects can't double-fire the AI call.
+  useEffect(() => {
+    if (fresh || autoFired.current) return;
+    autoFired.current = true;
+    run();
+  }, [fresh, run]);
+
+  const pairings = snapshot?.pairings ?? [];
+  const timeSensitive = pairings.filter(
+    (p) => p.urgencyTrigger !== "" || p.window !== "",
+  ).length;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Urgent signals"
+        action={
+          <Button
+            type="button"
+            disabled={pending}
+            onClick={run}
+          >
+            {pending ? "Analyzing…" : "Refresh"}
+          </Button>
+        }
+      />
+      <div className="p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-3">
+          <span>Time-sensitive opportunities from recent network activity.</span>
+          {snapshot ? (
+            <span className="text-ink-2">
+              {pairings.length} opportunit{pairings.length === 1 ? "y" : "ies"}
+              {timeSensitive > 0 ? ` · ${timeSensitive} time-sensitive` : ""}
+              {nowMs !== null && analyzedAt !== null
+                ? ` · analyzed ${relativeAge(analyzedAt, nowMs)}`
+                : ""}
+            </span>
+          ) : null}
+          {snapshot?.meetingIntelligenceActive ? <MeetingIntelBadge /> : null}
+        </div>
+
+        {/* Errors show alongside — never replacing — the last good briefing. */}
+        {error !== null ? (
+          <p className="mb-2 text-[11px] text-red-ink">{error}</p>
+        ) : null}
+
+        {pairings.length > 0 ? (
+          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {pairings.map((p) => (
+              <PairingCard
+                key={`${p.companyAId}|${p.companyBId}`}
+                p={p}
+                hostName={hostName}
+              />
+            ))}
+          </ul>
+        ) : pending ? (
+          <p className="text-[11px] text-ink-3 italic">
+            Analyzing recent activity…
+          </p>
+        ) : snapshot ? (
+          <p className="text-[11px] text-ink-3 italic">
+            No urgent signals right now.
+          </p>
+        ) : error !== null ? null : (
+          <p className="text-[11px] text-ink-3">
+            Refresh to scan the network for time-sensitive introductions.
+          </p>
         )}
       </div>
     </Card>
