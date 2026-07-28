@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 
-import { Button, Card, CardHeader, cn } from "@/components/ui";
+import { Button, Card, CardHeader, StatusBadge, cn } from "@/components/ui";
 import type { IntroSuggestion, ProactivePairing } from "@/lib/intro-engine";
 import { buildIntroDraft, type IntroDraft } from "@/lib/intro-draft";
+import {
+  isProfileIncomplete,
+  type ProfileStrength,
+} from "@/lib/intro-profile-strength";
 import type { RoleCandidate } from "@/lib/open-roles-engine";
 
 import {
@@ -24,7 +28,12 @@ import { scanOpenRole, type OpenRoleScanState } from "../projects/actions";
 // Anthropic key never crosses to the browser and every result stays ephemeral —
 // nothing is written until an intro is logged in the ledger below.
 
-export type EngineMember = { id: string; name: string; status: string };
+export type EngineMember = {
+  id: string;
+  name: string;
+  status: string;
+  strength: ProfileStrength;
+};
 export type EngineProject = {
   id: string;
   name: string;
@@ -132,6 +141,14 @@ function MemberMode({
     return members.filter((m) => m.name.toLowerCase().includes(q));
   }, [members, query]);
 
+  // Status lookup so a suggested candidate that is still a prospect can be badged
+  // (item 19). Prospects are always in this pool, so an id absent from the map is
+  // simply not a prospect.
+  const statusById = useMemo(
+    () => new Map(members.map((m) => [m.id, m.status])),
+    [members],
+  );
+
   const focus = members.find((m) => m.id === focusId) ?? null;
 
   function run(id: string) {
@@ -204,6 +221,9 @@ function MemberMode({
           <div className="mb-2 text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
             Connections for {focus.name}
           </div>
+          {isProfileIncomplete(focus.strength) ? (
+            <ProfileStrengthBar strength={focus.strength} />
+          ) : null}
           {pending && result.status === "idle" ? (
             <p className="text-[11px] text-ink-3 italic">Reading the network…</p>
           ) : result.status === "error" ? (
@@ -214,17 +234,21 @@ function MemberMode({
                 No strong introductions surfaced from the current network.
               </p>
             ) : (
-              <ul className="flex flex-col gap-2.5">
-                {visible.map((s) => (
-                  <SuggestionCard
-                    key={s.companyId}
-                    s={s}
-                    focusName={focus.name}
-                    hostName={hostName}
-                    onDismiss={dismiss}
-                  />
-                ))}
-              </ul>
+              <>
+                <ScoreLegend />
+                <ul className="flex flex-col gap-2.5">
+                  {visible.map((s) => (
+                    <SuggestionCard
+                      key={s.companyId}
+                      s={s}
+                      focusName={focus.name}
+                      hostName={hostName}
+                      isProspect={statusById.get(s.companyId) === "prospect"}
+                      onDismiss={dismiss}
+                    />
+                  ))}
+                </ul>
+              </>
             )
           ) : null}
         </div>
@@ -237,17 +261,24 @@ function SuggestionCard({
   s,
   focusName,
   hostName,
+  isProspect,
   onDismiss,
 }: {
   s: IntroSuggestion;
   focusName: string;
   hostName: string;
+  isProspect: boolean;
   onDismiss: (candidateId: string) => void;
 }) {
   return (
     <li className="rounded-md border border-line bg-surface px-3.5 py-3 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
+          {isProspect ? (
+            <div className="mb-1">
+              <StatusBadge status="prospect" />
+            </div>
+          ) : null}
           <Link
             href={`/dashboard/companies/${s.companyId}`}
             className="font-medium text-ink hover:underline"
@@ -617,6 +648,58 @@ function ScorePill({ score }: { score: number }) {
     <span className="shrink-0 rounded-full border border-gold-line bg-gold-bg px-2 py-0.5 text-[11px] font-medium text-gold">
       {score}/5
     </span>
+  );
+}
+
+// Nudge shown under a freshly-picked focus when its profile is still thin (item
+// 19). A richer profile yields sharper suggestions, so we name the score, the
+// classification, and the specific signals still missing.
+function ProfileStrengthBar({ strength }: { strength: ProfileStrength }) {
+  const faint = strength.label === "Sparse";
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <span
+        className={cn(
+          "rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap",
+          faint
+            ? "border-red-line bg-red-bg text-red-ink"
+            : "border-gold-line bg-gold-bg text-gold-ink",
+        )}
+      >
+        Profile {strength.label} ({strength.score}%)
+      </span>
+      {strength.missing.length > 0 ? (
+        <span className="text-[10px] text-ink-3">
+          Add {strength.missing.join(", ")} for sharper matches.
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+// Legend for the 1–5 relevance score the model assigns each suggestion (item 19).
+// Production clamps scores to the 3–5 band, so only those rungs are explained.
+const SCORE_KEY: { score: number; meaning: string }[] = [
+  { score: 5, meaning: "Active project · exact role fit" },
+  { score: 4, meaning: "Explicit need meets explicit offer" },
+  { score: 3, meaning: "Strong cross-functional match" },
+];
+
+function ScoreLegend() {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-1.5 rounded-md bg-surface-2 px-3 py-2">
+      <span className="mr-1 text-[9px] font-semibold tracking-[0.08em] text-ink-3 uppercase">
+        Score key
+      </span>
+      {SCORE_KEY.map((k) => (
+        <span
+          key={k.score}
+          className="rounded-full border border-line bg-surface px-2 py-0.5 text-[10px] whitespace-nowrap text-ink-2"
+        >
+          <strong className="text-ink">{k.score}</strong> — {k.meaning}
+        </span>
+      ))}
+    </div>
   );
 }
 

@@ -9,8 +9,10 @@ import {
   introStageRank,
 } from "@/lib/intro-stages";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
+import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import { openRoles } from "@/lib/disciplines";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
+import { introProfileStrength } from "@/lib/intro-profile-strength";
 import {
   INTRO_CONNECTION_TYPES,
   conversionRate,
@@ -58,8 +60,9 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
 
 const relFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
-// Members / partners / prospects are the pool the "For a Member" mode offers.
-const ENGINE_STATUSES = new Set(["member", "strategic_partner", "prospect"]);
+// Members / partners / prospects are the pool the "For a Member" mode offers —
+// the in-network vocabulary plus prospects (worth introducing before they join).
+const ENGINE_STATUSES = [...NETWORK_STATUSES, "prospect"];
 
 // Pre-intro states seed the create form; the full vocabulary drives the per-row
 // advance control below.
@@ -86,9 +89,22 @@ export default async function IntroductionsPage({
         orderBy: { name: "asc" },
         select: { id: true, name: true, company: { select: { name: true } } },
       });
+      // Only the engine pool (members / partners / prospects). Alongside the label
+      // fields we pull the signals the profile-strength nudge reads (item 19):
+      // needs, offers, industry, and whether any active work / primary contact exist.
       const companies = await tx.company.findMany({
+        where: { status: { in: ENGINE_STATUSES } },
         orderBy: { name: "asc" },
-        select: { id: true, name: true, status: true },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          canOffer: true,
+          lookingFor: true,
+          industry: true,
+          projectLinks: { select: { role: true }, take: 1 },
+          contacts: { where: { isPrimary: true }, select: { id: true }, take: 1 },
+        },
       });
       const projects = await tx.project.findMany({
         where: { stage: { notIn: [...TERMINAL_STAGES] } },
@@ -132,7 +148,20 @@ export default async function IntroductionsPage({
   const ledger = filterByStage(introductions, stageFilter);
 
   // Member-mode pool and Project-Catalyst pool (only projects with open roles).
-  const engineMembers = companies.filter((c) => ENGINE_STATUSES.has(c.status));
+  // Each member carries its profile-strength so the client can nudge for missing
+  // signals the moment a focus is picked (item 19).
+  const engineMembers = companies.map((c) => ({
+    id: c.id,
+    name: c.name,
+    status: c.status,
+    strength: introProfileStrength({
+      canOffer: (c.canOffer ?? "").trim() !== "",
+      lookingFor: (c.lookingFor ?? "").trim() !== "",
+      hasProjects: c.projectLinks.length > 0,
+      hasIndustry: (c.industry ?? "").trim() !== "",
+      hasPrimaryContact: c.contacts.length > 0,
+    }),
+  }));
   const engineProjects = projects
     .map((p) => ({
       id: p.id,
