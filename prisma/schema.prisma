@@ -441,6 +441,10 @@ model Introduction {
   /// intro is first-class and outlives the event; app-layer re-checked withOrg.
   eventId         String?   @map("event_id") @db.Uuid
   notes           String    @default("")
+  /// Taxonomy label for why the pair connects (INTRO_CONNECTION_TYPES).
+  connectionType  String    @default("") @map("connection_type")
+  /// One-line "why" — the intro's talking-point headline.
+  headline        String    @default("")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

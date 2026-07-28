@@ -12,6 +12,16 @@ import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { openRoles } from "@/lib/disciplines";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import {
+  INTRO_CONNECTION_TYPES,
+  conversionRate,
+  daysInStage,
+  filterByStage,
+  isIntroStale,
+  pipelineFunnel,
+  stageChips,
+  type FunnelCell,
+} from "@/lib/intro-pipeline";
+import {
   Button,
   Card,
   CardHeader,
@@ -21,6 +31,7 @@ import {
   StatusBadge,
   Table,
   Td,
+  Textarea,
   Th,
   Tr,
 } from "@/components/ui";
@@ -54,8 +65,19 @@ const ENGINE_STATUSES = new Set(["member", "strategic_partner", "prospect"]);
 // advance control below.
 const createStatusOptions = INTRO_STAGES;
 
-export default async function IntroductionsPage() {
+function one(value: string | string[] | undefined): string {
+  return typeof value === "string" ? value : "";
+}
+
+export default async function IntroductionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const ctx = await requireOrgContext();
+  const sp = await searchParams;
+  const rawStage = one(sp.stage);
+  const stageFilter = INTRO_STAGES.some((s) => s.value === rawStage) ? rawStage : "";
 
   // Sequential reads: one pooled connection per tx, so no concurrent queries.
   const { contacts, companies, projects, introductions, pendingIntros } =
@@ -99,6 +121,15 @@ export default async function IntroductionsPage() {
       introStageRank(i.status) >= introStageRank("made") &&
       !TERMINAL_INTRO_STAGES.includes(i.status),
   ).length;
+
+  // Pipeline shaping (S6a): funnel counts + conversion rate over the whole ledger,
+  // the stage-filter chips (empty stages hidden), and the rows for the selected
+  // stage. `now` anchors the >30-day stale flag on each visible row.
+  const now = new Date();
+  const funnel = pipelineFunnel(introductions);
+  const convRate = conversionRate(introductions);
+  const chips = stageChips(introductions);
+  const ledger = filterByStage(introductions, stageFilter);
 
   // Member-mode pool and Project-Catalyst pool (only projects with open roles).
   const engineMembers = companies.filter((c) => ENGINE_STATUSES.has(c.status));
@@ -254,7 +285,35 @@ export default async function IntroductionsPage() {
                   </option>
                 ))}
               </SelectField>
+              <SelectField
+                name="connectionType"
+                label="Connection type (optional)"
+                defaultValue=""
+              >
+                <option value="">Unspecified</option>
+                {INTRO_CONNECTION_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </SelectField>
               <Field name="madeOn" label="Made on (optional)" type="date" />
+              <div className="col-span-2">
+                <Field
+                  name="headline"
+                  label="Headline (optional)"
+                  placeholder="e.g. James needs IDA support — Dan is the right connection"
+                  maxLength={200}
+                />
+              </div>
+              <div className="col-span-2">
+                <Textarea
+                  name="notes"
+                  label="Notes (optional)"
+                  maxLength={1000}
+                  rows={2}
+                />
+              </div>
               <div className="col-span-2 flex justify-end">
                 <Button type="submit" variant="primary">
                   Record introduction
@@ -273,73 +332,166 @@ export default async function IntroductionsPage() {
             {contacts.length >= 2 ? " Record one above." : ""}
           </p>
         ) : (
-          <Table
-            head={
-              <>
-                <Th>Parties</Th>
-                <Th>Stage</Th>
-                <Th>Project</Th>
-                <Th>Made on</Th>
-                <Th>Advance</Th>
-              </>
-            }
-          >
-            {introductions.map((i) => (
-              <Tr key={i.id}>
-                <Td>
-                  <div className="font-medium text-ink">
-                    {i.partyA.name}
-                    <span className="text-ink-3"> · {i.partyA.company.name}</span>
-                  </div>
-                  <div className="font-medium text-ink">
-                    {i.partyB.name}
-                    <span className="text-ink-3"> · {i.partyB.company.name}</span>
-                  </div>
-                  {i.outcome ? (
-                    <div className="mt-1 text-[10px] text-ink-3 italic">
-                      {i.outcome}
-                    </div>
-                  ) : null}
-                </Td>
-                <Td>
-                  <StatusBadge status={i.status} />
-                </Td>
-                <Td>{i.project?.name ?? "—"}</Td>
-                <Td>{i.madeOn == null ? "—" : dateFmt.format(i.madeOn)}</Td>
-                <Td>
-                  <form
-                    action={updateIntroduction}
-                    className="flex flex-col gap-1.5"
+          <>
+            <PipelineBar funnel={funnel} convRate={convRate} />
+            <div className="flex flex-wrap gap-1.5 border-b border-line px-4 py-3">
+              {chips.map((chip) => {
+                const on = stageFilter === chip.value;
+                return (
+                  <Link
+                    key={chip.value || "all"}
+                    href={
+                      chip.value === ""
+                        ? "/dashboard/introductions"
+                        : `/dashboard/introductions?stage=${chip.value}`
+                    }
+                    className={`rounded-full border px-2.5 py-1 text-[10.5px] transition-colors ${
+                      on
+                        ? "border-gold-line bg-gold-bg text-gold-ink"
+                        : "border-line bg-surface text-ink-2 hover:border-gold-line hover:text-gold"
+                    }`}
                   >
-                    <input type="hidden" name="introId" value={i.id} />
-                    <select
-                      name="status"
-                      defaultValue={i.status}
-                      className="w-full rounded-sm border border-line-2 bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-gold-line"
-                    >
-                      {INTRO_STAGES.map((s) => (
-                        <option key={s.value} value={s.value}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      name="outcome"
-                      defaultValue={i.outcome ?? ""}
-                      placeholder="Outcome note…"
-                      className="w-full rounded-sm border border-line-2 bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-gold-line"
-                    />
-                    <Button type="submit" className="justify-center">
-                      Save
-                    </Button>
-                  </form>
-                </Td>
-              </Tr>
-            ))}
-          </Table>
+                    {chip.label} · {chip.count}
+                  </Link>
+                );
+              })}
+            </div>
+            {ledger.length === 0 ? (
+              <p className="px-4 py-6 text-xs text-ink-3">
+                No introductions in this stage.
+              </p>
+            ) : (
+              <Table
+                head={
+                  <>
+                    <Th>Parties</Th>
+                    <Th>Stage</Th>
+                    <Th>Project</Th>
+                    <Th>Made on</Th>
+                    <Th>Advance</Th>
+                  </>
+                }
+              >
+                {ledger.map((i) => {
+                  const stale = isIntroStale(i.status, i.updatedAt, now);
+                  return (
+                    <Tr key={i.id}>
+                      <Td>
+                        <div className="font-medium text-ink">
+                          {i.partyA.name}
+                          <span className="text-ink-3">
+                            {" "}
+                            · {i.partyA.company.name}
+                          </span>
+                        </div>
+                        <div className="font-medium text-ink">
+                          {i.partyB.name}
+                          <span className="text-ink-3">
+                            {" "}
+                            · {i.partyB.company.name}
+                          </span>
+                        </div>
+                        {i.connectionType ? (
+                          <div className="mt-1 text-[9.5px] tracking-[0.06em] text-ink-3 uppercase">
+                            {i.connectionType}
+                          </div>
+                        ) : null}
+                        {i.headline ? (
+                          <div className="mt-1 text-[11px] text-ink-2">
+                            {i.headline}
+                          </div>
+                        ) : null}
+                        {i.notes ? (
+                          <div className="mt-1 text-[10px] text-ink-3">
+                            {i.notes}
+                          </div>
+                        ) : null}
+                        {i.outcome ? (
+                          <div className="mt-1 text-[10px] text-ink-3 italic">
+                            {i.outcome}
+                          </div>
+                        ) : null}
+                      </Td>
+                      <Td>
+                        <StatusBadge status={i.status} />
+                        {stale ? (
+                          <div className="mt-1 text-[9.5px] font-medium text-amber-ink">
+                            Stalled · {daysInStage(i.updatedAt, now)}d in stage
+                          </div>
+                        ) : null}
+                      </Td>
+                      <Td>{i.project?.name ?? "—"}</Td>
+                      <Td>{i.madeOn == null ? "—" : dateFmt.format(i.madeOn)}</Td>
+                      <Td>
+                        <form
+                          action={updateIntroduction}
+                          className="flex flex-col gap-1.5"
+                        >
+                          <input type="hidden" name="introId" value={i.id} />
+                          <select
+                            name="status"
+                            defaultValue={i.status}
+                            className="w-full rounded-sm border border-line-2 bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-gold-line"
+                          >
+                            {INTRO_STAGES.map((s) => (
+                              <option key={s.value} value={s.value}>
+                                {s.label}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            name="outcome"
+                            defaultValue={i.outcome ?? ""}
+                            placeholder="Outcome note…"
+                            className="w-full rounded-sm border border-line-2 bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-gold-line"
+                          />
+                          <Button type="submit" className="justify-center">
+                            Save
+                          </Button>
+                        </form>
+                      </Td>
+                    </Tr>
+                  );
+                })}
+              </Table>
+            )}
+          </>
         )}
       </Card>
+    </div>
+  );
+}
+
+// Pipeline funnel: per-stage counts across the made-onward lifecycle plus the
+// conversion rate (share reaching value_created). Read-only summary above the
+// stage-filter chips (parity: Coterie.html:11831).
+function PipelineBar({
+  funnel,
+  convRate,
+}: {
+  funnel: FunnelCell[];
+  convRate: number;
+}) {
+  return (
+    <div className="flex flex-wrap items-stretch gap-px border-b border-line bg-line">
+      {funnel.map((cell) => (
+        <div
+          key={cell.value}
+          className="min-w-[84px] flex-1 bg-surface px-3 py-2 text-center"
+        >
+          <div className="font-serif text-[16px] text-ink">{cell.count}</div>
+          <div className="mt-0.5 text-[9px] font-medium tracking-[0.06em] text-ink-3 uppercase">
+            {cell.label}
+          </div>
+        </div>
+      ))}
+      <div className="min-w-[84px] flex-1 bg-surface px-3 py-2 text-center">
+        <div className="font-serif text-[16px] text-teal-ink">{convRate}%</div>
+        <div className="mt-0.5 text-[9px] font-medium tracking-[0.06em] text-ink-3 uppercase">
+          Conversion
+        </div>
+      </div>
     </div>
   );
 }

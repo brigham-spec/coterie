@@ -8,6 +8,7 @@ import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { optionalDate } from "@/lib/form-fields";
 import { isIntroStage } from "@/lib/intro-stages";
+import { isConnectionType } from "@/lib/intro-pipeline";
 import {
   generateIntroEmail,
   type IntroEmailDraft,
@@ -32,11 +33,16 @@ export async function createIntroduction(formData: FormData): Promise<void> {
   const status = String(formData.get("status") ?? "").trim();
   const projectId = String(formData.get("projectId") ?? "").trim();
   const madeOn = optionalDate(formData, "madeOn");
+  const connectionType = String(formData.get("connectionType") ?? "").trim();
+  const headline = String(formData.get("headline") ?? "").trim().slice(0, 200);
+  const notes = String(formData.get("notes") ?? "").trim().slice(0, 1000);
 
   if (!partyAContactId || !partyBContactId)
     throw new Error("both parties are required");
   if (!status) throw new Error("status is required");
   if (!isIntroStage(status)) throw new Error("invalid introduction status");
+  if (!isConnectionType(connectionType))
+    throw new Error("invalid connection type");
   if (partyAContactId === partyBContactId)
     throw new Error("the two parties must be different contacts");
 
@@ -60,6 +66,9 @@ export async function createIntroduction(formData: FormData): Promise<void> {
         source: "manual",
         projectId: projectId === "" ? null : projectId,
         madeOn,
+        connectionType,
+        headline,
+        notes,
       },
     });
   });
