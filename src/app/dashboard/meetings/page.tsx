@@ -204,6 +204,8 @@ export default async function MeetingsPage({
                   <MeetingCard
                     title={meeting.title}
                     dateLabel={dateFmt.format(meeting.heldAt)}
+                    durationMinutes={meeting.durationMinutes}
+                    location={meeting.location}
                     transcriptUrl={meeting.transcriptUrl}
                     source={view.source}
                     members={view.members}

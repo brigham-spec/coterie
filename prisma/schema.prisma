@@ -475,6 +475,9 @@ model Meeting {
   heldAt        DateTime @map("held_at") @db.Timestamptz(6)
   summary       String?
   transcriptUrl String?  @map("transcript_url")
+  /// Manual-log only (item 11); Fireflies-synced meetings leave these null.
+  durationMinutes Int?   @map("duration_minutes") @db.SmallInt
+  location        String?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

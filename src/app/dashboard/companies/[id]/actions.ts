@@ -2430,6 +2430,17 @@ export async function logMeeting(formData: FormData): Promise<LogMeetingState> {
     .slice(0, 300);
   const summary = optionalText(formData, "summary");
   const heldAt = optionalDate(formData, "heldAt") ?? new Date();
+  // Duration (minutes) + location are optional (item 11). A blank or non-positive
+  // duration stays null rather than persisting garbage; cap at a day's worth.
+  const durationRaw = Number.parseInt(
+    String(formData.get("durationMinutes") ?? "").trim(),
+    10,
+  );
+  const durationMinutes =
+    Number.isFinite(durationRaw) && durationRaw > 0
+      ? Math.min(durationRaw, 1440)
+      : null;
+  const location = optionalText(formData, "location");
   const attendeeIds = formData
     .getAll("attendeeIds")
     .map((v) => String(v).trim())
@@ -2463,6 +2474,8 @@ export async function logMeeting(formData: FormData): Promise<LogMeetingState> {
         title,
         heldAt,
         summary,
+        durationMinutes,
+        location,
         attendees: {
           // orgId is inherited from the parent meeting's composite relation —
           // Prisma fills it, so the nested create must not (and cannot) set it.

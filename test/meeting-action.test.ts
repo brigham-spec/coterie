@@ -135,6 +135,8 @@ describe("logMeeting", () => {
         title: "Site visit",
         heldAt: "2026-08-01",
         summary: "Toured the mill floor.",
+        durationMinutes: "90",
+        location: "Poughkeepsie, in-person",
         attendeeIds: [contactA1Id, contactA2Id],
       }),
     );
@@ -146,6 +148,8 @@ describe("logMeeting", () => {
           summary: true,
           firefliesId: true,
           heldAt: true,
+          durationMinutes: true,
+          location: true,
           attendees: {
             select: { contactId: true, matchMethod: true, confirmed: true },
           },
@@ -154,12 +158,34 @@ describe("logMeeting", () => {
     );
     expect(meeting).not.toBeNull();
     expect(meeting!.summary).toBe("Toured the mill floor.");
+    expect(meeting!.durationMinutes).toBe(90);
+    expect(meeting!.location).toBe("Poughkeepsie, in-person");
     expect(meeting!.firefliesId).toBeNull();
     expect(meeting!.attendees).toHaveLength(2);
     expect(meeting!.attendees.every((a) => a.confirmed && a.matchMethod === "manual")).toBe(true);
     expect(new Set(meeting!.attendees.map((a) => a.contactId))).toEqual(
       new Set([contactA1Id, contactA2Id]),
     );
+  });
+
+  test("stores no duration or location when they are blank or non-positive", async () => {
+    await logMeeting(
+      fd({
+        companyId: companyAId,
+        title: "Sparse log",
+        durationMinutes: "0",
+        location: "  ",
+        attendeeIds: [contactA1Id],
+      }),
+    );
+    const meeting = await withOrg(orgA.id, (tx) =>
+      tx.meeting.findFirst({
+        where: { title: "Sparse log" },
+        select: { durationMinutes: true, location: true },
+      }),
+    );
+    expect(meeting!.durationMinutes).toBeNull();
+    expect(meeting!.location).toBeNull();
   });
 
   test("defaults heldAt to now when the date is empty", async () => {

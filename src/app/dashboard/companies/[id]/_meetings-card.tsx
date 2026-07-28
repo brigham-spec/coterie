@@ -32,6 +32,8 @@ export type MeetingRow = {
   title: string;
   heldAt: Date;
   summary: string | null;
+  durationMinutes: number | null;
+  location: string | null;
   isManual: boolean;
   attendeeNames: string[];
 };
@@ -106,6 +108,10 @@ function MeetingItem({
           <div className="text-xs font-medium text-ink">{meeting.title}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-ink-3">
             <span>{dateFmt.format(meeting.heldAt)}</span>
+            {meeting.durationMinutes != null ? (
+              <span>· {meeting.durationMinutes} min</span>
+            ) : null}
+            {meeting.location ? <span>· {meeting.location}</span> : null}
             {meeting.attendeeNames.length > 0 ? (
               <span>· {meeting.attendeeNames.join(", ")}</span>
             ) : null}
@@ -160,6 +166,19 @@ function MeetingForm({
       <div className="grid grid-cols-2 gap-4">
         <Field name="title" label="Meeting title" className="col-span-2" required />
         <Field name="heldAt" label="Date" type="date" />
+        <Field
+          name="durationMinutes"
+          label="Duration (minutes)"
+          type="number"
+          min={1}
+          placeholder="e.g. 60"
+        />
+        <Field
+          name="location"
+          label="Location (optional)"
+          className="col-span-2"
+          placeholder="e.g. Poughkeepsie, in-person"
+        />
       </div>
 
       <fieldset>

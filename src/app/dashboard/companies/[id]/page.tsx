@@ -178,6 +178,8 @@ export default async function CompanyDetailPage({
               title: true,
               heldAt: true,
               summary: true,
+              durationMinutes: true,
+              location: true,
               firefliesId: true,
               attendees: {
                 where: { contactId: { in: contactIds } },
@@ -304,6 +306,8 @@ export default async function CompanyDetailPage({
     title: m.title,
     heldAt: m.heldAt,
     summary: m.summary,
+    durationMinutes: m.durationMinutes,
+    location: m.location,
     isManual: m.firefliesId == null,
     attendeeNames: m.attendees.map((a) => a.contact.name),
   }));

@@ -13,6 +13,8 @@ import type { MeetingMember, MeetingSource } from "@/lib/meetings-view";
 export function MeetingCard({
   title,
   dateLabel,
+  durationMinutes,
+  location,
   transcriptUrl,
   source,
   members,
@@ -23,6 +25,8 @@ export function MeetingCard({
 }: {
   title: string;
   dateLabel: string;
+  durationMinutes: number | null;
+  location: string | null;
   transcriptUrl: string | null;
   source: MeetingSource;
   members: MeetingMember[];
@@ -50,6 +54,8 @@ export function MeetingCard({
             {source === "fireflies" ? "Fireflies" : "Manual"}
           </span>
           {dateLabel}
+          {durationMinutes != null ? <>{" · "}{durationMinutes} min</> : null}
+          {location ? <>{" · "}{location}</> : null}
           {transcriptUrl != null ? (
             <>
               {" · "}
