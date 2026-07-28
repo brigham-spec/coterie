@@ -208,7 +208,11 @@ export default async function IntroductionsPage({
       ) : null}
 
       {/* The three matching modes over the network's own reasoning. */}
-      <IntroEngine members={engineMembers} projects={engineProjects} />
+      <IntroEngine
+        members={engineMembers}
+        projects={engineProjects}
+        hostName={ctx.userName}
+      />
 
       {contacts.length < 2 ? (
         <Card>

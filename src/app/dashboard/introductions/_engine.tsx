@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 
 import { Button, Card, CardHeader, cn } from "@/components/ui";
 import type { IntroSuggestion, ProactivePairing } from "@/lib/intro-engine";
+import { buildIntroDraft, type IntroDraft } from "@/lib/intro-draft";
 import type { RoleCandidate } from "@/lib/open-roles-engine";
 
 import {
@@ -64,9 +65,11 @@ const STATUS_LABEL: Record<string, string> = {
 export function IntroEngine({
   members,
   projects,
+  hostName,
 }: {
   members: EngineMember[];
   projects: EngineProject[];
+  hostName: string;
 }) {
   const [mode, setMode] = useState<Mode>("member");
   const active = MODES.find((m) => m.key === mode) ?? MODES[0];
@@ -98,11 +101,11 @@ export function IntroEngine({
         <p className="mb-4 text-[11px] text-ink-3">{active.blurb}</p>
 
         {mode === "member" ? (
-          <MemberMode members={members} />
+          <MemberMode members={members} hostName={hostName} />
         ) : mode === "catalyst" ? (
           <CatalystMode projects={projects} />
         ) : (
-          <NetworkMode />
+          <NetworkMode hostName={hostName} />
         )}
       </div>
     </Card>
@@ -110,7 +113,13 @@ export function IntroEngine({
 }
 
 // ── For a Member ──────────────────────────────────────────────────────────────
-function MemberMode({ members }: { members: EngineMember[] }) {
+function MemberMode({
+  members,
+  hostName,
+}: {
+  members: EngineMember[];
+  hostName: string;
+}) {
   const [query, setQuery] = useState("");
   const [focusId, setFocusId] = useState<string | null>(null);
   const [result, setResult] = useState<IntroSuggestState>({ status: "idle" });
@@ -207,7 +216,13 @@ function MemberMode({ members }: { members: EngineMember[] }) {
             ) : (
               <ul className="flex flex-col gap-2.5">
                 {visible.map((s) => (
-                  <SuggestionCard key={s.companyId} s={s} onDismiss={dismiss} />
+                  <SuggestionCard
+                    key={s.companyId}
+                    s={s}
+                    focusName={focus.name}
+                    hostName={hostName}
+                    onDismiss={dismiss}
+                  />
                 ))}
               </ul>
             )
@@ -220,9 +235,13 @@ function MemberMode({ members }: { members: EngineMember[] }) {
 
 function SuggestionCard({
   s,
+  focusName,
+  hostName,
   onDismiss,
 }: {
   s: IntroSuggestion;
+  focusName: string;
+  hostName: string;
   onDismiss: (candidateId: string) => void;
 }) {
   return (
@@ -253,7 +272,17 @@ function SuggestionCard({
           ))}
         </ul>
       ) : null}
-      <div className="mt-3 flex justify-end">
+      <div className="mt-3 flex justify-end gap-2">
+        <CopyDraftButton
+          draft={buildIntroDraft({
+            host: hostName,
+            introduce: focusName,
+            recipient: s.companyName,
+            headline: s.headline,
+            talkingPoints: s.talkingPoints,
+            whyNow: s.whyNow,
+          })}
+        />
         <Button type="button" onClick={() => onDismiss(s.companyId)}>
           Dismiss
         </Button>
@@ -413,19 +442,52 @@ function CandidateCard({ c }: { c: RoleCandidate }) {
 }
 
 // ── Network Scan ──────────────────────────────────────────────────────────────
-function NetworkMode() {
+type NetworkScope = "members" | "full";
+
+const SCOPES: { key: NetworkScope; label: string }[] = [
+  { key: "members", label: "Members only" },
+  { key: "full", label: "Full network" },
+];
+
+function NetworkMode({ hostName }: { hostName: string }) {
+  const [scope, setScope] = useState<NetworkScope>("members");
   const [result, setResult] = useState<ProactiveScanState>({ status: "idle" });
   const [pending, startTransition] = useTransition();
 
   function run() {
     startTransition(async () => {
-      setResult(await scanNetworkIntros({ status: "idle" }, new FormData()));
+      const fd = new FormData();
+      fd.set("scope", scope);
+      setResult(await scanNetworkIntros({ status: "idle" }, fd));
     });
   }
 
   return (
     <div>
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex gap-1 rounded-md border border-line bg-surface-2 p-0.5">
+          {SCOPES.map((sc) => {
+            const on = sc.key === scope;
+            return (
+              <button
+                key={sc.key}
+                type="button"
+                onClick={() => {
+                  setScope(sc.key);
+                  setResult({ status: "idle" });
+                }}
+                className={cn(
+                  "rounded-sm px-2.5 py-1 text-[10.5px] font-medium transition-colors",
+                  on
+                    ? "bg-surface text-ink shadow-card"
+                    : "text-ink-3 hover:text-ink-2",
+                )}
+              >
+                {sc.label}
+              </button>
+            );
+          })}
+        </div>
         <Button type="button" variant="gold" disabled={pending} onClick={run}>
           {pending
             ? "Scanning…"
@@ -446,7 +508,11 @@ function NetworkMode() {
         ) : (
           <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {result.pairings.map((p) => (
-              <PairingCard key={`${p.companyAId}|${p.companyBId}`} p={p} />
+              <PairingCard
+                key={`${p.companyAId}|${p.companyBId}`}
+                p={p}
+                hostName={hostName}
+              />
             ))}
           </ul>
         )
@@ -459,7 +525,13 @@ function NetworkMode() {
   );
 }
 
-function PairingCard({ p }: { p: ProactivePairing }) {
+function PairingCard({
+  p,
+  hostName,
+}: {
+  p: ProactivePairing;
+  hostName: string;
+}) {
   return (
     <li className="rounded-md border border-line bg-surface-2 px-3.5 py-3">
       <div className="flex items-start justify-between gap-3">
@@ -498,11 +570,48 @@ function PairingCard({ p }: { p: ProactivePairing }) {
           ))}
         </ul>
       ) : null}
+      <div className="mt-2.5 flex justify-end">
+        <CopyDraftButton
+          draft={buildIntroDraft({
+            host: hostName,
+            introduce: p.companyAName,
+            recipient: p.companyBName,
+            headline: p.headline,
+            talkingPoints: p.talkingPoints,
+            whyNow: p.whyNow,
+          })}
+        />
+      </div>
     </li>
   );
 }
 
 // ── Shared ────────────────────────────────────────────────────────────────────
+// Copies a ready-to-send warm-intro email (subject + body) to the clipboard. The
+// draft is assembled locally from the engine's own reasoning (@/lib/intro-draft),
+// so nothing round-trips to the server. Briefly confirms in place after a copy.
+function CopyDraftButton({ draft }: { draft: IntroDraft }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(
+        `Subject: ${draft.subject}\n\n${draft.body}`,
+      );
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable (insecure context / denied) — no-op.
+    }
+  }
+
+  return (
+    <Button type="button" onClick={copy}>
+      {copied ? "Copied" : "Copy email draft"}
+    </Button>
+  );
+}
+
 function ScorePill({ score }: { score: number }) {
   return (
     <span className="shrink-0 rounded-full border border-gold-line bg-gold-bg px-2 py-0.5 text-[11px] font-medium text-gold">

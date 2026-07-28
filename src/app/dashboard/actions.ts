@@ -7,6 +7,7 @@ import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import {
   generateProactivePairings,
+  introScopeStatuses,
   pairKey,
   type ProactivePairing,
 } from "@/lib/intro-engine";
@@ -30,9 +31,14 @@ export type ProactiveScanState =
 
 export async function scanNetworkIntros(
   _prev: ProactiveScanState,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<ProactiveScanState> {
   const { orgId } = await requireOrgContext();
+
+  // Scope toggle (item 20): members-only by default, or the full network
+  // (members + prospects) when the caller opts into exploration.
+  const scope = String(formData.get("scope") ?? "");
+  const allowedStatuses = new Set(introScopeStatuses(scope));
 
   const data = await withOrg(orgId, async (tx) => {
     const companies = await tx.company.findMany({ include: introProfileInclude });
@@ -55,7 +61,9 @@ export async function scanNetworkIntros(
   for (const d of data.dismissals)
     excludedPairs.add(pairKey(d.focusCompanyId, d.candidateCompanyId));
 
-  const profiles = data.companies.map(toIntroProfile);
+  const profiles = data.companies
+    .filter((c) => allowedStatuses.has(c.status))
+    .map(toIntroProfile);
 
   try {
     await enforceAiRateLimit(orgId);

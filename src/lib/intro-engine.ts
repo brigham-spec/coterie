@@ -3,6 +3,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 
 import { extractJsonArray } from "@/lib/json-extract";
+import { NETWORK_STATUSES } from "@/lib/company-statuses";
 
 // Introduction engine (slices 11.4b/c, ported from the prototype's doIntroForMember
 // and doProactiveAlertScan). Two modes over the same terse company profiles:
@@ -56,6 +57,22 @@ export type ProactivePairing = {
   whyNow: string;
   talkingPoints: string[];
 };
+
+// Network-scan scope (S6b, item 20 — the prototype's Members Only / Full Network
+// sub-mode toggle, Coterie.html:14853). "members" restricts the pool to the paying
+// network (NETWORK_STATUSES); "full" opens it up to prospects too, surfacing more
+// exploratory pairs.
+const INTRO_SCOPE_FULL_STATUSES: readonly string[] = [
+  ...NETWORK_STATUSES,
+  "prospect",
+];
+
+/// PURE: the company statuses a given scope includes. Anything but "full" is the
+/// conservative members-only pool (the default), so a forged value never widens
+/// the scan beyond intent.
+export function introScopeStatuses(scope: string): readonly string[] {
+  return scope === "full" ? INTRO_SCOPE_FULL_STATUSES : NETWORK_STATUSES;
+}
 
 /// PURE: eligible candidate ids — every company except the focus itself and any
 /// company already introduced to it (dedup handled by the caller's Set).

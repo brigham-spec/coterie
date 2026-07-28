@@ -7,6 +7,7 @@ import {
   parseSuggestions,
   pairKey,
   parseProactivePairings,
+  introScopeStatuses,
   type IntroCompanyProfile,
 } from "@/lib/intro-engine";
 
@@ -48,6 +49,18 @@ describe("eligibleCandidateIds", () => {
       "a",
       "b",
     ]);
+  });
+});
+
+describe("introScopeStatuses", () => {
+  it("adds prospects only for the full-network scope", () => {
+    expect(introScopeStatuses("full")).toContain("prospect");
+    expect(introScopeStatuses("members")).not.toContain("prospect");
+  });
+
+  it("defaults an unknown/forged scope to the conservative members pool", () => {
+    expect(introScopeStatuses("")).toEqual(introScopeStatuses("members"));
+    expect(introScopeStatuses("everything")).not.toContain("prospect");
   });
 });
 
