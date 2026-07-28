@@ -576,8 +576,14 @@ function PairingCard({
   p: ProactivePairing;
   hostName: string;
 }) {
+  const timeSensitive = p.urgencyTrigger !== "" || p.window !== "";
   return (
-    <li className="rounded-md border border-line bg-surface-2 px-3.5 py-3">
+    <li
+      className={cn(
+        "rounded-md border border-line bg-surface-2 px-3.5 py-3",
+        timeSensitive && "border-l-2 border-l-gold",
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 text-[11.5px] font-semibold text-ink">
           <Link
@@ -601,6 +607,7 @@ function PairingCard({
           {p.connectionType}
         </div>
       ) : null}
+      {timeSensitive ? <UrgencyBanner trigger={p.urgencyTrigger} window={p.window} /> : null}
       <p className="mt-1.5 text-[11px] font-medium text-ink-2">{p.headline}</p>
       {p.whyNow ? (
         <p className="mt-1 text-[10.5px] text-ink-3 italic">{p.whyNow}</p>
@@ -627,6 +634,40 @@ function PairingCard({
         />
       </div>
     </li>
+  );
+}
+
+// Time-sensitivity banner for a proactive pairing (S6c, item 13 — the prototype's
+// Urgent Signals trigger/window line, Coterie.html:14670). Rendered only when the
+// scan flagged the pair as time-sensitive, so a gold-accented card reads as "act
+// now" while ordinary high-value pairs stay unadorned.
+function UrgencyBanner({
+  trigger,
+  window: timeWindow,
+}: {
+  trigger: string;
+  window: string;
+}) {
+  return (
+    <div className="mt-1.5 rounded-sm border border-gold-line bg-gold-bg/50 px-2 py-1 text-[10px] leading-relaxed text-ink-2">
+      {trigger ? (
+        <span>
+          <span className="font-semibold tracking-[0.04em] text-gold-ink uppercase">
+            Trigger
+          </span>{" "}
+          {trigger}
+        </span>
+      ) : null}
+      {trigger && timeWindow ? <span className="text-ink-3"> · </span> : null}
+      {timeWindow ? (
+        <span>
+          <span className="font-semibold tracking-[0.04em] text-gold-ink uppercase">
+            Window
+          </span>{" "}
+          {timeWindow}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

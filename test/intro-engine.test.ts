@@ -235,6 +235,30 @@ describe("parseProactivePairings", () => {
     expect(p.score).toBe(3);
   });
 
+  it("carries trimmed urgencyTrigger/window, or '' when absent", () => {
+    const raw = JSON.stringify([
+      pairing({
+        companyAId: "a",
+        companyBId: "b",
+        urgencyTrigger: "  closed a round  ",
+        window: " site sells in 3 weeks ",
+      }),
+      pairing({ companyAId: "b", companyBId: "c" }),
+    ]);
+    const out = parseProactivePairings(raw, valid, noExclusions);
+    const byKey = new Map(
+      out.map((p) => [
+        pairKey(p.companyAId, p.companyBId),
+        { t: p.urgencyTrigger, w: p.window },
+      ]),
+    );
+    expect(byKey.get(pairKey("a", "b"))).toEqual({
+      t: "closed a round",
+      w: "site sells in 3 weeks",
+    });
+    expect(byKey.get(pairKey("b", "c"))).toEqual({ t: "", w: "" });
+  });
+
   it("carries a trimmed clusterNote, or '' when absent", () => {
     const raw = JSON.stringify([
       pairing({ companyAId: "a", companyBId: "b", clusterNote: "  add C  " }),

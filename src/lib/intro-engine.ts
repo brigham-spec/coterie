@@ -55,6 +55,13 @@ export type ProactivePairing = {
   connectionType: string;
   headline: string;
   whyNow: string;
+  // Time-sensitivity (S6c, item 13 — the prototype's Urgent Signals fields,
+  // Coterie.html:14526). urgencyTrigger names the specific recent event that makes
+  // now the moment (ideally quoted from the meeting intelligence); window is what
+  // is lost if the introduction is delayed. Both "" when the pairing carries no
+  // time pressure — the card then renders as an ordinary high-value pair.
+  urgencyTrigger: string;
+  window: string;
   talkingPoints: string[];
   // Cluster/trio note (S6c, item 15 — the prototype's clusterNote, Coterie.html:14903):
   // set when a THIRD network company would complete a powerful triad, naming that
@@ -277,6 +284,8 @@ function coercePairing(
     connectionType: str(o.connectionType),
     headline: str(o.headline),
     whyNow: str(o.whyNow),
+    urgencyTrigger: str(o.urgencyTrigger),
+    window: str(o.window),
     talkingPoints,
     clusterNote: str(o.clusterNote),
   };
@@ -324,10 +333,12 @@ Only include pairings scoring 3 or higher. Return fewer, stronger pairings rathe
 
 Ground every claim in the supplied data — do not invent needs, projects, people, capabilities, or history that is not present. Reference each company by what the data actually says (lookingFor, canOffer, networkTags, projects). If a RECENT MEETING INTELLIGENCE block is present, treat it as the freshest signal of what companies need right now — let it drive "whyNow" and surface time-sensitive pairings the static profiles have not caught up to.
 
+When a pairing is TIME-SENSITIVE — a recent meeting, an expressed need, a project milestone, or a newly-joined company makes now the moment — capture it: "urgencyTrigger" names the specific recent event (quote the meeting intelligence when it is the source) and "window" states what is lost if the introduction is delayed a few weeks. Leave both empty for a pairing that is valuable but under no time pressure — do not manufacture urgency.
+
 When a THIRD company in the pool would complete a powerful triad with a pairing — unlocking something none of the three could achieve as a plain pair — name that third company and what the trio makes possible in "clusterNote". Only do this when the third link is genuinely additive and grounded in the data; otherwise leave "clusterNote" empty.
 
 Return ONLY a JSON array (no prose, no markdown code fences). Each element:
-{"companyAId": "<one of the company ids>", "companyAName": "<name>", "companyBId": "<a different company id>", "companyBName": "<name>", "score": <5|4|3>, "connectionType": "<short label, e.g. 'Capital ↔ Project'>", "headline": "<one line>", "whyNow": "<the current trigger>", "talkingPoints": ["<up to 3 short concrete openers>"], "clusterNote": "<if a third pool company completes a powerful triad, name them and what it unlocks; else \"\">"}
+{"companyAId": "<one of the company ids>", "companyAName": "<name>", "companyBId": "<a different company id>", "companyBName": "<name>", "score": <5|4|3>, "connectionType": "<short label, e.g. 'Capital ↔ Project'>", "headline": "<one line>", "whyNow": "<the current trigger>", "urgencyTrigger": "<the specific recent event making now the moment, or \"\">", "window": "<what is lost if delayed, or \"\">", "talkingPoints": ["<up to 3 short concrete openers>"], "clusterNote": "<if a third pool company completes a powerful triad, name them and what it unlocks; else \"\">"}
 Both ids MUST be from the supplied companies and different. If no pairing scores 3 or higher, return [].`;
 
 /// Proactive network-wide scan: bound the pool to the highest-signal companies,
