@@ -54,6 +54,11 @@ import {
   type IntroSuggestion,
 } from "@/lib/intro-engine";
 import { introProfileInclude, toIntroProfile } from "@/lib/intro-profile";
+import {
+  buildMeetingIntelContext,
+  meetingIntelCutoff,
+  MEETING_INTEL_MAX,
+} from "@/lib/meeting-intel";
 
 // AI company brief (build item 5). The company is re-loaded withOrg-scoped from
 // the id in the form (never trusting a client-passed payload), so a foreign id
@@ -139,7 +144,13 @@ export async function generateBrief(
 
 export type IntroSuggestState =
   | { status: "idle" }
-  | { status: "ok"; suggestions: IntroSuggestion[] }
+  | {
+      status: "ok";
+      suggestions: IntroSuggestion[];
+      // Whether recent meeting summaries grounded the prompt (item 14) — drives
+      // the "meeting intelligence active" badge in the engine UI.
+      meetingIntelligenceActive: boolean;
+    }
   | { status: "error"; message: string };
 
 export async function suggestIntros(
@@ -175,7 +186,32 @@ export async function suggestIntros(
       },
       select: { focusCompanyId: true, candidateCompanyId: true },
     });
-    return { focus, companies, intros, dismissals };
+
+    // Recent meetings the focus's people attended, freshest first (item 14) —
+    // the freshest signal of what the focus needs right now, grounding the
+    // prompt beyond the static profile. Scoped to this company's contacts.
+    const focusContacts = await tx.contact.findMany({
+      where: { companyId },
+      select: { id: true },
+    });
+    const contactIds = focusContacts.map((c) => c.id);
+    const attendances = contactIds.length
+      ? await tx.meetingAttendee.findMany({
+          where: { contactId: { in: contactIds } },
+          select: { meetingId: true },
+        })
+      : [];
+    const meetingIds = [...new Set(attendances.map((a) => a.meetingId))];
+    const recentMeetings = meetingIds.length
+      ? await tx.meeting.findMany({
+          where: { id: { in: meetingIds }, heldAt: { gte: meetingIntelCutoff() } },
+          orderBy: { heldAt: "desc" },
+          take: MEETING_INTEL_MAX,
+          select: { title: true, heldAt: true, summary: true },
+        })
+      : [];
+
+    return { focus, companies, intros, dismissals, recentMeetings };
   });
 
   if (data == null)
@@ -204,13 +240,28 @@ export async function suggestIntros(
     .filter((c) => eligible.has(c.id))
     .map(toIntroProfile);
 
+  // All these meetings belong to the focus, so no per-line "re:" attribution.
+  const meetingContext = buildMeetingIntelContext(
+    data.recentMeetings.map((m) => ({
+      title: m.title,
+      heldAt: m.heldAt,
+      summary: m.summary,
+      companyNames: [],
+    })),
+  );
+
   try {
     await enforceAiRateLimit(orgId);
     const suggestions = await generateIntroSuggestions(
       toIntroProfile(data.focus),
       candidates,
+      meetingContext,
     );
-    return { status: "ok", suggestions };
+    return {
+      status: "ok",
+      suggestions,
+      meetingIntelligenceActive: meetingContext !== "",
+    };
   } catch (err) {
     console.error("intro suggestions failed", err);
     if (err instanceof AiRateLimitError)

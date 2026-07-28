@@ -218,8 +218,13 @@ function MemberMode({
 
       {focus ? (
         <div className="mt-4">
-          <div className="mb-2 text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
-            Connections for {focus.name}
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
+              Connections for {focus.name}
+            </div>
+            {result.status === "ok" && result.meetingIntelligenceActive ? (
+              <MeetingIntelBadge />
+            ) : null}
           </div>
           {isProfileIncomplete(focus.strength) ? (
             <ProfileStrengthBar strength={focus.strength} />
@@ -527,6 +532,11 @@ function NetworkMode({ hostName }: { hostName: string }) {
               : "Scan network"}
         </Button>
       </div>
+      {result.status === "ok" && result.meetingIntelligenceActive ? (
+        <div className="mb-3">
+          <MeetingIntelBadge />
+        </div>
+      ) : null}
       {pending ? (
         <p className="text-[11px] text-ink-3 italic">Reading the network…</p>
       ) : result.status === "error" ? (
@@ -640,6 +650,18 @@ function CopyDraftButton({ draft }: { draft: IntroDraft }) {
     <Button type="button" onClick={copy}>
       {copied ? "Copied" : "Copy email draft"}
     </Button>
+  );
+}
+
+// Signals that recent meeting summaries grounded the suggestions (item 14 — the
+// prototype's "Meeting intelligence active" chip, Coterie.html:14622). Shown only
+// when the action actually folded meeting context into the prompt.
+function MeetingIntelBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-teal-line bg-teal-bg px-2 py-0.5 text-[9.5px] font-semibold tracking-[0.04em] whitespace-nowrap text-teal-ink uppercase">
+      <span className="h-1.5 w-1.5 rounded-full bg-teal" aria-hidden />
+      Meeting intelligence active
+    </span>
   );
 }
 

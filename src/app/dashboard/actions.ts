@@ -12,6 +12,11 @@ import {
   type ProactivePairing,
 } from "@/lib/intro-engine";
 import { introProfileInclude, toIntroProfile } from "@/lib/intro-profile";
+import {
+  buildMeetingIntelContext,
+  meetingIntelCutoff,
+  MEETING_INTEL_MAX,
+} from "@/lib/meeting-intel";
 
 // Proactive introduction scan (slice 11.4c, ported from the prototype's
 // doProactiveAlertScan) — the dashboard's Layer-0 panel. The whole network is
@@ -26,7 +31,13 @@ import { introProfileInclude, toIntroProfile } from "@/lib/intro-profile";
 
 export type ProactiveScanState =
   | { status: "idle" }
-  | { status: "ok"; pairings: ProactivePairing[] }
+  | {
+      status: "ok";
+      pairings: ProactivePairing[];
+      // Whether recent meeting summaries grounded the prompt (item 14) — drives
+      // the "meeting intelligence active" badge in the engine UI.
+      meetingIntelligenceActive: boolean;
+    }
   | { status: "error"; message: string };
 
 export async function scanNetworkIntros(
@@ -51,7 +62,25 @@ export async function scanNetworkIntros(
     const dismissals = await tx.introDismissal.findMany({
       select: { focusCompanyId: true, candidateCompanyId: true },
     });
-    return { companies, intros, dismissals };
+
+    // Recent meetings across the network, freshest first (item 14) — grounds the
+    // scan in what companies actually surfaced lately, not just static profiles.
+    // Each meeting carries the companies discussed (via attendees) for "re:".
+    const recentMeetings = await tx.meeting.findMany({
+      where: { heldAt: { gte: meetingIntelCutoff() } },
+      orderBy: { heldAt: "desc" },
+      take: MEETING_INTEL_MAX,
+      select: {
+        title: true,
+        heldAt: true,
+        summary: true,
+        attendees: {
+          select: { contact: { select: { company: { select: { name: true } } } } },
+        },
+      },
+    });
+
+    return { companies, intros, dismissals, recentMeetings };
   });
 
   // Orientation-independent set of pairs to keep out of the results.
@@ -65,10 +94,29 @@ export async function scanNetworkIntros(
     .filter((c) => allowedStatuses.has(c.status))
     .map(toIntroProfile);
 
+  const meetingContext = buildMeetingIntelContext(
+    data.recentMeetings.map((m) => ({
+      title: m.title,
+      heldAt: m.heldAt,
+      summary: m.summary,
+      companyNames: [
+        ...new Set(m.attendees.map((a) => a.contact.company.name)),
+      ],
+    })),
+  );
+
   try {
     await enforceAiRateLimit(orgId);
-    const pairings = await generateProactivePairings(profiles, excludedPairs);
-    return { status: "ok", pairings };
+    const pairings = await generateProactivePairings(
+      profiles,
+      excludedPairs,
+      meetingContext,
+    );
+    return {
+      status: "ok",
+      pairings,
+      meetingIntelligenceActive: meetingContext !== "",
+    };
   } catch (err) {
     console.error("proactive intro scan failed", err);
     if (err instanceof AiRateLimitError)
