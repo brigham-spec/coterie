@@ -235,6 +235,19 @@ describe("parseProactivePairings", () => {
     expect(p.score).toBe(3);
   });
 
+  it("carries a trimmed clusterNote, or '' when absent", () => {
+    const raw = JSON.stringify([
+      pairing({ companyAId: "a", companyBId: "b", clusterNote: "  add C  " }),
+      pairing({ companyAId: "b", companyBId: "c" }),
+    ]);
+    const out = parseProactivePairings(raw, valid, noExclusions);
+    const byKey = new Map(
+      out.map((p) => [pairKey(p.companyAId, p.companyBId), p.clusterNote]),
+    );
+    expect(byKey.get(pairKey("a", "b"))).toBe("add C");
+    expect(byKey.get(pairKey("b", "c"))).toBe("");
+  });
+
   it("returns [] for non-JSON or non-array input", () => {
     expect(parseProactivePairings("nope", valid, noExclusions)).toEqual([]);
     expect(parseProactivePairings("{}", valid, noExclusions)).toEqual([]);

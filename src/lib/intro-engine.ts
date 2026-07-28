@@ -56,6 +56,11 @@ export type ProactivePairing = {
   headline: string;
   whyNow: string;
   talkingPoints: string[];
+  // Cluster/trio note (S6c, item 15 — the prototype's clusterNote, Coterie.html:14903):
+  // set when a THIRD network company would complete a powerful triad, naming that
+  // company and what the trio unlocks. "" when the pairing stands on its own — the
+  // Connection Clusters panel only surfaces pairings that carry a substantial one.
+  clusterNote: string;
 };
 
 // Network-scan scope (S6b, item 20 — the prototype's Members Only / Full Network
@@ -273,6 +278,7 @@ function coercePairing(
     headline: str(o.headline),
     whyNow: str(o.whyNow),
     talkingPoints,
+    clusterNote: str(o.clusterNote),
   };
 }
 
@@ -318,8 +324,10 @@ Only include pairings scoring 3 or higher. Return fewer, stronger pairings rathe
 
 Ground every claim in the supplied data — do not invent needs, projects, people, capabilities, or history that is not present. Reference each company by what the data actually says (lookingFor, canOffer, networkTags, projects). If a RECENT MEETING INTELLIGENCE block is present, treat it as the freshest signal of what companies need right now — let it drive "whyNow" and surface time-sensitive pairings the static profiles have not caught up to.
 
+When a THIRD company in the pool would complete a powerful triad with a pairing — unlocking something none of the three could achieve as a plain pair — name that third company and what the trio makes possible in "clusterNote". Only do this when the third link is genuinely additive and grounded in the data; otherwise leave "clusterNote" empty.
+
 Return ONLY a JSON array (no prose, no markdown code fences). Each element:
-{"companyAId": "<one of the company ids>", "companyAName": "<name>", "companyBId": "<a different company id>", "companyBName": "<name>", "score": <5|4|3>, "connectionType": "<short label, e.g. 'Capital ↔ Project'>", "headline": "<one line>", "whyNow": "<the current trigger>", "talkingPoints": ["<up to 3 short concrete openers>"]}
+{"companyAId": "<one of the company ids>", "companyAName": "<name>", "companyBId": "<a different company id>", "companyBName": "<name>", "score": <5|4|3>, "connectionType": "<short label, e.g. 'Capital ↔ Project'>", "headline": "<one line>", "whyNow": "<the current trigger>", "talkingPoints": ["<up to 3 short concrete openers>"], "clusterNote": "<if a third pool company completes a powerful triad, name them and what it unlocks; else \"\">"}
 Both ids MUST be from the supplied companies and different. If no pairing scores 3 or higher, return [].`;
 
 /// Proactive network-wide scan: bound the pool to the highest-signal companies,

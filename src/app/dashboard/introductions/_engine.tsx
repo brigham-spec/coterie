@@ -547,15 +547,18 @@ function NetworkMode({ hostName }: { hostName: string }) {
             No new introductions surfaced right now.
           </p>
         ) : (
-          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {result.pairings.map((p) => (
-              <PairingCard
-                key={`${p.companyAId}|${p.companyBId}`}
-                p={p}
-                hostName={hostName}
-              />
-            ))}
-          </ul>
+          <>
+            <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {result.pairings.map((p) => (
+                <PairingCard
+                  key={`${p.companyAId}|${p.companyBId}`}
+                  p={p}
+                  hostName={hostName}
+                />
+              ))}
+            </ul>
+            <ConnectionClusters pairings={result.pairings} hostName={hostName} />
+          </>
         )
       ) : (
         <p className="text-[11px] text-ink-3">
@@ -612,6 +615,99 @@ function PairingCard({
         </ul>
       ) : null}
       <div className="mt-2.5 flex justify-end">
+        <CopyDraftButton
+          draft={buildIntroDraft({
+            host: hostName,
+            introduce: p.companyAName,
+            recipient: p.companyBName,
+            headline: p.headline,
+            talkingPoints: p.talkingPoints,
+            whyNow: p.whyNow,
+          })}
+        />
+      </div>
+    </li>
+  );
+}
+
+// ── Connection Clusters (trios) ───────────────────────────────────────────────
+// Secondary panel over the same scan (S6c, item 15 — the prototype's Connection
+// Clusters, Coterie.html:14903). Some pairings carry a clusterNote: a THIRD
+// network company would complete a powerful triad. We surface those here so the
+// operator can see not just the pair but the group opportunity behind it. Derived
+// entirely from the scan already in hand — nothing extra is fetched or stored.
+const CLUSTER_NOTE_MIN = 10;
+
+function ConnectionClusters({
+  pairings,
+  hostName,
+}: {
+  pairings: ProactivePairing[];
+  hostName: string;
+}) {
+  const clusters = pairings.filter(
+    (p) => p.clusterNote.trim().length > CLUSTER_NOTE_MIN,
+  );
+  if (clusters.length === 0) return null;
+
+  return (
+    <div className="mt-6 border-t-2 border-teal-line pt-4">
+      <div className="mb-1 text-[11px] font-semibold tracking-[0.05em] text-teal-ink uppercase">
+        Connection clusters
+      </div>
+      <p className="mb-3 text-[10.5px] text-ink-3">
+        Groups where a third connection would unlock something none of them could
+        reach alone.
+      </p>
+      <ul className="flex flex-col gap-3">
+        {clusters.map((p) => (
+          <ClusterCard
+            key={`${p.companyAId}|${p.companyBId}`}
+            p={p}
+            hostName={hostName}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ClusterCard({
+  p,
+  hostName,
+}: {
+  p: ProactivePairing;
+  hostName: string;
+}) {
+  return (
+    <li className="overflow-hidden rounded-md border border-line border-l-2 border-l-teal bg-surface">
+      <div className="border-b border-line bg-surface-2 px-3.5 py-2 text-[11.5px] font-semibold text-ink">
+        <Link
+          href={`/dashboard/companies/${p.companyAId}`}
+          className="hover:underline"
+        >
+          {p.companyAName}
+        </Link>{" "}
+        <span className="text-ink-3">&#215;</span>{" "}
+        <Link
+          href={`/dashboard/companies/${p.companyBId}`}
+          className="hover:underline"
+        >
+          {p.companyBName}
+        </Link>
+      </div>
+      {p.headline ? (
+        <p className="border-b border-line px-3.5 py-2 text-[11px] text-ink-2">
+          {p.headline}
+        </p>
+      ) : null}
+      <div className="bg-teal-bg/40 px-3.5 py-2.5">
+        <div className="mb-1 text-[9.5px] font-semibold tracking-[0.06em] text-teal-ink uppercase">
+          Complete the cluster
+        </div>
+        <p className="text-[11px] leading-relaxed text-ink-2">{p.clusterNote}</p>
+      </div>
+      <div className="flex justify-end px-3.5 py-2">
         <CopyDraftButton
           draft={buildIntroDraft({
             host: hostName,
