@@ -24,6 +24,7 @@ import {
   type OwnerOption,
 } from "./_action-items";
 import { MeetingFilters as FilterBar } from "./_filters";
+import { LogMeeting } from "./_log-meeting";
 import { MeetingCard } from "./_meeting-card";
 
 // Meetings — synced from Fireflies (build item 6). Connect a per-org API key,
@@ -67,10 +68,10 @@ export default async function MeetingsPage({
     member: one(sp.member),
   };
 
-  const [connected, meetings, staffRows] = await Promise.all([
+  const [connected, data, staffRows] = await Promise.all([
     hasCredential(ctx.orgId, "fireflies"),
-    withOrg(ctx.orgId, (tx) =>
-      tx.meeting.findMany({
+    withOrg(ctx.orgId, async (tx) => {
+      const meetings = await tx.meeting.findMany({
         orderBy: { heldAt: "desc" },
         include: {
           attendees: {
@@ -92,14 +93,27 @@ export default async function MeetingsPage({
             },
           },
         },
-      }),
-    ),
+      });
+      // Attendee options for the global "+ Log Meeting" picker — any contact in
+      // the network, not just one company's (same tx, so one pooled connection).
+      const contacts = await tx.contact.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, company: { select: { name: true } } },
+      });
+      return { meetings, contacts };
+    }),
     // Org staff = org members (platform table, no RLS — read off bare prisma).
     prisma.orgMembership.findMany({
       where: { orgId: ctx.orgId },
       select: { user: { select: { id: true, name: true } } },
     }),
   ]);
+  const { meetings, contacts } = data;
+  const contactOptions = contacts.map((c) => ({
+    id: c.id,
+    name: c.name,
+    company: c.company.name,
+  }));
 
   const staffOptions: OwnerOption[] = staffRows.map((r) => ({
     id: r.user.id,
@@ -167,6 +181,8 @@ export default async function MeetingsPage({
           </form>
         )}
       </Card>
+
+      <LogMeeting contacts={contactOptions} />
 
       {meetings.length === 0 ? (
         <Card>

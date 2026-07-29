@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { optionalDate } from "@/lib/form-fields";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { prisma } from "@/lib/prisma";
 import { storeCredential, deleteCredential } from "@/lib/integrations";
@@ -44,6 +45,85 @@ export async function syncFirefliesNow(): Promise<void> {
   revalidatePath("/dashboard/meetings");
   // The dashboard sync-status card reads the same integration row.
   revalidatePath("/dashboard");
+}
+
+export type LogMeetingState =
+  | { status: "saved" }
+  | { status: "error"; message: string };
+
+// Global "+ Log Meeting" (Meet audit item 7). The sibling of the company-profile
+// logMeeting, but network-wide: attendees can be ANY contact in the org, not just
+// one company's, so this is the place to record a meeting that spans members.
+// Manual meetings carry no firefliesId (so deleteMeeting's synced-guard leaves
+// them removable) and confirmed "manual" attendee rows. RLS confines every lookup
+// and write to this tenant.
+export async function logManualMeeting(
+  formData: FormData,
+): Promise<LogMeetingState> {
+  const { orgId } = await requireOrgContext();
+
+  const title = String(formData.get("title") ?? "")
+    .trim()
+    .slice(0, 300);
+  const summary = String(formData.get("summary") ?? "").trim() || null;
+  const location = String(formData.get("location") ?? "").trim() || null;
+  const heldAt = optionalDate(formData, "heldAt") ?? new Date();
+  // Duration (minutes) is optional; a blank or non-positive value stays null
+  // rather than persisting garbage. Cap at a day's worth. Mirrors logMeeting.
+  const durationRaw = Number.parseInt(
+    String(formData.get("durationMinutes") ?? "").trim(),
+    10,
+  );
+  const durationMinutes =
+    Number.isFinite(durationRaw) && durationRaw > 0
+      ? Math.min(durationRaw, 1440)
+      : null;
+  const attendeeIds = formData
+    .getAll("attendeeIds")
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+
+  if (!title) return { status: "error", message: "A meeting title is required." };
+  if (attendeeIds.length === 0)
+    return { status: "error", message: "Select at least one attendee." };
+
+  const error = await withOrg(orgId, async (tx) => {
+    // Any org contact may attend (unlike the profile log, which is scoped to one
+    // company). RLS confines the lookup to this tenant; an id that isn't a contact
+    // here is refused rather than silently dropped.
+    const contacts = await tx.contact.findMany({
+      where: { id: { in: attendeeIds } },
+      select: { id: true },
+    });
+    if (contacts.length !== new Set(attendeeIds).size)
+      return "An attendee is not a contact in this network.";
+
+    await tx.meeting.create({
+      data: {
+        orgId,
+        title,
+        heldAt,
+        summary,
+        durationMinutes,
+        location,
+        attendees: {
+          // orgId is inherited from the parent meeting's composite relation.
+          create: contacts.map((c) => ({
+            contactId: c.id,
+            matchMethod: "manual",
+            confidence: 1,
+            confirmed: true,
+          })),
+        },
+      },
+    });
+    return null;
+  });
+
+  if (error) return { status: "error", message: error };
+
+  revalidatePath("/dashboard/meetings");
+  return { status: "saved" };
 }
 
 // Human-verify a proposed attendee match. Both ids are scoped by RLS inside the
