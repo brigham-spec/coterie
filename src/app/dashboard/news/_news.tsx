@@ -26,8 +26,20 @@ type ScanCompany = {
 
 const initialState: NewsScanState = { status: "idle" };
 
-export function NewsScanner({ companies }: { companies: ScanCompany[] }) {
-  const [selectedId, setSelectedId] = useState("");
+export function NewsScanner({
+  companies,
+  initialCompanyId = "",
+}: {
+  companies: ScanCompany[];
+  initialCompanyId?: string;
+}) {
+  // Arriving from a company profile's "Scan the web" shortcut pre-selects that
+  // company (initialCompanyId) so the scan is one click away. We deliberately do
+  // NOT auto-fire it: a web-search scan is a billable call, so — unlike a cheap
+  // text prefill — it stays gated behind the explicit "Scan for news" button.
+  const [selectedId, setSelectedId] = useState(() =>
+    companies.some((c) => c.id === initialCompanyId) ? initialCompanyId : "",
+  );
   const [filter, setFilter] = useState("");
   const [state, formAction, isPending] = useActionState(scanNews, initialState);
 

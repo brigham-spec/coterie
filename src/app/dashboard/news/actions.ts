@@ -155,6 +155,8 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
     return { status: "error", message: "Could not save this article." };
   } finally {
     revalidatePath("/dashboard/news");
+    // The company profile's Saved Articles card reads the same ledger.
+    revalidatePath(`/dashboard/companies/${companyId}`);
   }
 }
 
@@ -163,7 +165,10 @@ export async function deleteNewsItem(formData: FormData): Promise<void> {
 
   const id = String(formData.get("id") ?? "").trim();
   if (id === "") throw new Error("article required");
+  // Passed when removing from a company profile, so that card re-renders too.
+  const companyId = String(formData.get("companyId") ?? "").trim();
 
   await withOrg(orgId, (tx) => tx.newsItem.deleteMany({ where: { id } }));
   revalidatePath("/dashboard/news");
+  if (companyId !== "") revalidatePath(`/dashboard/companies/${companyId}`);
 }

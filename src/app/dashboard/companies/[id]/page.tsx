@@ -40,6 +40,7 @@ import { ValueDeliveredCard } from "./_value-delivered-card";
 import { CommitmentsCard } from "./_commitments-card";
 import { MeetingsCard } from "./_meetings-card";
 import { EmailCorrespondence } from "./_email-correspondence";
+import { SavedArticlesCard } from "./_saved-articles";
 import { confirmIntroAdvance } from "./actions";
 
 // Company detail — the central relationship's home. Surfaces the company's own
@@ -89,6 +90,7 @@ export default async function CompanyDetailPage({
     pendingIntros,
     meetings,
     emailMessages,
+    newsItems,
     actionItems,
     statusChanges,
     valueDelivered,
@@ -123,6 +125,7 @@ export default async function CompanyDetailPage({
           pendingIntros: [],
           meetings: [],
           emailMessages: [],
+          newsItems: [],
           actionItems: [],
           statusChanges: [],
           valueDelivered: [],
@@ -207,6 +210,20 @@ export default async function CompanyDetailPage({
           externalKey: true,
         },
       });
+      // Saved coverage for this company (item 6). Same NewsItem ledger the
+      // org-level News Intelligence page writes to; scoped to this company here.
+      const newsItems = await tx.newsItem.findMany({
+        where: { companyId: id },
+        orderBy: { capturedAt: "desc" },
+        take: 50,
+        select: {
+          id: true,
+          headline: true,
+          url: true,
+          summary: true,
+          capturedAt: true,
+        },
+      });
       // Commitments touching this company: manual ones logged on the profile
       // (companyId), items its contacts owe us (ownerContactId), plus items we
       // owe on meetings its people attended.
@@ -288,6 +305,7 @@ export default async function CompanyDetailPage({
         pendingIntros,
         meetings,
         emailMessages,
+        newsItems,
         actionItems,
         statusChanges,
         valueDelivered,
@@ -691,6 +709,8 @@ export default async function CompanyDetailPage({
       />
 
       <EmailCorrespondence companyId={company.id} messages={emailRows} />
+
+      <SavedArticlesCard companyId={company.id} articles={newsItems} />
 
       <CommitmentsCard
         companyId={company.id}

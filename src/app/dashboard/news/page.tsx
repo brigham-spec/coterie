@@ -21,8 +21,14 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
 });
 
-export default async function NewsPage() {
+export default async function NewsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { orgId } = await requireOrgContext();
+  const sp = await searchParams;
+  const rawCompany = typeof sp.company === "string" ? sp.company : "";
 
   const { companies, newsItems } = await withOrg(orgId, async (tx) => {
     const companies = await tx.company.findMany({
@@ -53,6 +59,12 @@ export default async function NewsPage() {
     industry: c.industry,
   }));
 
+  // Only honour the profile shortcut's ?company= when it's a company we can
+  // actually scan (formers are excluded above); otherwise start unselected.
+  const initialCompanyId = scannable.some((c) => c.id === rawCompany)
+    ? rawCompany
+    : "";
+
   return (
     <div className="mx-auto w-full max-w-4xl">
       <PageTitle
@@ -60,7 +72,7 @@ export default async function NewsPage() {
         subtitle="Track recent press, project announcements, and developments across your network."
       />
 
-      <NewsScanner companies={scannable} />
+      <NewsScanner companies={scannable} initialCompanyId={initialCompanyId} />
 
       <Card>
         <CardHeader
