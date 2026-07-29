@@ -163,6 +163,48 @@ describe("saveActionItems action", () => {
     // …and org B's meeting has no items either.
     expect(await itemsForMeeting(orgB.id, meetingBId)).toEqual([]);
   });
+
+  test("cross-attributes to a network member who did not attend (Meet 12)", async () => {
+    // contactA1 is a contact of company A1 but was NOT an attendee of meetingA.
+    // The widened owner pool lets the item be attributed to her, so it will
+    // surface on her company profile as a "they owe" deliverable.
+    mockCtx.orgId = orgA.id;
+    await saveActionItems(
+      fd(meetingAId, [
+        { text: "Ada to send the site plan", ownerKind: "contact", ownerId: contactA1Id },
+      ]),
+    );
+
+    const item = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findFirst({
+        where: { meetingId: meetingAId, ownerContactId: contactA1Id },
+        select: { text: true, ownerUserId: true, ownerContactId: true },
+      }),
+    );
+    expect(item).toEqual({
+      text: "Ada to send the site plan",
+      ownerUserId: null,
+      ownerContactId: contactA1Id,
+    });
+  });
+
+  test("drops an item attributed to a contact from another tenant", async () => {
+    // contactB belongs to org B — outside this network, so not a valid owner
+    // here. It is the only item, so nothing is written.
+    mockCtx.orgId = orgA.id;
+    await saveActionItems(
+      fd(meetingAId, [
+        { text: "Foreign owner", ownerKind: "contact", ownerId: contactBId },
+      ]),
+    );
+    const leaked = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findFirst({
+        where: { meetingId: meetingAId, ownerContactId: contactBId },
+        select: { id: true },
+      }),
+    );
+    expect(leaked).toBeNull();
+  });
 });
 
 function logFd(entries: Record<string, string | string[]>): FormData {

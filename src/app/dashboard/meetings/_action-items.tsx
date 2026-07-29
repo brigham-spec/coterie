@@ -19,6 +19,10 @@ import {
 
 export type OwnerOption = { id: string; name: string };
 
+// A network member who wasn't at this meeting but can still own an item
+// (cross-attribution). Carries the company for disambiguation in the picker.
+export type NetworkOption = { id: string; name: string; company: string };
+
 export type PersistedItem = {
   id: string;
   text: string;
@@ -38,11 +42,13 @@ export function MeetingActionItems({
   meetingId,
   staffOptions,
   attendeeOptions,
+  networkOptions,
   items,
 }: {
   meetingId: string;
   staffOptions: OwnerOption[];
   attendeeOptions: OwnerOption[];
+  networkOptions: NetworkOption[];
   items: PersistedItem[];
 }) {
   const [proposals, setProposals] = useState<Proposal[] | null>(null);
@@ -211,6 +217,18 @@ export function MeetingActionItems({
                         </option>
                       ))}
                     </optgroup>
+                    {networkOptions.length > 0 ? (
+                      // Cross-attribution: a member mentioned in the notes who
+                      // wasn't at the meeting. Owning them the item surfaces it
+                      // on their company profile.
+                      <optgroup label="Network">
+                        {networkOptions.map((c) => (
+                          <option key={c.id} value={`contact:${c.id}`}>
+                            {c.name} · {c.company}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
                   </select>
                   <button
                     type="button"

@@ -242,9 +242,12 @@ export async function extractActionItems(
 }
 
 // Persist the human-confirmed items. Every owner is re-validated server-side
-// against the allowed set (org staff ids, or this meeting's attendee contact
-// ids) — the client is never trusted — and mapped to exactly one owner column so
-// the XOR CHECK holds.
+// against the allowed set (org staff ids, or ANY network contact id) — the
+// client is never trusted — and mapped to exactly one owner column so the XOR
+// CHECK holds. Contacts are validated against the whole network, not just this
+// meeting's attendees: that is the cross-attribution (Meet 12) — an item can be
+// attributed to a member merely mentioned in the notes, and it then surfaces on
+// their company profile as a "they owe" deliverable.
 export async function saveActionItems(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();
 
@@ -259,35 +262,55 @@ export async function saveActionItems(formData: FormData): Promise<void> {
   }
   if (!Array.isArray(rows)) throw new Error("malformed action items");
 
-  const [staff, attendees] = await Promise.all([
-    loadStaffOwners(orgId),
-    loadAttendeeOwners(orgId, meetingId),
-  ]);
+  const staff = await loadStaffOwners(orgId);
   const staffIds = new Set(staff.map((s) => s.id));
-  const contactIds = new Set(attendees.map((c) => c.id));
 
-  const toCreate: Array<{
-    text: string;
-    ownerUserId: string | null;
-    ownerContactId: string | null;
-  }> = [];
+  // The contacts we need to validate are only those the client actually
+  // attributed items to — gather them up front so the pool query is bounded by
+  // the items being saved, not the size of the whole network.
+  const candidateContactIds = new Set<string>();
   for (const row of rows) {
     if (typeof row !== "object" || row === null) continue;
     const r = row as Record<string, unknown>;
-    const text = typeof r.text === "string" ? r.text.trim() : "";
-    const ownerKind = r.ownerKind;
-    const ownerId = typeof r.ownerId === "string" ? r.ownerId : "";
-    if (text === "") continue;
-    if (ownerKind === "staff" && staffIds.has(ownerId))
-      toCreate.push({ text, ownerUserId: ownerId, ownerContactId: null });
-    else if (ownerKind === "contact" && contactIds.has(ownerId))
-      toCreate.push({ text, ownerUserId: null, ownerContactId: ownerId });
-    // Rows with an unresolved/foreign owner are rejected — the XOR CHECK needs
-    // exactly one valid owner, so we drop them rather than guess.
+    if (r.ownerKind === "contact" && typeof r.ownerId === "string")
+      candidateContactIds.add(r.ownerId);
   }
-  if (toCreate.length === 0) return;
 
   await withOrg(orgId, async (tx) => {
+    // Confirm each attributed contact is in the network (RLS scopes this to the
+    // org). Any network contact is allowed, not just the meeting's attendees —
+    // that widening is the cross-attribution seam: a mentioned but absent member
+    // can own the item.
+    const contactRows =
+      candidateContactIds.size > 0
+        ? await tx.contact.findMany({
+            where: { id: { in: [...candidateContactIds] } },
+            select: { id: true },
+          })
+        : [];
+    const contactIds = new Set(contactRows.map((c) => c.id));
+
+    const toCreate: Array<{
+      text: string;
+      ownerUserId: string | null;
+      ownerContactId: string | null;
+    }> = [];
+    for (const row of rows) {
+      if (typeof row !== "object" || row === null) continue;
+      const r = row as Record<string, unknown>;
+      const text = typeof r.text === "string" ? r.text.trim() : "";
+      const ownerKind = r.ownerKind;
+      const ownerId = typeof r.ownerId === "string" ? r.ownerId : "";
+      if (text === "") continue;
+      if (ownerKind === "staff" && staffIds.has(ownerId))
+        toCreate.push({ text, ownerUserId: ownerId, ownerContactId: null });
+      else if (ownerKind === "contact" && contactIds.has(ownerId))
+        toCreate.push({ text, ownerUserId: null, ownerContactId: ownerId });
+      // Rows with an unresolved/foreign owner are rejected — the XOR CHECK needs
+      // exactly one valid owner, so we drop them rather than guess.
+    }
+    if (toCreate.length === 0) return;
+
     // Re-verify the meeting belongs to THIS org before linking rows to it.
     // action_items.meeting_id is a single-column FK to meetings(id) — RLS
     // WITH CHECK only guards our own org_id, so without this a crafted request

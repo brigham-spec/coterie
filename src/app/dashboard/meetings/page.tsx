@@ -212,6 +212,15 @@ export default async function MeetingsPage({
             </Card>
           ) : (
             visible.map(({ meeting, view }) => {
+              // Cross-attribution pool (Meet 12): every network contact who
+              // wasn't at this meeting, offered as an owner so an item mentioning
+              // an absent member can be attributed to them.
+              const attendeeIds = new Set(
+                meeting.attendees.map((a) => a.contactId),
+              );
+              const networkOptions = contactOptions.filter(
+                (c) => !attendeeIds.has(c.id),
+              );
               return (
                 // id anchors this card so deep links (e.g. the Commitments "Scan"
                 // button) can jump straight to it; scroll-mt keeps it clear of
@@ -308,6 +317,7 @@ export default async function MeetingsPage({
                           id: a.contactId,
                           name: a.contact.name,
                         }))}
+                        networkOptions={networkOptions}
                         items={meeting.actionItems.map((it) => ({
                           id: it.id,
                           text: it.text,
