@@ -4,6 +4,13 @@ import { useState } from "react";
 
 import { Button, Card, CardHeader, Field, Textarea } from "@/components/ui";
 
+import {
+  MeetingActionItems,
+  type NetworkOption,
+  type OwnerOption,
+  type PersistedItem,
+} from "../../meetings/_action-items";
+
 import { logMeeting, deleteMeeting } from "./actions";
 
 // Interactive meetings (profile-parity port of the prototype's "Log Meeting").
@@ -36,16 +43,23 @@ export type MeetingRow = {
   location: string | null;
   isManual: boolean;
   attendeeNames: string[];
+  // All matched attendees (any company) — owner candidates for action items.
+  attendees: OwnerOption[];
+  actionItems: PersistedItem[];
 };
 
 export function MeetingsCard({
   companyId,
   meetings,
   contacts,
+  staff,
+  networkContacts,
 }: {
   companyId: string;
   meetings: MeetingRow[];
   contacts: Contact[];
+  staff: OwnerOption[];
+  networkContacts: NetworkOption[];
 }) {
   const [adding, setAdding] = useState(false);
   const canLog = contacts.length > 0;
@@ -86,7 +100,13 @@ export function MeetingsCard({
       ) : (
         <ul className="divide-y divide-line">
           {meetings.map((m) => (
-            <MeetingItem key={m.id} companyId={companyId} meeting={m} />
+            <MeetingItem
+              key={m.id}
+              companyId={companyId}
+              meeting={m}
+              staff={staff}
+              networkContacts={networkContacts}
+            />
           ))}
         </ul>
       )}
@@ -97,10 +117,19 @@ export function MeetingsCard({
 function MeetingItem({
   companyId,
   meeting,
+  staff,
+  networkContacts,
 }: {
   companyId: string;
   meeting: MeetingRow;
+  staff: OwnerOption[];
+  networkContacts: NetworkOption[];
 }) {
+  // Cross-attribution pool for this meeting: every network contact who wasn't a
+  // matched attendee, so an item mentioning an absent member can be owned by them.
+  const attendeeIds = new Set(meeting.attendees.map((a) => a.id));
+  const networkOptions = networkContacts.filter((c) => !attendeeIds.has(c.id));
+
   return (
     <li className="flex flex-col gap-1.5 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -134,6 +163,14 @@ function MeetingItem({
       {meeting.summary ? (
         <p className="text-xs whitespace-pre-wrap text-ink-2">{meeting.summary}</p>
       ) : null}
+
+      <MeetingActionItems
+        meetingId={meeting.id}
+        staffOptions={staff}
+        attendeeOptions={meeting.attendees}
+        networkOptions={networkOptions}
+        items={meeting.actionItems}
+      />
     </li>
   );
 }

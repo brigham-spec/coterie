@@ -328,6 +328,10 @@ export async function saveActionItems(formData: FormData): Promise<void> {
     });
   });
   revalidatePath("/dashboard/meetings");
+  // The same meeting (and any cross-attributed contact's) action items surface
+  // on the company profile too — bust every profile instance since this action
+  // isn't scoped to one company.
+  revalidatePath("/dashboard/companies/[id]", "page");
 }
 
 // Advance an item's lifecycle. Bounded to the three valid states; RLS scopes the
@@ -345,6 +349,7 @@ export async function updateActionItemStatus(formData: FormData): Promise<void> 
     tx.actionItem.updateMany({ where: { id }, data: { status } }),
   );
   revalidatePath("/dashboard/meetings");
+  revalidatePath("/dashboard/companies/[id]", "page");
 }
 
 export async function deleteActionItem(formData: FormData): Promise<void> {
@@ -357,4 +362,5 @@ export async function deleteActionItem(formData: FormData): Promise<void> {
     tx.actionItem.deleteMany({ where: { id } }),
   );
   revalidatePath("/dashboard/meetings");
+  revalidatePath("/dashboard/companies/[id]", "page");
 }

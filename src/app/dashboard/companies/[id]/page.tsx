@@ -97,6 +97,7 @@ export default async function CompanyDetailPage({
     linkOptions,
     referralOptions,
     projects,
+    networkContacts,
   } = await withOrg(ctx.orgId, async (tx) => {
       const company = await tx.company.findUnique({
         where: { id },
@@ -132,6 +133,7 @@ export default async function CompanyDetailPage({
           linkOptions: [],
           referralOptions: [],
           projects: [],
+          networkContacts: [],
         };
       }
       // In-network companies offered in the Referred-by picker — this tenant's
@@ -172,6 +174,9 @@ export default async function CompanyDetailPage({
       // Fireflies-evidenced stage advances awaiting confirmation for this company.
       const pendingIntros = await loadPendingIntroDetections(tx, id);
       // Meetings any of this company's contacts attended (deduped by meeting).
+      // Load ALL matched attendees (not just this company's) so the per-meeting
+      // action-item picker can attribute an item to anyone who was in the room,
+      // plus the meeting's persisted action items to render the extract UI.
       const meetings = contactIds.length
         ? await tx.meeting.findMany({
             where: { attendees: { some: { contactId: { in: contactIds } } } },
@@ -185,8 +190,20 @@ export default async function CompanyDetailPage({
               location: true,
               firefliesId: true,
               attendees: {
-                where: { contactId: { in: contactIds } },
-                select: { contact: { select: { name: true } } },
+                select: {
+                  contactId: true,
+                  contact: { select: { name: true } },
+                },
+              },
+              actionItems: {
+                orderBy: { createdAt: "asc" },
+                select: {
+                  id: true,
+                  text: true,
+                  status: true,
+                  ownerUser: { select: { name: true } },
+                  ownerContact: { select: { name: true } },
+                },
               },
             },
           })
@@ -263,6 +280,13 @@ export default async function CompanyDetailPage({
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       });
+      // Every network contact — the cross-attribution pool for meeting action
+      // items (an item can be owned by a member who wasn't at that meeting, then
+      // surfaces on their own profile). Carries the company for the picker label.
+      const networkContacts = await tx.contact.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, company: { select: { name: true } } },
+      });
       // Lifecycle transitions for the relationship timeline (P1). Ordered here
       // for the query; buildRelationshipTimeline re-sorts the merged set.
       const activities = await tx.activity.findMany({
@@ -312,13 +336,17 @@ export default async function CompanyDetailPage({
         linkOptions,
         referralOptions,
         projects,
+        networkContacts,
       };
     });
 
   if (company == null) notFound();
 
   // Shape meetings for the interactive card (a manual meeting — firefliesId
-  // null — is removable; synced ones are read-only here).
+  // null — is removable; synced ones are read-only here). attendeeNames is
+  // scoped to this company's people (the meta line), while attendees carries
+  // every matched attendee for the action-item owner picker.
+  const contactIdSet = new Set(company.contacts.map((c) => c.id));
   const meetingRows = meetings.map((m) => ({
     id: m.id,
     title: m.title,
@@ -327,7 +355,27 @@ export default async function CompanyDetailPage({
     durationMinutes: m.durationMinutes,
     location: m.location,
     isManual: m.firefliesId == null,
-    attendeeNames: m.attendees.map((a) => a.contact.name),
+    attendeeNames: m.attendees
+      .filter((a) => contactIdSet.has(a.contactId))
+      .map((a) => a.contact.name),
+    attendees: m.attendees.map((a) => ({
+      id: a.contactId,
+      name: a.contact.name,
+    })),
+    actionItems: m.actionItems.map((it) => ({
+      id: it.id,
+      text: it.text,
+      status: it.status,
+      owner: it.ownerUser?.name ?? it.ownerContact?.name ?? "—",
+    })),
+  }));
+
+  // Cross-attribution owner pool for meeting action items (all network contacts,
+  // labelled by company); each meeting card filters out its own attendees.
+  const networkOptions = networkContacts.map((c) => ({
+    id: c.id,
+    name: c.name,
+    company: c.company.name,
   }));
 
   // Shape correspondence for the interactive card (manual rows — keyed manual:… —
@@ -706,6 +754,8 @@ export default async function CompanyDetailPage({
         companyId={company.id}
         meetings={meetingRows}
         contacts={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
+        staff={staff}
+        networkContacts={networkOptions}
       />
 
       <EmailCorrespondence companyId={company.id} messages={emailRows} />
