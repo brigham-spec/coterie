@@ -91,6 +91,13 @@ export default async function IntroductionsPage({
   // Validated against the loaded contact pool below before they seed the form.
   const rawDraftA = one(sp.draftA);
   const rawDraftB = one(sp.draftB);
+  // Commitment cross-links (Commitments item 6): jump here prefilled to act on an
+  // outstanding follow-up. `member` seeds the engine's member mode + auto-runs;
+  // `logA` / `logText` seed Party A + the headline on the log form. All validated
+  // against the loaded pools below.
+  const rawMember = one(sp.member);
+  const rawLogA = one(sp.logA);
+  const rawLogText = one(sp.logText);
 
   // Sequential reads: one pooled connection per tx, so no concurrent queries.
   const {
@@ -227,6 +234,14 @@ export default async function IntroductionsPage({
   const prefillB =
     hasContact(rawDraftB) && rawDraftB !== prefillA ? rawDraftB : "";
 
+  // Commitment cross-link prefills, validated against the same pools the forms
+  // render from (a stale or forged id simply falls back to no prefill).
+  const initialMemberId = engineMembers.some((m) => m.id === rawMember)
+    ? rawMember
+    : "";
+  const logPartyA = hasContact(rawLogA) ? rawLogA : "";
+  const logHeadline = logPartyA ? rawLogText.slice(0, 200) : "";
+
   return (
     <div className="mx-auto w-full max-w-5xl">
       <div className="mb-6">
@@ -299,11 +314,14 @@ export default async function IntroductionsPage({
       </div>
 
       {/* The three matching modes over the network's own reasoning. */}
-      <IntroEngine
-        members={engineMembers}
-        projects={engineProjects}
-        hostName={ctx.userName}
-      />
+      <div id="engine" className="scroll-mt-4">
+        <IntroEngine
+          members={engineMembers}
+          projects={engineProjects}
+          hostName={ctx.userName}
+          initialMemberId={initialMemberId}
+        />
+      </div>
 
       {contacts.length < 2 ? (
         <Card>
@@ -330,97 +348,101 @@ export default async function IntroductionsPage({
               prefillB={prefillB}
             />
           </div>
-          <Card>
-            <CardHeader title="Log an introduction" />
-            <form
-              action={createIntroduction}
-              className="grid grid-cols-2 gap-4 p-4"
-            >
-              <SelectField
-                name="partyAContactId"
-                label="Party A"
-                defaultValue=""
-                required
+          <div id="log-intro" className="scroll-mt-4">
+            <Card>
+              <CardHeader title="Log an introduction" />
+              <form
+                key={`${logPartyA}:${logHeadline}`}
+                action={createIntroduction}
+                className="grid grid-cols-2 gap-4 p-4"
               >
-                <option value="" disabled>
-                  Select a contact…
-                </option>
-                {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} · {c.company.name}
+                <SelectField
+                  name="partyAContactId"
+                  label="Party A"
+                  defaultValue={logPartyA}
+                  required
+                >
+                  <option value="" disabled>
+                    Select a contact…
                   </option>
-                ))}
-              </SelectField>
-              <SelectField
-                name="partyBContactId"
-                label="Party B"
-                defaultValue=""
-                required
-              >
-                <option value="" disabled>
-                  Select a contact…
-                </option>
-                {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} · {c.company.name}
+                  {contacts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} · {c.company.name}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  name="partyBContactId"
+                  label="Party B"
+                  defaultValue=""
+                  required
+                >
+                  <option value="" disabled>
+                    Select a contact…
                   </option>
-                ))}
-              </SelectField>
-              <SelectField name="status" label="Status" defaultValue="suggested">
-                {createStatusOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </SelectField>
-              <SelectField
-                name="projectId"
-                label="Project (optional)"
-                defaultValue=""
-              >
-                <option value="">None</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </SelectField>
-              <SelectField
-                name="connectionType"
-                label="Connection type (optional)"
-                defaultValue=""
-              >
-                <option value="">Unspecified</option>
-                {INTRO_CONNECTION_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </SelectField>
-              <Field name="madeOn" label="Made on (optional)" type="date" />
-              <div className="col-span-2">
-                <Field
-                  name="headline"
-                  label="Headline (optional)"
-                  placeholder="e.g. James needs IDA support — Dan is the right connection"
-                  maxLength={200}
-                />
-              </div>
-              <div className="col-span-2">
-                <Textarea
-                  name="notes"
-                  label="Notes (optional)"
-                  maxLength={1000}
-                  rows={2}
-                />
-              </div>
-              <div className="col-span-2 flex justify-end">
-                <Button type="submit" variant="primary">
-                  Record introduction
-                </Button>
-              </div>
-            </form>
-          </Card>
+                  {contacts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} · {c.company.name}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField name="status" label="Status" defaultValue="suggested">
+                  {createStatusOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  name="projectId"
+                  label="Project (optional)"
+                  defaultValue=""
+                >
+                  <option value="">None</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  name="connectionType"
+                  label="Connection type (optional)"
+                  defaultValue=""
+                >
+                  <option value="">Unspecified</option>
+                  {INTRO_CONNECTION_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </SelectField>
+                <Field name="madeOn" label="Made on (optional)" type="date" />
+                <div className="col-span-2">
+                  <Field
+                    name="headline"
+                    label="Headline (optional)"
+                    placeholder="e.g. James needs IDA support — Dan is the right connection"
+                    maxLength={200}
+                    defaultValue={logHeadline}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <Textarea
+                    name="notes"
+                    label="Notes (optional)"
+                    maxLength={1000}
+                    rows={2}
+                  />
+                </div>
+                <div className="col-span-2 flex justify-end">
+                  <Button type="submit" variant="primary">
+                    Record introduction
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          </div>
         </>
       )}
 

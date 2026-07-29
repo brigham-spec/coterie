@@ -24,7 +24,7 @@ const EXAMPLES = [
   "Who can help with land use permitting?",
 ];
 
-export function NetworkSearch() {
+export function NetworkSearch({ initialQuery = "" }: { initialQuery?: string }) {
   const [state, formAction, isPending] = useActionState(
     searchNetwork,
     initialState,
@@ -44,6 +44,7 @@ export function NetworkSearch() {
             name="query"
             rows={2}
             required
+            defaultValue={initialQuery}
             disabled={isPending}
             placeholder="e.g. Who has experience with adaptive-reuse projects in Newburgh?"
             className="w-full resize-none rounded-sm border border-line-2 bg-surface px-3 py-2 text-xs text-ink outline-none focus:border-gold-line disabled:opacity-50"

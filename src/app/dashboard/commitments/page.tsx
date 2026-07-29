@@ -71,7 +71,11 @@ export default async function CommitmentsPage({
     dueDate: true,
     ownerUser: { select: { id: true, name: true } },
     ownerContact: {
-      select: { name: true, company: { select: { name: true } } },
+      select: {
+        id: true,
+        name: true,
+        company: { select: { id: true, name: true } },
+      },
     },
     meeting: { select: { title: true } },
   } as const;
@@ -228,6 +232,19 @@ function toRow(c: Commitment): CommitmentRowData {
     dueTitle = dateFmt.format(c.dueDate);
   }
 
+  // Cross-links (parity: 13157) — jump from a commitment to the surfaces that
+  // help you act on it, prefilled via the URL (URLSearchParams to match the
+  // introductions ledger's draft-email link). Search always applies; the intro
+  // links only make sense for a "they owe" item that carries a contact/company.
+  const searchQuery = c.companyName ? `For ${c.companyName}: ${c.text}` : c.text;
+  const searchHref = `/dashboard/network-search?${new URLSearchParams({ q: searchQuery })}`;
+  const connectHref = c.companyId
+    ? `/dashboard/introductions?${new URLSearchParams({ member: c.companyId })}#engine`
+    : null;
+  const logIntroHref = c.contactId
+    ? `/dashboard/introductions?${new URLSearchParams({ logA: c.contactId, logText: c.text })}#log-intro`
+    : null;
+
   return {
     id: c.id,
     text: c.text,
@@ -236,6 +253,9 @@ function toRow(c: Commitment): CommitmentRowData {
     dueOverdue,
     dueTitle,
     dueDateInput: c.dueDate ? c.dueDate.toISOString().slice(0, 10) : "",
+    searchHref,
+    connectHref,
+    logIntroHref,
   };
 }
 

@@ -40,7 +40,11 @@ function contactItem(over: Partial<RawCommitment>): RawCommitment {
     status: over.status ?? "open",
     dueDate: over.dueDate ?? null,
     ownerUser: null,
-    ownerContact: { name: "Guest", company: { name: "Acme" } },
+    ownerContact: {
+      id: over.id ?? "c",
+      name: "Guest",
+      company: { id: "acme", name: "Acme" },
+    },
     meeting: over.meeting ?? null,
   };
 }
@@ -82,6 +86,11 @@ describe("shapeCommitments", () => {
     expect(byId.s.ownerId).toBe("u9");
     expect(byId.c.ownerId).toBeNull();
     expect(byId.c.companyName).toBe("Acme");
+    // They-owe carries the contact/company ids (the cross-link targets); we-owe null.
+    expect(byId.c.contactId).toBe("c");
+    expect(byId.c.companyId).toBe("acme");
+    expect(byId.s.contactId).toBeNull();
+    expect(byId.s.companyId).toBeNull();
   });
 
   test("normalizes an out-of-vocab status to open and skips owner-less rows", () => {

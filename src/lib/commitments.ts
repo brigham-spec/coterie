@@ -41,7 +41,7 @@ export interface RawCommitment {
   status: string;
   dueDate: Date | null;
   ownerUser: { id: string; name: string } | null;
-  ownerContact: { name: string; company: { name: string } } | null;
+  ownerContact: { id: string; name: string; company: { id: string; name: string } } | null;
   meeting: { title: string } | null;
 }
 
@@ -55,8 +55,14 @@ export interface Commitment {
   /// owner filter chips); null for "they owe".
   ownerId: string | null;
   ownerName: string;
-  /// The contact's company for a "they owe" item; null for "we owe".
+  /// The owing contact's id for a "they owe" item (drives the per-commitment
+  /// cross-links to the intro surface); null for "we owe".
+  contactId: string | null;
+  /// The contact's company name for a "they owe" item; null for "we owe".
   companyName: string | null;
+  /// The contact's company id for a "they owe" item (drives the Connections
+  /// cross-link into the intro engine); null for "we owe".
+  companyId: string | null;
   meetingTitle: string | null;
   dueDate: Date | null;
   /// Signed days until due: negative = overdue, 0 = due today, positive = upcoming,
@@ -154,7 +160,9 @@ export function shapeCommitments(rows: RawCommitment[], now: Date): Commitment[]
         side: "we_owe",
         ownerId: row.ownerUser.id,
         ownerName: row.ownerUser.name,
+        contactId: null,
         companyName: null,
+        companyId: null,
       });
     } else if (row.ownerContact !== null) {
       out.push({
@@ -162,7 +170,9 @@ export function shapeCommitments(rows: RawCommitment[], now: Date): Commitment[]
         side: "they_owe",
         ownerId: null,
         ownerName: row.ownerContact.name,
+        contactId: row.ownerContact.id,
         companyName: row.ownerContact.company.name,
+        companyId: row.ownerContact.company.id,
       });
     }
   }

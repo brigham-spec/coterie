@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui";
@@ -19,6 +20,11 @@ export interface CommitmentRowData {
   dueOverdue: boolean;
   dueTitle: string;
   dueDateInput: string;
+  // Cross-links (parity: 13157) prefilled via the URL. Search always applies;
+  // the intro links are null unless the item carries a contact/company.
+  searchHref: string;
+  connectHref: string | null;
+  logIntroHref: string | null;
 }
 
 export function CommitmentRow({
@@ -74,6 +80,17 @@ export function CommitmentRow({
           {c.text}
         </div>
         <div className="mt-0.5 text-[10px] text-ink-3">{c.meta}</div>
+        {!completed ? (
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+            <CrossLink href={c.searchHref}>Search network</CrossLink>
+            {c.connectHref ? (
+              <CrossLink href={c.connectHref}>Connections</CrossLink>
+            ) : null}
+            {c.logIntroHref ? (
+              <CrossLink href={c.logIntroHref}>Log intro</CrossLink>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <span
         className={`flex-shrink-0 self-center text-right text-[10px] whitespace-nowrap ${
@@ -111,5 +128,16 @@ export function CommitmentRow({
         )}
       </div>
     </li>
+  );
+}
+
+function CrossLink({ href, children }: { href: string; children: string }) {
+  return (
+    <Link
+      href={href}
+      className="text-[10px] font-medium text-ink-3 underline-offset-2 hover:text-gold-ink hover:underline"
+    >
+      {children}
+    </Link>
   );
 }

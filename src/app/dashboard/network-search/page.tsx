@@ -7,14 +7,20 @@ import { NetworkSearch } from "./_search";
 // searchNetwork server action (so the Anthropic key never crosses to the browser),
 // driven by the client component below.
 
-export default function NetworkSearchPage() {
+export default async function NetworkSearchPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
+  const q = typeof sp.q === "string" ? sp.q : "";
   return (
     <div className="mx-auto w-full max-w-4xl">
       <PageTitle
         title="Network Search"
         subtitle="Ask anything about your network in plain English."
       />
-      <NetworkSearch />
+      <NetworkSearch initialQuery={q} />
     </div>
   );
 }

@@ -82,10 +82,13 @@ export function IntroEngine({
   members,
   projects,
   hostName,
+  initialMemberId = "",
 }: {
   members: EngineMember[];
   projects: EngineProject[];
   hostName: string;
+  // A company id to focus in member mode on mount (Commitments item 6 cross-link).
+  initialMemberId?: string;
 }) {
   const [mode, setMode] = useState<Mode>("member");
   const active = MODES.find((m) => m.key === mode) ?? MODES[0];
@@ -117,7 +120,11 @@ export function IntroEngine({
         <p className="mb-4 text-[11px] text-ink-3">{active.blurb}</p>
 
         {mode === "member" ? (
-          <MemberMode members={members} hostName={hostName} />
+          <MemberMode
+            members={members}
+            hostName={hostName}
+            initialFocusId={initialMemberId}
+          />
         ) : mode === "catalyst" ? (
           <CatalystMode projects={projects} />
         ) : (
@@ -285,12 +292,18 @@ export function UrgentSignalsPanel({
 function MemberMode({
   members,
   hostName,
+  initialFocusId = "",
 }: {
   members: EngineMember[];
   hostName: string;
+  initialFocusId?: string;
 }) {
   const [query, setQuery] = useState("");
-  const [focusId, setFocusId] = useState<string | null>(null);
+  // Seed the focus from the URL cross-link (Commitments item 6) when it names a
+  // member actually in the pool, so the panel opens already pointed at them.
+  const [focusId, setFocusId] = useState<string | null>(() =>
+    members.some((m) => m.id === initialFocusId) ? initialFocusId : null,
+  );
   const [result, setResult] = useState<IntroSuggestState>({ status: "idle" });
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [pending, startTransition] = useTransition();
@@ -321,6 +334,23 @@ function MemberMode({
       setResult(await suggestIntros({ status: "idle" }, fd));
     });
   }
+
+  // Auto-scan the URL-seeded focus once on mount (Commitments item 6 cross-link).
+  // The focus itself is already seeded above; here we only fire the async scan
+  // (state lands inside the transition, never synchronously in the effect body).
+  // Ref-guarded so React's dev double-invoke can't double-fire the AI call.
+  const autoScanned = useRef(false);
+  useEffect(() => {
+    if (autoScanned.current || focusId === null) return;
+    autoScanned.current = true;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("companyId", focusId);
+      setResult(await suggestIntros({ status: "idle" }, fd));
+    });
+    // Mount-only: fire for the initially-seeded focus, not on later user clicks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function dismiss(candidateId: string) {
     if (focusId == null) return;
