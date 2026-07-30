@@ -54,6 +54,7 @@ import {
   type IntroSuggestion,
 } from "@/lib/intro-engine";
 import { introProfileInclude, toIntroProfile } from "@/lib/intro-profile";
+import { revalidateActionItemSurfaces } from "@/lib/revalidate";
 import {
   buildMeetingIntelContext,
   meetingIntelCutoff,
@@ -2274,12 +2275,6 @@ export async function changeCompanyStatus(formData: FormData): Promise<void> {
 // manual "we owe" item (staff owner, no meeting/project) still surfaces here.
 // All writes run withOrg so RLS scopes them; a foreign id matches no row.
 
-function revalidateCommitment(companyId: string): void {
-  revalidatePath(`/dashboard/companies/${companyId}`);
-  revalidatePath("/dashboard/commitments");
-  revalidatePath("/dashboard");
-}
-
 export async function addCommitment(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();
 
@@ -2349,7 +2344,7 @@ export async function addCommitment(formData: FormData): Promise<void> {
     });
   });
 
-  revalidateCommitment(companyId);
+  revalidateActionItemSurfaces();
 }
 
 export async function updateCommitmentStatus(formData: FormData): Promise<void> {
@@ -2365,7 +2360,7 @@ export async function updateCommitmentStatus(formData: FormData): Promise<void> 
   await withOrg(orgId, (tx) =>
     tx.actionItem.updateMany({ where: { id }, data: { status } }),
   );
-  revalidateCommitment(companyId);
+  revalidateActionItemSurfaces();
 }
 
 export async function editCommitment(formData: FormData): Promise<void> {
@@ -2383,7 +2378,7 @@ export async function editCommitment(formData: FormData): Promise<void> {
   await withOrg(orgId, (tx) =>
     tx.actionItem.updateMany({ where: { id }, data: { text, dueDate } }),
   );
-  revalidateCommitment(companyId);
+  revalidateActionItemSurfaces();
 }
 
 export async function deleteCommitment(formData: FormData): Promise<void> {
@@ -2394,7 +2389,7 @@ export async function deleteCommitment(formData: FormData): Promise<void> {
   if (!id || !companyId) throw new Error("commitment and company are required");
 
   await withOrg(orgId, (tx) => tx.actionItem.deleteMany({ where: { id } }));
-  revalidateCommitment(companyId);
+  revalidateActionItemSurfaces();
 }
 
 // ── Meetings (manual logging on the company profile) ────────────────────────

@@ -34,10 +34,13 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
+// dueOn/issuedOn/receivedOn are all @db.Date at UTC midnight — pin to UTC so the
+// day matches the invoice list and revenue pages (review M3).
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "short",
   day: "numeric",
+  timeZone: "UTC",
 });
 
 export default async function InvoiceDetailPage({

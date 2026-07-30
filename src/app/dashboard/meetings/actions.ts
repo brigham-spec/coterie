@@ -6,6 +6,7 @@ import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { optionalDate } from "@/lib/form-fields";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
+import { revalidateActionItemSurfaces } from "@/lib/revalidate";
 import { prisma } from "@/lib/prisma";
 import { storeCredential, deleteCredential } from "@/lib/integrations";
 import { inngest } from "@/lib/inngest";
@@ -327,11 +328,7 @@ export async function saveActionItems(formData: FormData): Promise<void> {
       data: toCreate.map((c) => ({ orgId, meetingId, ...c })),
     });
   });
-  revalidatePath("/dashboard/meetings");
-  // The same meeting (and any cross-attributed contact's) action items surface
-  // on the company profile too — bust every profile instance since this action
-  // isn't scoped to one company.
-  revalidatePath("/dashboard/companies/[id]", "page");
+  revalidateActionItemSurfaces();
 }
 
 // Advance an item's lifecycle. Bounded to the three valid states; RLS scopes the
@@ -348,8 +345,7 @@ export async function updateActionItemStatus(formData: FormData): Promise<void> 
   await withOrg(orgId, (tx) =>
     tx.actionItem.updateMany({ where: { id }, data: { status } }),
   );
-  revalidatePath("/dashboard/meetings");
-  revalidatePath("/dashboard/companies/[id]", "page");
+  revalidateActionItemSurfaces();
 }
 
 export async function deleteActionItem(formData: FormData): Promise<void> {
@@ -361,6 +357,5 @@ export async function deleteActionItem(formData: FormData): Promise<void> {
   await withOrg(orgId, (tx) =>
     tx.actionItem.deleteMany({ where: { id } }),
   );
-  revalidatePath("/dashboard/meetings");
-  revalidatePath("/dashboard/companies/[id]", "page");
+  revalidateActionItemSurfaces();
 }

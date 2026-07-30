@@ -35,10 +35,13 @@ function money(n: number): string {
   return dollars.format(n);
 }
 
+// dueOn is a @db.Date at UTC midnight — pin to UTC so the overdue-list day
+// matches the invoices pages (review M3).
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
   year: "numeric",
+  timeZone: "UTC",
 });
 
 function loadRevenueData(orgId: string) {
@@ -154,7 +157,7 @@ export default async function RevenuePage() {
         <Metric
           label="Full-year target"
           value={money(s.fullYearTarget)}
-          note={`${now.getFullYear()} scheduled dues`}
+          note={`${now.getUTCFullYear()} scheduled dues`}
         />
       </div>
 

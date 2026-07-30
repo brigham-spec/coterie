@@ -53,9 +53,18 @@ const COLD_DEFAULT = 45;
 export default async function DashboardPage() {
   const ctx = await requireOrgContext();
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const startMonthAfter = new Date(now.getFullYear(), now.getMonth() + 2, 1);
+  // dueOn is a @db.Date at UTC midnight, so these revenue-bucket boundaries are
+  // built in the UTC calendar too (review M2); the day-window anchors below are
+  // instant deltas against Timestamptz columns and stay wall-clock.
+  const startOfToday = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  const startNextMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+  );
+  const startMonthAfter = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 1),
+  );
   const d30 = new Date(now.getTime() - 30 * DAY);
   const d60 = new Date(now.getTime() - 60 * DAY);
 

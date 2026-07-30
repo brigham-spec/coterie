@@ -8,8 +8,12 @@ import {
 } from "@/lib/revenue";
 
 // Pure-logic tests for the revenue rollup. NOW is fixed mid-2026 so calendar
-// boundaries (year / this-month / next-month / quarter) are unambiguous.
-const NOW = new Date(2026, 6, 15); // 15 Jul 2026 (month index 6 = Q3)
+// boundaries (year / this-month / next-month / quarter) are unambiguous. Fixtures
+// build dates at UTC midnight — the same way Prisma delivers a @db.Date — so the
+// boundary assertions are timezone-independent (the rollup buckets in the UTC
+// calendar; local-time fixtures would only pass on a UTC/western test runner).
+const utc = (y: number, m: number, d: number): Date => new Date(Date.UTC(y, m, d));
+const NOW = utc(2026, 6, 15); // 15 Jul 2026 UTC (month index 6 = Q3)
 
 function inv(over: Partial<RevenueInvoice>): RevenueInvoice {
   return {
@@ -27,13 +31,13 @@ describe("computeRevenueSummary — collection + past due", () => {
   test("YTD collection rate caps collected at face value and excludes void", () => {
     const invoices: RevenueInvoice[] = [
       // Fully paid, due earlier this year → scheduled + collected.
-      inv({ id: "a", amount: 1000, paid: 1000, dueOn: new Date(2026, 2, 1) }),
+      inv({ id: "a", amount: 1000, paid: 1000, dueOn: utc(2026, 2, 1) }),
       // Overpaid, due earlier this year → collected capped at amount.
-      inv({ id: "b", amount: 1000, paid: 1500, dueOn: new Date(2026, 3, 1) }),
+      inv({ id: "b", amount: 1000, paid: 1500, dueOn: utc(2026, 3, 1) }),
       // Unpaid, due before today → scheduled but not collected, and past due.
-      inv({ id: "c", amount: 500, paid: 0, dueOn: new Date(2026, 4, 1) }),
+      inv({ id: "c", amount: 500, paid: 0, dueOn: utc(2026, 4, 1) }),
       // Void, due before today → ignored everywhere.
-      inv({ id: "d", amount: 9999, paid: 0, dueOn: new Date(2026, 1, 1), void: true }),
+      inv({ id: "d", amount: 9999, paid: 0, dueOn: utc(2026, 1, 1), void: true }),
     ];
     const s = computeRevenueSummary(invoices, [], [], NOW);
     expect(s.ytdScheduled).toBe(2500);
@@ -52,8 +56,8 @@ describe("computeRevenueSummary — collection + past due", () => {
 
   test("overdue is sorted oldest-first", () => {
     const invoices = [
-      inv({ id: "new", amount: 100, dueOn: new Date(2026, 5, 1) }),
-      inv({ id: "old", amount: 100, dueOn: new Date(2026, 0, 1) }),
+      inv({ id: "new", amount: 100, dueOn: utc(2026, 5, 1) }),
+      inv({ id: "old", amount: 100, dueOn: utc(2026, 0, 1) }),
     ];
     const s = computeRevenueSummary(invoices, [], [], NOW);
     expect(s.overdue.map((o) => o.id)).toEqual(["old", "new"]);
@@ -63,9 +67,9 @@ describe("computeRevenueSummary — collection + past due", () => {
 describe("computeRevenueSummary — this/next month + target", () => {
   test("buckets dues into this month, next month, and the full-year target", () => {
     const invoices = [
-      inv({ id: "tm", amount: 300, paid: 100, dueOn: new Date(2026, 6, 20) }), // Jul
-      inv({ id: "nm", amount: 400, dueOn: new Date(2026, 7, 5) }), // Aug
-      inv({ id: "ny", amount: 999, dueOn: new Date(2027, 0, 5) }), // next year
+      inv({ id: "tm", amount: 300, paid: 100, dueOn: utc(2026, 6, 20) }), // Jul
+      inv({ id: "nm", amount: 400, dueOn: utc(2026, 7, 5) }), // Aug
+      inv({ id: "ny", amount: 999, dueOn: utc(2027, 0, 5) }), // next year
     ];
     const s = computeRevenueSummary(invoices, [], [], NOW);
     expect(s.dueThisMonthTotal).toBe(300);
@@ -110,10 +114,10 @@ describe("computeRevenueSummary — ARR + tiers + member bars", () => {
 describe("computeRevenueSummary — months + quarters", () => {
   test("months and quarters bucket non-void dues chronologically with phase", () => {
     const invoices = [
-      inv({ id: "q1", amount: 100, dueOn: new Date(2026, 1, 1) }), // Feb → Q1 past
-      inv({ id: "q3a", amount: 200, dueOn: new Date(2026, 6, 1) }), // Jul → Q3 current
-      inv({ id: "q3b", amount: 50, dueOn: new Date(2026, 8, 1) }), // Sep → Q3 current
-      inv({ id: "q4", amount: 300, dueOn: new Date(2026, 10, 1) }), // Nov → Q4 projected
+      inv({ id: "q1", amount: 100, dueOn: utc(2026, 1, 1) }), // Feb → Q1 past
+      inv({ id: "q3a", amount: 200, dueOn: utc(2026, 6, 1) }), // Jul → Q3 current
+      inv({ id: "q3b", amount: 50, dueOn: utc(2026, 8, 1) }), // Sep → Q3 current
+      inv({ id: "q4", amount: 300, dueOn: utc(2026, 10, 1) }), // Nov → Q4 projected
     ];
     const s = computeRevenueSummary(invoices, [], [], NOW);
     expect(s.months.map((m) => m.label)).toEqual([
@@ -133,11 +137,11 @@ describe("computeRevenueSummary — months + quarters", () => {
 describe("computeRevenueSummary — proposal pipeline", () => {
   test("splits won ARR from open pipeline and flags stale open proposals", () => {
     const proposals: RevenueProposal[] = [
-      { amount: 50000, status: "won", lastActivityAt: new Date(2026, 5, 1) },
-      { amount: 20000, status: "sent", lastActivityAt: new Date(2026, 6, 14) }, // fresh
-      { amount: 30000, status: "negotiating", lastActivityAt: new Date(2026, 5, 1) }, // stale
+      { amount: 50000, status: "won", lastActivityAt: utc(2026, 5, 1) },
+      { amount: 20000, status: "sent", lastActivityAt: utc(2026, 6, 14) }, // fresh
+      { amount: 30000, status: "negotiating", lastActivityAt: utc(2026, 5, 1) }, // stale
       { amount: 10000, status: "draft", lastActivityAt: null }, // never touched → stale
-      { amount: 99999, status: "lost", lastActivityAt: new Date(2026, 0, 1) }, // ignored
+      { amount: 99999, status: "lost", lastActivityAt: utc(2026, 0, 1) }, // ignored
     ];
     const s = computeRevenueSummary([], [], proposals, NOW);
     expect(s.proposals.total).toBe(5);

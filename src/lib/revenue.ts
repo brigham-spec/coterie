@@ -10,7 +10,8 @@ import { NETWORK_STATUSES } from "@/lib/company-statuses";
 // Money follows the ledger's own rules: "void" invoices are never owed and drop
 // out of every total, and an invoice's collected amount is capped at its face
 // value so an overpayment can't inflate collection above 100%. Date bucketing
-// uses local calendar boundaries to match the dashboard's revenue snapshot.
+// uses UTC calendar boundaries because dueOn is a @db.Date stored at UTC midnight
+// (matching commitments.ts and the dashboard's revenue snapshot).
 
 export interface RevenueInvoice {
   id: string;
@@ -126,12 +127,24 @@ export function computeRevenueSummary(
   proposals: RevenueProposal[],
   now: Date,
 ): RevenueSummary {
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const startMonthAfter = new Date(now.getFullYear(), now.getMonth() + 2, 1);
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const startNextYear = new Date(now.getFullYear() + 1, 0, 1);
+  // dueOn is a @db.Date stored at UTC midnight, so every boundary and bucket key
+  // is derived in the UTC calendar too — otherwise an invoice due on the 1st reads
+  // as the prior month/year in a runtime west of UTC (review M2). Mirrors
+  // commitments.ts dueInDays.
+  const startOfToday = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  const startThisMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  );
+  const startNextMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+  );
+  const startMonthAfter = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 1),
+  );
+  const startOfYear = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  const startNextYear = new Date(Date.UTC(now.getUTCFullYear() + 1, 0, 1));
 
   let ytdScheduled = 0;
   let ytdCollected = 0;
@@ -149,16 +162,18 @@ export function computeRevenueSummary(
     const balance = inv.amount - collected;
     const due = inv.dueOn;
 
-    // Monthly buckets span every non-void invoice's due month.
-    const key = `${due.getFullYear()}-${due.getMonth()}`;
+    // Monthly buckets span every non-void invoice's due month (UTC calendar).
+    const dueYear = due.getUTCFullYear();
+    const dueMonth = due.getUTCMonth();
+    const key = `${dueYear}-${dueMonth}`;
     const bucket = monthMap.get(key);
     if (bucket) bucket.total += inv.amount;
     else
       monthMap.set(key, {
         key,
-        label: `${MONTH_LABELS[due.getMonth()]} ${due.getFullYear()}`,
-        year: due.getFullYear(),
-        month: due.getMonth(),
+        label: `${MONTH_LABELS[dueMonth]} ${dueYear}`,
+        year: dueYear,
+        month: dueMonth,
         total: inv.amount,
       });
 
@@ -276,8 +291,8 @@ function buildQuarters(
   invoices: RevenueInvoice[],
   now: Date,
 ): QuarterBucket[] {
-  const currentQuarter = Math.floor(now.getMonth() / 3);
-  const currentYear = now.getFullYear();
+  const currentQuarter = Math.floor(now.getUTCMonth() / 3);
+  const currentYear = now.getUTCFullYear();
 
   const map = new Map<
     string,
@@ -285,8 +300,8 @@ function buildQuarters(
   >();
   for (const inv of invoices) {
     if (inv.void) continue;
-    const year = inv.dueOn.getFullYear();
-    const quarter = Math.floor(inv.dueOn.getMonth() / 3);
+    const year = inv.dueOn.getUTCFullYear();
+    const quarter = Math.floor(inv.dueOn.getUTCMonth() / 3);
     const key = `${year}-${quarter}`;
     const row = map.get(key);
     if (row) {

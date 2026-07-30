@@ -1,22 +1,16 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import { requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { optionalDate } from "@/lib/form-fields";
 import { COMMITMENT_STATUSES } from "@/lib/commitments";
+import { revalidateActionItemSurfaces } from "@/lib/revalidate";
 
 // Commitments surface actions. A commitment is an action_item; advancing it just
 // moves its status. Bounded to the three valid states; RLS scopes the id to the
 // org inside withOrg, so a foreign id matches no row (updateMany → 0 rows, no
 // error). Mirrors meetings/updateActionItemStatus but revalidates this surface.
-
-function revalidate(): void {
-  revalidatePath("/dashboard/commitments");
-  revalidatePath("/dashboard");
-}
 
 export async function updateCommitment(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();
@@ -30,7 +24,7 @@ export async function updateCommitment(formData: FormData): Promise<void> {
   await withOrg(orgId, (tx) =>
     tx.actionItem.updateMany({ where: { id }, data: { status } }),
   );
-  revalidate();
+  revalidateActionItemSurfaces();
 }
 
 // Inline text/due-date edit of an open commitment (parity: inline edit 13099).
@@ -48,7 +42,7 @@ export async function editCommitment(formData: FormData): Promise<void> {
   await withOrg(orgId, (tx) =>
     tx.actionItem.updateMany({ where: { id }, data: { text, dueDate } }),
   );
-  revalidate();
+  revalidateActionItemSurfaces();
 }
 
 // Log a manual commitment from the global page (parity: manual obligation 12623).
@@ -107,5 +101,5 @@ export async function logCommitment(formData: FormData): Promise<void> {
     });
   });
 
-  revalidate();
+  revalidateActionItemSurfaces();
 }

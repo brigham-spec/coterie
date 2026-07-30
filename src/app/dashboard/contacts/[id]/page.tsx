@@ -22,10 +22,14 @@ import {
 // attended, and action items they own ("they owe"). Read withOrg-scoped; a
 // lookup that returns null (not ours, or absent) is a 404.
 
+// Pin to UTC: dueDate is a @db.Date at UTC midnight, and heldAt is rendered on
+// the UTC calendar everywhere else (see _meetings-card.tsx) so a date-only value
+// shows the same day here as on the profile/commitments (review M3).
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
   year: "numeric",
+  timeZone: "UTC",
 });
 
 export default async function ContactDetailPage({

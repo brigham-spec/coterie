@@ -13,6 +13,7 @@ import { isIntroStage } from "@/lib/intro-stages";
 import { COMMITMENT_STATUSES } from "@/lib/commitments";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES } from "@/lib/company-statuses";
+import { revalidateActionItemSurfaces } from "@/lib/revalidate";
 import {
   RSVP_ATTENDED,
   RSVP_CONFIRMED,
@@ -930,12 +931,6 @@ export async function updateEventNotes(formData: FormData): Promise<void> {
 // event's org. Follow-ups also surface on the global Commitments workspace, so we
 // revalidate it alongside the event.
 
-function revalidateFollowUp(eventId: string): void {
-  revalidatePath(`/dashboard/events/${eventId}`);
-  revalidatePath("/dashboard/commitments");
-  revalidatePath("/dashboard");
-}
-
 export async function addEventActionItem(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();
 
@@ -993,7 +988,7 @@ export async function addEventActionItem(formData: FormData): Promise<void> {
     });
   });
 
-  revalidateFollowUp(eventId);
+  revalidateActionItemSurfaces();
 }
 
 export async function updateEventActionItemStatus(
@@ -1011,7 +1006,7 @@ export async function updateEventActionItemStatus(
   await withOrg(orgId, (tx) =>
     tx.actionItem.updateMany({ where: { id, eventId }, data: { status } }),
   );
-  revalidateFollowUp(eventId);
+  revalidateActionItemSurfaces();
 }
 
 export async function deleteEventActionItem(formData: FormData): Promise<void> {
@@ -1024,7 +1019,7 @@ export async function deleteEventActionItem(formData: FormData): Promise<void> {
   await withOrg(orgId, (tx) =>
     tx.actionItem.deleteMany({ where: { id, eventId } }),
   );
-  revalidateFollowUp(eventId);
+  revalidateActionItemSurfaces();
 }
 
 // ── Introductions made at an event ──────────────────────────────────────────

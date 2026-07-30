@@ -35,10 +35,13 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+// dueOn is a @db.Date at UTC midnight — pin the formatter to UTC so it shows the
+// same day here as on the invoice detail and revenue pages (review M3).
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "short",
   day: "numeric",
+  timeZone: "UTC",
 });
 
 export default async function InvoicesPage() {
