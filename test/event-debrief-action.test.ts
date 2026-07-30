@@ -209,19 +209,17 @@ describe("post-event debrief actions", () => {
 
   test("refuses an introduction between identical parties", async () => {
     const eventId = await makeEvent("SameParty Event");
-    await expect(
-      logIntroductionAtEvent(
-        fd({ eventId, partyAContactId: aliceId, partyBContactId: aliceId, status: "made" }),
-      ),
-    ).rejects.toThrow();
+    const result = await logIntroductionAtEvent(
+      fd({ eventId, partyAContactId: aliceId, partyBContactId: aliceId, status: "made" }),
+    );
+    expect(result.status).toBe("error");
   });
 
   test("refuses an introduction naming a contact from another tenant", async () => {
     const eventId = await makeEvent("Foreign Intro Event");
-    await expect(
-      logIntroductionAtEvent(
-        fd({ eventId, partyAContactId: aliceId, partyBContactId: bContactId, status: "made" }),
-      ),
-    ).rejects.toThrow();
+    const result = await logIntroductionAtEvent(
+      fd({ eventId, partyAContactId: aliceId, partyBContactId: bContactId, status: "made" }),
+    );
+    expect(result.status).toBe("error");
   });
 });

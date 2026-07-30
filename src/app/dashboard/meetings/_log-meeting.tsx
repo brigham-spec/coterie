@@ -59,6 +59,18 @@ function LogMeetingForm({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Control the text fields: React 19 auto-resets an uncontrolled
+  // `<form action={fn}>` once the action resolves, so a validation error (e.g.
+  // no attendee) would otherwise wipe the title the user just typed.
+  const [details, setDetails] = useState({
+    title: "",
+    heldAt: "",
+    durationMinutes: "",
+    location: "",
+    summary: "",
+  });
+  const set = (key: keyof typeof details) => (value: string) =>
+    setDetails((d) => ({ ...d, [key]: value }));
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -100,20 +112,37 @@ function LogMeetingForm({
       ))}
 
       <div className="grid grid-cols-2 gap-4">
-        <Field name="title" label="Meeting title" className="col-span-2" required />
-        <Field name="heldAt" label="Date" type="date" />
+        <Field
+          name="title"
+          label="Meeting title"
+          className="col-span-2"
+          required
+          value={details.title}
+          onChange={(e) => set("title")(e.currentTarget.value)}
+        />
+        <Field
+          name="heldAt"
+          label="Date"
+          type="date"
+          value={details.heldAt}
+          onChange={(e) => set("heldAt")(e.currentTarget.value)}
+        />
         <Field
           name="durationMinutes"
           label="Duration (minutes)"
           type="number"
           min={1}
           placeholder="e.g. 60"
+          value={details.durationMinutes}
+          onChange={(e) => set("durationMinutes")(e.currentTarget.value)}
         />
         <Field
           name="location"
           label="Location (optional)"
           className="col-span-2"
           placeholder="e.g. Poughkeepsie, in-person"
+          value={details.location}
+          onChange={(e) => set("location")(e.currentTarget.value)}
         />
       </div>
 
@@ -167,7 +196,12 @@ function LogMeetingForm({
         </div>
       </fieldset>
 
-      <Textarea name="summary" label="Summary / notes" />
+      <Textarea
+        name="summary"
+        label="Summary / notes"
+        value={details.summary}
+        onChange={(e) => set("summary")(e.currentTarget.value)}
+      />
 
       {error ? <p className="text-xs text-red-ink">{error}</p> : null}
 

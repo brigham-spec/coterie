@@ -431,10 +431,22 @@ function IntroForm({
   guests: Person[];
   onDone: () => void;
 }) {
+  const [error, setError] = useState<string | null>(null);
+  // Control the fields so a validation error (e.g. the same guest picked twice)
+  // renders inline without React 19 wiping the selections on the form reset.
+  const [partyA, setPartyA] = useState("");
+  const [partyB, setPartyB] = useState("");
+  const [stage, setStage] = useState("made");
+  const [madeOn, setMadeOn] = useState("");
+
   return (
     <form
       action={async (fd) => {
-        await logIntroductionAtEvent(fd);
+        const result = await logIntroductionAtEvent(fd);
+        if (result.status === "error") {
+          setError(result.message);
+          return;
+        }
         onDone();
       }}
       className="flex flex-col gap-4"
@@ -445,7 +457,8 @@ function IntroForm({
         <SelectField
           name="partyAContactId"
           label="First guest"
-          defaultValue=""
+          value={partyA}
+          onChange={(e) => setPartyA(e.currentTarget.value)}
           required
         >
           <option value="">Select…</option>
@@ -458,7 +471,8 @@ function IntroForm({
         <SelectField
           name="partyBContactId"
           label="Second guest"
-          defaultValue=""
+          value={partyB}
+          onChange={(e) => setPartyB(e.currentTarget.value)}
           required
         >
           <option value="">Select…</option>
@@ -468,15 +482,28 @@ function IntroForm({
             </option>
           ))}
         </SelectField>
-        <SelectField name="status" label="Stage" defaultValue="made">
+        <SelectField
+          name="status"
+          label="Stage"
+          value={stage}
+          onChange={(e) => setStage(e.currentTarget.value)}
+        >
           {INTRO_STAGES.map((s) => (
             <option key={s.value} value={s.value}>
               {s.label}
             </option>
           ))}
         </SelectField>
-        <Field name="madeOn" label="Made on" type="date" />
+        <Field
+          name="madeOn"
+          label="Made on"
+          type="date"
+          value={madeOn}
+          onChange={(e) => setMadeOn(e.currentTarget.value)}
+        />
       </div>
+
+      {error ? <p className="text-xs text-red-ink">{error}</p> : null}
 
       <div className="flex justify-end gap-2">
         <Button type="button" onClick={onDone}>

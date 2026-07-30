@@ -1029,9 +1029,13 @@ export async function deleteEventActionItem(formData: FormData): Promise<void> {
 // valid intro stage. source="manual". Both the event and the introductions board
 // reflect the new row.
 
+export type LogIntroState =
+  | { status: "saved" }
+  | { status: "error"; message: string };
+
 export async function logIntroductionAtEvent(
   formData: FormData,
-): Promise<void> {
+): Promise<LogIntroState> {
   const { orgId } = await requireOrgContext();
 
   const eventId = String(formData.get("eventId") ?? "").trim();
@@ -1040,25 +1044,25 @@ export async function logIntroductionAtEvent(
   const status = String(formData.get("status") ?? "").trim();
   const madeOn = optionalDate(formData, "madeOn");
 
-  if (!eventId) throw new Error("event is required");
+  if (!eventId) return { status: "error", message: "An event is required." };
   if (!partyAContactId || !partyBContactId)
-    throw new Error("both parties are required");
-  if (!status) throw new Error("status is required");
-  if (!isIntroStage(status)) throw new Error("invalid introduction status");
+    return { status: "error", message: "Select both guests." };
+  if (!status || !isIntroStage(status))
+    return { status: "error", message: "Select a valid stage." };
   if (partyAContactId === partyBContactId)
-    throw new Error("the two parties must be different contacts");
+    return { status: "error", message: "Pick two different guests." };
 
-  await withOrg(orgId, async (tx) => {
+  const error = await withOrg(orgId, async (tx) => {
     const event = await tx.event.findUnique({
       where: { id: eventId },
       select: { id: true },
     });
-    if (!event) throw new Error("event not found");
+    if (!event) return "Event not found in this organization.";
 
     // Sequential: one pooled connection per tx, so no concurrent queries.
     const a = await tx.contact.findUnique({ where: { id: partyAContactId } });
     const b = await tx.contact.findUnique({ where: { id: partyBContactId } });
-    if (!a || !b) throw new Error("contact not found in this organization");
+    if (!a || !b) return "A guest is not a contact in this organization.";
 
     await tx.introduction.create({
       data: {
@@ -1071,8 +1075,12 @@ export async function logIntroductionAtEvent(
         madeOn,
       },
     });
+    return null;
   });
+
+  if (error) return { status: "error", message: error };
 
   revalidatePath(`/dashboard/events/${eventId}`);
   revalidatePath("/dashboard/introductions");
+  return { status: "saved" };
 }
