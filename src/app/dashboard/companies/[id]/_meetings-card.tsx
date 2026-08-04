@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 
 import { Button, Card, CardHeader, Field, Textarea } from "@/components/ui";
 
@@ -11,7 +11,12 @@ import {
   type PersistedItem,
 } from "../../meetings/_action-items";
 
-import { logMeeting, deleteMeeting, importFirefliesTranscript } from "./actions";
+import {
+  logMeeting,
+  deleteMeeting,
+  importFirefliesTranscript,
+  loadFirefliesForCompany,
+} from "./actions";
 
 // Interactive meetings (profile-parity port of the prototype's "Log Meeting").
 // Production meetings otherwise arrive only from the org-level Fireflies sync;
@@ -118,47 +123,70 @@ export function MeetingsCard({
   );
 }
 
-// Paste-a-Fireflies-ID import (Members audit item 7), shown only when the org has
-// connected Fireflies. Fetches the one transcript and reconciles it server-side;
-// it then surfaces on this profile via its matched attendees. The input is
-// CONTROLLED so React 19's post-action form reset doesn't wipe what was typed on
-// an error return, and so it can be cleared on success. Message is shown inline.
+// Pull-from-Fireflies affordances (Members audit items 7 + 8), shown only when
+// the org has connected Fireflies. "Import" fetches the one pasted transcript;
+// "Load recent" pulls the recent transcripts that mention this company. Both run
+// the same server-side reconcile and surface on this profile via matched
+// attendees, and share one inline message. The paste input is CONTROLLED so React
+// 19's post-action form reset doesn't wipe what was typed on an error return, and
+// so it can be cleared on success.
 function FirefliesImport({ companyId }: { companyId: string }) {
   const [value, setValue] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [loading, start] = useTransition();
+
+  function loadRecent() {
+    start(async () => {
+      const fd = new FormData();
+      fd.set("companyId", companyId);
+      const result = await loadFirefliesForCompany(fd);
+      setMsg({ ok: result.status === "saved", text: result.message });
+    });
+  }
 
   return (
-    <form
-      action={async (fd) => {
-        const result = await importFirefliesTranscript(fd);
-        setMsg({ ok: result.status === "saved", text: result.message });
-        if (result.status === "saved") setValue("");
-      }}
-      className="border-b border-line p-4"
-    >
-      <input type="hidden" name="companyId" value={companyId} />
-      <span className="mb-1.5 block text-[10px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
-        Import from Fireflies
-      </span>
-      <div className="flex gap-2">
-        <input
-          type="text"
-          name="transcriptId"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="Paste a Fireflies transcript ID or link…"
-          className="min-w-0 flex-1 rounded-sm border border-line-2 bg-surface px-2.5 py-1.5 text-[12px] text-ink outline-none focus:border-gold-line"
-        />
-        <Button type="submit" variant="primary">
-          Import
-        </Button>
+    <div className="border-b border-line p-4">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-[10px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
+          Import from Fireflies
+        </span>
+        <button
+          type="button"
+          onClick={loadRecent}
+          disabled={loading}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline disabled:opacity-50"
+        >
+          {loading ? "Loading…" : "Load recent"}
+        </button>
       </div>
+      <form
+        action={async (fd) => {
+          const result = await importFirefliesTranscript(fd);
+          setMsg({ ok: result.status === "saved", text: result.message });
+          if (result.status === "saved") setValue("");
+        }}
+      >
+        <input type="hidden" name="companyId" value={companyId} />
+        <div className="flex gap-2">
+          <input
+            type="text"
+            name="transcriptId"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="Paste a Fireflies transcript ID or link…"
+            className="min-w-0 flex-1 rounded-sm border border-line-2 bg-surface px-2.5 py-1.5 text-[12px] text-ink outline-none focus:border-gold-line"
+          />
+          <Button type="submit" variant="primary">
+            Import
+          </Button>
+        </div>
+      </form>
       {msg ? (
         <p className={`mt-1.5 text-xs ${msg.ok ? "text-teal-ink" : "text-red-ink"}`}>
           {msg.text}
         </p>
       ) : null}
-    </form>
+    </div>
   );
 }
 

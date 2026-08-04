@@ -9,8 +9,17 @@ import { requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { getCredential } from "@/lib/integrations";
-import { getTranscript, type FirefliesTranscript } from "@/lib/fireflies";
+import {
+  getTranscript,
+  listTranscripts,
+  type FirefliesTranscript,
+} from "@/lib/fireflies";
 import { reconcileTranscripts } from "@/lib/fireflies-reconcile";
+import {
+  normalizeEmail,
+  extractDomain,
+  isGenericDomain,
+} from "@/lib/new-connections";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
 import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
@@ -2585,5 +2594,104 @@ export async function importFirefliesTranscript(
     message: showsHere
       ? "Meeting imported from Fireflies."
       : "Imported, but no attendee matched a contact on this company yet.",
+  };
+}
+
+// "Load from Fireflies" on the company profile (Members audit item 8). Pulls the
+// recent transcripts Fireflies returns and reconciles only those RELEVANT to this
+// company — a transcript whose attendees include an email matching one of this
+// company's contacts, or sharing the company's (non-generic) email domain. The
+// filter is just the scope: the shared reconcile still does the precise, network-
+// wide attendee matching, on the same idempotent path as the paste-an-id import
+// and the org-wide sync, so re-loading updates in place. It reaches only the
+// recent window Fireflies lists; an older one-off meeting is covered by the
+// paste-an-id import above.
+export async function loadFirefliesForCompany(
+  formData: FormData,
+): Promise<ImportFirefliesState> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const credential = await getCredential(orgId, "fireflies");
+  if (credential == null)
+    return {
+      status: "error",
+      message: "Connect Fireflies on the Meetings page first.",
+    };
+
+  // This company's matchable signals: its contacts' emails and its email domain.
+  // Sequential reads — one pooled connection per withOrg tx.
+  const { emails, domain } = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { emailDomain: true },
+    });
+    const contacts = await tx.contact.findMany({
+      where: { companyId },
+      select: { email: true },
+    });
+    return {
+      emails: new Set(
+        contacts.map((c) => normalizeEmail(c.email)).filter((e) => e !== ""),
+      ),
+      // Normalize exactly as attendee-match compares emailDomain (lower/trim, no
+      // "@") so the pre-filter and the reconcile agree on what "same domain" means.
+      domain: normalizeEmail(company?.emailDomain),
+    };
+  });
+
+  let transcripts: FirefliesTranscript[];
+  try {
+    transcripts = await listTranscripts(credential.accessToken, 50);
+  } catch {
+    return {
+      status: "error",
+      message: "Couldn't reach Fireflies — check your connection and try again.",
+    };
+  }
+
+  const relevant = transcripts.filter((t) =>
+    (t.meeting_attendees ?? []).some((a) => {
+      const email = normalizeEmail(a.email);
+      if (email === "") return false;
+      if (emails.has(email)) return true;
+      const d = extractDomain(email);
+      return d !== "" && !isGenericDomain(d) && d === domain;
+    }),
+  );
+
+  if (relevant.length === 0)
+    return {
+      status: "saved",
+      message: "No recent Fireflies meetings mention this company yet.",
+    };
+
+  await reconcileTranscripts(orgId, relevant);
+
+  // How many of the loaded meetings actually surface here — i.e. an attendee
+  // resolved to a contact of THIS company (a domain-only hit may import a meeting
+  // without linking any specific contact)?
+  const firefliesIds = relevant.map((t) => t.id);
+  const showing = await withOrg(orgId, (tx) =>
+    tx.meetingAttendee.findMany({
+      where: {
+        meeting: { firefliesId: { in: firefliesIds } },
+        contact: { companyId },
+      },
+      select: { meetingId: true },
+      distinct: ["meetingId"],
+    }),
+  );
+
+  revalidateMeeting(companyId);
+  const loaded = relevant.length;
+  return {
+    status: "saved",
+    message:
+      showing.length > 0
+        ? `Loaded ${showing.length} meeting${showing.length === 1 ? "" : "s"} from Fireflies.`
+        : `Loaded ${loaded} related meeting${loaded === 1 ? "" : "s"}, but none matched a contact here yet.`,
   };
 }

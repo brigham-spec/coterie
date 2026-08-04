@@ -26,8 +26,10 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 const mockGetTranscript = vi.hoisted(() => vi.fn());
+const mockListTranscripts = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/fireflies", () => ({
   getTranscript: mockGetTranscript,
+  listTranscripts: mockListTranscripts,
 }));
 
 const mockGetCredential = vi.hoisted(() => vi.fn());
@@ -35,7 +37,7 @@ vi.mock("@/lib/integrations", () => ({
   getCredential: mockGetCredential,
 }));
 
-const { importFirefliesTranscript } = await import(
+const { importFirefliesTranscript, loadFirefliesForCompany } = await import(
   "@/app/dashboard/companies/[id]/actions"
 );
 
@@ -78,6 +80,7 @@ beforeAll(async () => {
         status: "member",
         industry: "Manufacturing",
         annualValue: 1000,
+        emailDomain: "acme.example",
       },
     });
     await tx.contact.create({
@@ -287,6 +290,143 @@ describe("importFirefliesTranscript", () => {
     const linkedToB = await withOrg(orgB.id, (tx) =>
       tx.meetingAttendee.count({ where: { contactId: contactBId } }),
     );
+    expect(linkedToB).toBe(0);
+  });
+});
+
+describe("loadFirefliesForCompany", () => {
+  function fdc(companyId: string): FormData {
+    const f = new FormData();
+    f.set("companyId", companyId);
+    return f;
+  }
+
+  test("loads recent transcripts that mention this company (email match)", async () => {
+    const relevant = transcript({
+      title: "Acme review",
+      meeting_attendees: [{ displayName: "Ada Acme", email: contactA1Email, name: null }],
+    });
+    mockListTranscripts.mockResolvedValueOnce([relevant]);
+
+    const result = await loadFirefliesForCompany(fdc(companyAId));
+    expect(result).toEqual({
+      status: "saved",
+      message: "Loaded 1 meeting from Fireflies.",
+    });
+
+    const meeting = await withOrg(orgA.id, (tx) =>
+      tx.meeting.findFirst({
+        where: { firefliesId: relevant.id },
+        select: {
+          title: true,
+          attendees: { select: { contactId: true, matchMethod: true } },
+        },
+      }),
+    );
+    expect(meeting?.title).toBe("Acme review");
+    expect(meeting?.attendees).toEqual([
+      { contactId: contactA1Id, matchMethod: "email" },
+    ]);
+  });
+
+  test("matches a company-domain attendee even without an exact contact email", async () => {
+    const domainHit = transcript({
+      meeting_attendees: [
+        { displayName: "New Acme", email: `new_${randomUUID()}@acme.example`, name: null },
+      ],
+    });
+    mockListTranscripts.mockResolvedValueOnce([domainHit]);
+
+    const result = await loadFirefliesForCompany(fdc(companyAId));
+    expect(result).toEqual({
+      status: "saved",
+      message: "Loaded 1 meeting from Fireflies.",
+    });
+
+    const meeting = await withOrg(orgA.id, (tx) =>
+      tx.meeting.findFirst({
+        where: { firefliesId: domainHit.id },
+        select: { attendees: { select: { contactId: true, matchMethod: true } } },
+      }),
+    );
+    // Domain rule resolves the single acme.example contact (unconfirmed).
+    expect(meeting?.attendees).toEqual([
+      { contactId: contactA1Id, matchMethod: "domain" },
+    ]);
+  });
+
+  test("skips transcripts that don't mention this company", async () => {
+    const irrelevant = transcript({
+      meeting_attendees: [
+        { displayName: "Stranger", email: `nobody_${randomUUID()}@elsewhere.example`, name: null },
+      ],
+    });
+    mockListTranscripts.mockResolvedValueOnce([irrelevant]);
+
+    const result = await loadFirefliesForCompany(fdc(companyAId));
+    expect(result).toEqual({
+      status: "saved",
+      message: "No recent Fireflies meetings mention this company yet.",
+    });
+
+    const count = await withOrg(orgA.id, (tx) =>
+      tx.meeting.count({ where: { firefliesId: irrelevant.id } }),
+    );
+    expect(count).toBe(0);
+  });
+
+  test("from a mixed list, imports only the relevant transcript", async () => {
+    const relevant = transcript({
+      meeting_attendees: [{ displayName: "Ada Acme", email: contactA1Email, name: null }],
+    });
+    const irrelevant = transcript({
+      meeting_attendees: [
+        { displayName: "Stranger", email: `nobody_${randomUUID()}@elsewhere.example`, name: null },
+      ],
+    });
+    mockListTranscripts.mockResolvedValueOnce([relevant, irrelevant]);
+
+    const result = await loadFirefliesForCompany(fdc(companyAId));
+    expect(result.status).toBe("saved");
+
+    const relevantCount = await withOrg(orgA.id, (tx) =>
+      tx.meeting.count({ where: { firefliesId: relevant.id } }),
+    );
+    const irrelevantCount = await withOrg(orgA.id, (tx) =>
+      tx.meeting.count({ where: { firefliesId: irrelevant.id } }),
+    );
+    expect(relevantCount).toBe(1);
+    expect(irrelevantCount).toBe(0);
+  });
+
+  test("errors when the org has not connected Fireflies", async () => {
+    mockGetCredential.mockResolvedValueOnce(null);
+    const result = await loadFirefliesForCompany(fdc(companyAId));
+    expect(result).toEqual({
+      status: "error",
+      message: "Connect Fireflies on the Meetings page first.",
+    });
+  });
+
+  test("a foreign-tenant attendee is not relevant here and imports nothing", async () => {
+    const foreign = transcript({
+      meeting_attendees: [{ displayName: "Bob Beta", email: contactBEmail, name: null }],
+    });
+    mockListTranscripts.mockResolvedValueOnce([foreign]);
+
+    const result = await loadFirefliesForCompany(fdc(companyAId));
+    expect(result).toEqual({
+      status: "saved",
+      message: "No recent Fireflies meetings mention this company yet.",
+    });
+
+    const inA = await withOrg(orgA.id, (tx) =>
+      tx.meeting.count({ where: { firefliesId: foreign.id } }),
+    );
+    const linkedToB = await withOrg(orgB.id, (tx) =>
+      tx.meetingAttendee.count({ where: { contactId: contactBId } }),
+    );
+    expect(inA).toBe(0);
     expect(linkedToB).toBe(0);
   });
 });
