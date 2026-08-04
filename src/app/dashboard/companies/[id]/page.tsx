@@ -9,6 +9,7 @@ import { getIntroStageDef } from "@/lib/intro-stages";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { buildRelationshipTimeline } from "@/lib/relationship-timeline";
 import { readMemberTierDefs } from "@/lib/member-tiers";
+import { hasCredential } from "@/lib/integrations";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import {
   Button,
@@ -68,7 +69,7 @@ export default async function CompanyDetailPage({
   // Org staff for the owner picker, and the org's configured member tiers for
   // the Tier dropdown. org_memberships and organizations carry no RLS, so these
   // are plain queries scoped explicitly by orgId.
-  const [staffRows, org] = await Promise.all([
+  const [staffRows, org, firefliesConnected] = await Promise.all([
     prisma.orgMembership.findMany({
       where: { orgId: ctx.orgId },
       orderBy: { user: { name: "asc" } },
@@ -78,6 +79,9 @@ export default async function CompanyDetailPage({
       where: { id: ctx.orgId },
       select: { settings: true },
     }),
+    // Gate the profile's Fireflies-import row: only offer it when the org has
+    // connected Fireflies (else every import would just error). Own withOrg tx.
+    hasCredential(ctx.orgId, "fireflies"),
   ]);
   const staff = staffRows.map((m) => ({ id: m.user.id, name: m.user.name }));
   const tierDefs = readMemberTierDefs(org?.settings);
@@ -756,6 +760,7 @@ export default async function CompanyDetailPage({
         contacts={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
         staff={staff}
         networkContacts={networkOptions}
+        firefliesConnected={firefliesConnected}
       />
 
       <EmailCorrespondence companyId={company.id} messages={emailRows} />

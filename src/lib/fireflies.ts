@@ -116,3 +116,40 @@ export async function listTranscripts(
   );
   return data.transcripts;
 }
+
+const TRANSCRIPT_QUERY = `
+  query Transcript($id: String!) {
+    transcript(id: $id) {
+      id
+      title
+      date
+      transcript_url
+      summary {
+        overview
+        action_items
+      }
+      meeting_attendees {
+        displayName
+        email
+        name
+      }
+    }
+  }
+`;
+
+// A single transcript by its Fireflies id — for the company-profile "paste a
+// Fireflies ID" import, which reconciles just this one meeting rather than the
+// whole account. Returns null when Fireflies has no transcript with that id (a
+// mistyped id), which is distinct from a FirefliesError (a bad token or a
+// transport failure) — the caller surfaces those two cases differently.
+export async function getTranscript(
+  token: string,
+  id: string,
+): Promise<FirefliesTranscript | null> {
+  const data = await firefliesQuery<{ transcript: FirefliesTranscript | null }>(
+    token,
+    TRANSCRIPT_QUERY,
+    { id },
+  );
+  return data.transcript ?? null;
+}

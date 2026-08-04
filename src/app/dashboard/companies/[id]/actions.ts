@@ -8,6 +8,9 @@ import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
+import { getCredential } from "@/lib/integrations";
+import { getTranscript, type FirefliesTranscript } from "@/lib/fireflies";
+import { reconcileTranscripts } from "@/lib/fireflies-reconcile";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
 import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
@@ -2505,4 +2508,82 @@ export async function deleteMeeting(formData: FormData): Promise<void> {
     tx.meeting.deleteMany({ where: { id, firefliesId: null } }),
   );
   revalidateMeeting(companyId);
+}
+
+// Pull the Fireflies transcript id out of whatever the user pasted: a bare id,
+// or a share link like https://app.fireflies.ai/view/<slug>::<id>. Take the tail
+// after the last "::" (the id in a titled URL), then the last path segment — a
+// bare id survives both untouched.
+function parseFirefliesId(raw: string): string {
+  const s = raw.trim();
+  const afterColons = s.includes("::") ? s.slice(s.lastIndexOf("::") + 2) : s;
+  return afterColons.slice(afterColons.lastIndexOf("/") + 1).trim();
+}
+
+export type ImportFirefliesState =
+  | { status: "saved"; message: string }
+  | { status: "error"; message: string };
+
+// Paste-a-Fireflies-ID import on the company profile (Members audit item 7).
+// Fetches ONE transcript by id and runs it through the shared reconcile — the
+// same idempotent path as the org-wide sync, so a re-import updates in place
+// rather than duplicating. The meeting surfaces on this profile through its
+// matched attendees (reconcile matches network-wide by email/name/domain; it
+// never force-links to this company), so we report whether an attendee actually
+// resolved to a contact here — otherwise the import "succeeds" but nothing shows.
+// Validation and connection errors are returned (not thrown) for inline display.
+export async function importFirefliesTranscript(
+  formData: FormData,
+): Promise<ImportFirefliesState> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const transcriptId = parseFirefliesId(String(formData.get("transcriptId") ?? ""));
+
+  if (!companyId) return { status: "error", message: "missing company" };
+  if (!transcriptId)
+    return { status: "error", message: "Paste a Fireflies transcript ID or link." };
+
+  const credential = await getCredential(orgId, "fireflies");
+  if (credential == null)
+    return {
+      status: "error",
+      message: "Connect Fireflies on the Meetings page first.",
+    };
+
+  let transcript: FirefliesTranscript | null;
+  try {
+    transcript = await getTranscript(credential.accessToken, transcriptId);
+  } catch {
+    return {
+      status: "error",
+      message: "Couldn't reach Fireflies — check the ID and your connection.",
+    };
+  }
+  if (transcript == null)
+    return { status: "error", message: "No Fireflies transcript with that ID." };
+  const found = transcript;
+
+  await reconcileTranscripts(orgId, [found]);
+
+  // Did any attendee match a contact of THIS company? If not, the meeting was
+  // imported but won't appear on this profile — say so rather than imply it did.
+  const showsHere = await withOrg(orgId, async (tx) => {
+    const attendee = await tx.meetingAttendee.findFirst({
+      where: {
+        meeting: { firefliesId: found.id },
+        contact: { companyId },
+      },
+      select: { contactId: true },
+    });
+    return attendee != null;
+  });
+
+  revalidateMeeting(companyId);
+  return {
+    status: "saved",
+    message: showsHere
+      ? "Meeting imported from Fireflies."
+      : "Imported, but no attendee matched a contact on this company yet.",
+  };
 }

@@ -11,7 +11,7 @@ import {
   type PersistedItem,
 } from "../../meetings/_action-items";
 
-import { logMeeting, deleteMeeting } from "./actions";
+import { logMeeting, deleteMeeting, importFirefliesTranscript } from "./actions";
 
 // Interactive meetings (profile-parity port of the prototype's "Log Meeting").
 // Production meetings otherwise arrive only from the org-level Fireflies sync;
@@ -54,12 +54,14 @@ export function MeetingsCard({
   contacts,
   staff,
   networkContacts,
+  firefliesConnected,
 }: {
   companyId: string;
   meetings: MeetingRow[];
   contacts: Contact[];
   staff: OwnerOption[];
   networkContacts: NetworkOption[];
+  firefliesConnected: boolean;
 }) {
   const [adding, setAdding] = useState(false);
   const canLog = contacts.length > 0;
@@ -91,6 +93,8 @@ export function MeetingsCard({
         </div>
       ) : null}
 
+      {firefliesConnected ? <FirefliesImport companyId={companyId} /> : null}
+
       {meetings.length === 0 ? (
         <p className="px-4 py-6 text-xs text-ink-3">
           {canLog
@@ -111,6 +115,50 @@ export function MeetingsCard({
         </ul>
       )}
     </Card>
+  );
+}
+
+// Paste-a-Fireflies-ID import (Members audit item 7), shown only when the org has
+// connected Fireflies. Fetches the one transcript and reconciles it server-side;
+// it then surfaces on this profile via its matched attendees. The input is
+// CONTROLLED so React 19's post-action form reset doesn't wipe what was typed on
+// an error return, and so it can be cleared on success. Message is shown inline.
+function FirefliesImport({ companyId }: { companyId: string }) {
+  const [value, setValue] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  return (
+    <form
+      action={async (fd) => {
+        const result = await importFirefliesTranscript(fd);
+        setMsg({ ok: result.status === "saved", text: result.message });
+        if (result.status === "saved") setValue("");
+      }}
+      className="border-b border-line p-4"
+    >
+      <input type="hidden" name="companyId" value={companyId} />
+      <span className="mb-1.5 block text-[10px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
+        Import from Fireflies
+      </span>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          name="transcriptId"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Paste a Fireflies transcript ID or link…"
+          className="min-w-0 flex-1 rounded-sm border border-line-2 bg-surface px-2.5 py-1.5 text-[12px] text-ink outline-none focus:border-gold-line"
+        />
+        <Button type="submit" variant="primary">
+          Import
+        </Button>
+      </div>
+      {msg ? (
+        <p className={`mt-1.5 text-xs ${msg.ok ? "text-teal-ink" : "text-red-ink"}`}>
+          {msg.text}
+        </p>
+      ) : null}
+    </form>
   );
 }
 
