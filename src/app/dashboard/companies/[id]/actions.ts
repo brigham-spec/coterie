@@ -2695,3 +2695,98 @@ export async function loadFirefliesForCompany(
         : `Loaded ${loaded} related meeting${loaded === 1 ? "" : "s"}, but none matched a contact here yet.`,
   };
 }
+
+// ── S8c: manual relationship notes (Members audit item 24) ──────────────────
+// Free-text touchpoints a user records against a company, merged into the
+// relationship timeline. The one editable/deletable timeline source. Each write
+// re-loads the parent company (add) or the note itself (edit/delete) inside
+// withOrg — a foreign id resolves null under RLS and the write is refused. Errors
+// are returned (not thrown) so the inline add/edit forms surface them as a field
+// message instead of crashing the profile. The timeline lives only on the
+// profile, so a single-path revalidate suffices.
+
+export type NoteState =
+  | { status: "saved" }
+  | { status: "error"; message: string };
+
+export async function addNote(formData: FormData): Promise<NoteState> {
+  const { orgId, userId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) return { status: "error", message: "A note can't be empty." };
+
+  // Default to now when no date is given — a logged touchpoint happened today.
+  const occurredAt = optionalDate(formData, "occurredAt") ?? new Date();
+
+  const ok = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (company == null) return false;
+    await tx.note.create({
+      data: { orgId, companyId, actorUserId: userId, body, occurredAt },
+    });
+    return true;
+  });
+
+  if (!ok)
+    return { status: "error", message: "company not found in this organization" };
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  return { status: "saved" };
+}
+
+export async function editNote(formData: FormData): Promise<NoteState> {
+  const { orgId } = await requireOrgContext();
+
+  const noteId = String(formData.get("noteId") ?? "").trim();
+  if (!noteId) return { status: "error", message: "missing note" };
+
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) return { status: "error", message: "A note can't be empty." };
+
+  const occurredAt = optionalDate(formData, "occurredAt");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const note = await tx.note.findUnique({
+      where: { id: noteId },
+      select: { companyId: true },
+    });
+    if (note == null) return null;
+    await tx.note.update({
+      where: { id: noteId },
+      // Keep the original date when the form leaves it blank.
+      data: occurredAt ? { body, occurredAt } : { body },
+    });
+    return note.companyId;
+  });
+
+  if (companyId == null)
+    return { status: "error", message: "note not found in this organization" };
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  return { status: "saved" };
+}
+
+export async function deleteNote(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const noteId = String(formData.get("noteId") ?? "").trim();
+  if (!noteId) throw new Error("missing note");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const note = await tx.note.findUnique({
+      where: { id: noteId },
+      select: { companyId: true },
+    });
+    if (note == null) return null;
+    await tx.note.delete({ where: { id: noteId } });
+    return note.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("note not found in this organization");
+  revalidatePath(`/dashboard/companies/${companyId}`);
+}

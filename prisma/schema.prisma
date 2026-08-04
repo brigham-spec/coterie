@@ -72,6 +72,7 @@ model Organization {
   unmatchedAttendees     UnmatchedAttendee[]
   aiRateLimit            AiRateLimit?
   proactiveScanCaches    ProactiveScanCache[]
+  notes                  Note[]
 
   @@map("organizations")
 }
@@ -91,6 +92,7 @@ model User {
   ownedActionItems ActionItem[]    @relation("ActionItemOwnerUser")
   activities       Activity[]      @relation("ActivityActor")
   ownedCompanies   Company[]       @relation("CompanyOwner")
+  authoredNotes    Note[]          @relation("NoteAuthor")
 
   @@map("users")
 }
@@ -208,6 +210,7 @@ model Company {
   dismissalsAsFocus     IntroDismissal[]     @relation("IntroDismissalFocus")
   dismissalsAsCandidate IntroDismissal[]     @relation("IntroDismissalCandidate")
   eventConversions      EventConversion[]
+  timelineNotes         Note[]
   referredBy            Company?             @relation("CompanyReferral", fields: [referredById], references: [id], onDelete: SetNull)
   referrals             Company[]            @relation("CompanyReferral")
 
@@ -915,6 +918,36 @@ model ValueDelivered {
   @@index([companyId])
   @@index([orgId, occurredAt(sort: Desc)])
   @@map("value_delivered")
+}
+
+/// Manual relationship note (slice S8c, the prototype's timelineNotes[] on the
+/// member modal, Coterie.html:6217). A free-text touchpoint a user records
+/// against a company — a call, a hallway chat, a reminder — merged into the
+/// relationship timeline alongside the derived facts (meetings, intros,
+/// commitments). Unlike those, a note is directly authored, so it's the one
+/// timeline source the profile can add / edit / delete. Tenant-scoped: org_id +
+/// RLS; composite company FK so a note can only hang off an in-org member.
+model Note {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  /// The author; null once the user is deleted (SetNull) so the note survives.
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  body        String
+  occurredAt  DateTime @map("occurred_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FK includes org_id so a note's company must be in the SAME org.
+  company      Company      @relation(fields: [companyId, orgId], references: [id, orgId], onDelete: Cascade)
+  author       User?        @relation("NoteAuthor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([companyId])
+  @@index([orgId, occurredAt(sort: Desc)])
+  @@map("notes")
 }
 
 /// Additional companies / affiliations for a member (slice P5). A member often

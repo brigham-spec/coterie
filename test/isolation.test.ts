@@ -202,3 +202,49 @@ describe("tenant isolation (slice 11.4c intro_dismissals)", () => {
     ).rejects.toThrow();
   });
 });
+
+// Slice S8c — the relationship-notes ledger must uphold the same guarantees.
+describe("tenant isolation (slice S8c notes)", () => {
+  test("RLS scopes lists, cross-reads, and fail-closes the org-less client", async () => {
+    const noteAId = (
+      await withOrg(orgA.id, (tx) =>
+        tx.note.create({
+          data: {
+            orgId: orgA.id,
+            companyId: companyAId,
+            body: "A's note",
+            occurredAt: new Date("2026-01-01T00:00:00Z"),
+          },
+        }),
+      )
+    ).id;
+
+    const seenByB = await withOrg(orgB.id, (tx) => tx.note.findMany());
+    expect(seenByB.map((n) => n.id)).not.toContain(noteAId);
+
+    const crossRead = await withOrg(orgB.id, (tx) =>
+      tx.note.findUnique({ where: { id: noteAId } }),
+    );
+    expect(crossRead).toBeNull();
+
+    const bare = await prisma.note.findMany({ where: { id: noteAId } });
+    expect(bare).toEqual([]);
+  });
+
+  test("composite FK forbids a note on a company from another org", async () => {
+    // Org A tries to note B's company. The composite FK
+    // (company_id, org_id) -> companies(id, org_id) has no matching parent in A.
+    await expect(
+      withOrg(orgA.id, (tx) =>
+        tx.note.create({
+          data: {
+            orgId: orgA.id,
+            companyId: companyBId,
+            body: "smuggled",
+            occurredAt: new Date("2026-01-01T00:00:00Z"),
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+});

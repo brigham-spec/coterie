@@ -11,6 +11,7 @@ import { buildRelationshipTimeline } from "@/lib/relationship-timeline";
 import { readMemberTierDefs } from "@/lib/member-tiers";
 import { hasCredential } from "@/lib/integrations";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
+import { RSVP_CONFIRMED, RSVP_ATTENDED } from "@/lib/event-stages";
 import {
   Button,
   Card,
@@ -42,6 +43,7 @@ import { CommitmentsCard } from "./_commitments-card";
 import { MeetingsCard } from "./_meetings-card";
 import { EmailCorrespondence } from "./_email-correspondence";
 import { SavedArticlesCard } from "./_saved-articles";
+import { RelationshipTimeline } from "./_timeline";
 import { confirmIntroAdvance } from "./actions";
 
 // Company detail — the central relationship's home. Surfaces the company's own
@@ -98,6 +100,8 @@ export default async function CompanyDetailPage({
     actionItems,
     statusChanges,
     valueDelivered,
+    notes,
+    eventsAttended,
     linkOptions,
     referralOptions,
     projects,
@@ -134,6 +138,8 @@ export default async function CompanyDetailPage({
           actionItems: [],
           statusChanges: [],
           valueDelivered: [],
+          notes: [],
+          eventsAttended: [],
           linkOptions: [],
           referralOptions: [],
           projects: [],
@@ -327,6 +333,32 @@ export default async function CompanyDetailPage({
           },
         },
       });
+      // Manual relationship notes (item 24) — the one editable timeline source.
+      const notes = await tx.note.findMany({
+        where: { companyId: id },
+        orderBy: { occurredAt: "desc" },
+        take: 50,
+        select: {
+          id: true,
+          body: true,
+          occurredAt: true,
+          author: { select: { name: true } },
+        },
+      });
+      // Events this company's people came to (confirmed/attended) — a timeline
+      // touchpoint. Deduped to one entry per event (a company may send several).
+      const eventInvites = contactIds.length
+        ? await tx.eventInvitee.findMany({
+            where: {
+              contactId: { in: contactIds },
+              rsvp: { in: [RSVP_CONFIRMED, RSVP_ATTENDED] },
+              event: { date: { not: null } },
+            },
+            select: {
+              event: { select: { id: true, name: true, date: true } },
+            },
+          })
+        : [];
       return {
         company,
         introductions,
@@ -337,6 +369,8 @@ export default async function CompanyDetailPage({
         actionItems,
         statusChanges,
         valueDelivered,
+        notes,
+        eventsAttended: eventInvites,
         linkOptions,
         referralOptions,
         projects,
@@ -408,6 +442,18 @@ export default async function CompanyDetailPage({
     projectName: a.project?.name ?? null,
   }));
 
+  // One timeline entry per attended event (a company may send several guests).
+  const attendedEvents = Array.from(
+    new Map(
+      eventsAttended
+        .filter((e) => e.event.date != null)
+        .map((e) => [
+          e.event.id,
+          { name: e.event.name, date: e.event.date as Date },
+        ]),
+    ).values(),
+  );
+
   const timeline = buildRelationshipTimeline({
     addedAt: company.createdAt,
     meetings: meetings.map((m) => ({ title: m.title, heldAt: m.heldAt })),
@@ -426,6 +472,19 @@ export default async function CompanyDetailPage({
         date: a.updatedAt,
       })),
     statusChanges,
+    notes: notes.map((n) => ({
+      id: n.id,
+      body: n.body,
+      authorName: n.author?.name ?? null,
+      date: n.occurredAt,
+    })),
+    values: valueDelivered.map((v) => ({
+      summary: v.summary,
+      outcome: v.outcome || null,
+      date: v.occurredAt,
+    })),
+    events: attendedEvents,
+    news: newsItems.map((n) => ({ headline: n.headline, date: n.capturedAt })),
   });
 
   return (
@@ -776,28 +835,7 @@ export default async function CompanyDetailPage({
         projects={projects}
       />
 
-      <Card>
-        <CardHeader title="Relationship timeline" />
-        <ol className="flex flex-col gap-0 p-4">
-          {timeline.map((e, idx) => (
-            <li key={idx} className="flex gap-3">
-              <div className="flex flex-col items-center">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
-                {idx < timeline.length - 1 ? (
-                  <span className="w-px flex-1 bg-line" />
-                ) : null}
-              </div>
-              <div className="pb-4">
-                <div className="text-xs font-medium text-ink">{e.label}</div>
-                <div className="mt-0.5 text-[10px] text-ink-3">
-                  {e.detail ? `${e.detail} · ` : ""}
-                  {dateFmt.format(e.date)}
-                </div>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </Card>
+      <RelationshipTimeline companyId={company.id} entries={timeline} />
     </div>
   );
 }

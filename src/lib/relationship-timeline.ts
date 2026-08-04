@@ -11,13 +11,20 @@ export type TimelineKind =
   | "meeting"
   | "intro"
   | "commitment"
-  | "status";
+  | "status"
+  | "note"
+  | "value"
+  | "event"
+  | "news";
 
 export type TimelineEntry = {
   kind: TimelineKind;
   date: Date;
   label: string;
   detail: string | null;
+  // Set only on manual notes — the one editable/deletable source. Carries the
+  // Note.id so the profile can offer inline edit/delete; null for derived facts.
+  noteId?: string;
 };
 
 export type TimelineMeeting = { title: string; heldAt: Date };
@@ -45,6 +52,34 @@ export type TimelineStatusChange = {
   date: Date;
 };
 
+// A manual note authored on the profile — the one editable timeline source.
+export type TimelineNote = {
+  id: string;
+  body: string;
+  // The author's name, when the note still has an author (null once deleted).
+  authorName: string | null;
+  date: Date;
+};
+
+// A recorded win from the Value Delivered ledger.
+export type TimelineValue = {
+  summary: string;
+  outcome: string | null;
+  date: Date;
+};
+
+// An event this company's people attended (caller filters to attendance).
+export type TimelineEvent = {
+  name: string;
+  date: Date;
+};
+
+// A saved news touchpoint for this company.
+export type TimelineNews = {
+  headline: string;
+  date: Date;
+};
+
 export type TimelineInput = {
   // When the company entered the CRM — the anchor at the bottom of the history.
   addedAt: Date;
@@ -53,6 +88,12 @@ export type TimelineInput = {
   commitments: TimelineCommitment[];
   // Lifecycle transitions, from Activity rows. Optional: many companies have none.
   statusChanges?: TimelineStatusChange[];
+  // Additional touchpoints (item 24), all optional: manual notes, delivered
+  // value, attended events, and saved news.
+  notes?: TimelineNote[];
+  values?: TimelineValue[];
+  events?: TimelineEvent[];
+  news?: TimelineNews[];
 };
 
 const humanize = (v: string): string => v.replace(/_/g, " ");
@@ -106,13 +147,54 @@ export function buildRelationshipTimeline(input: TimelineInput): TimelineEntry[]
     });
   }
 
+  for (const n of input.notes ?? []) {
+    entries.push({
+      kind: "note",
+      date: n.date,
+      label: n.body,
+      detail: n.authorName ? `Note · ${n.authorName}` : "Note",
+      noteId: n.id,
+    });
+  }
+
+  for (const v of input.values ?? []) {
+    entries.push({
+      kind: "value",
+      date: v.date,
+      label: v.summary,
+      detail: v.outcome ? `Value delivered · ${v.outcome}` : "Value delivered",
+    });
+  }
+
+  for (const e of input.events ?? []) {
+    entries.push({
+      kind: "event",
+      date: e.date,
+      label: e.name,
+      detail: "Attended event",
+    });
+  }
+
+  for (const n of input.news ?? []) {
+    entries.push({
+      kind: "news",
+      date: n.date,
+      label: n.headline,
+      detail: "News",
+    });
+  }
+
   // Stable order among same-timestamp entries so tests and UI don't flicker.
   const kindRank: Record<TimelineKind, number> = {
     meeting: 0,
     intro: 1,
     commitment: 2,
-    status: 3,
-    added: 4,
+    value: 3,
+    event: 4,
+    news: 5,
+    note: 6,
+    status: 7,
+    added: 8,
   };
 
   return entries.sort((a, b) => {

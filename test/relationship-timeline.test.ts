@@ -154,4 +154,126 @@ describe("buildRelationshipTimeline", () => {
     const status = out.find((e) => e.kind === "status")!;
     expect(status).toMatchObject({ label: "Became member", detail: "Status" });
   });
+
+  test("shapes a note, carrying its id and attributing the author", () => {
+    const out = buildRelationshipTimeline({
+      ...base,
+      notes: [
+        {
+          id: "note-1",
+          body: "Called about Q3",
+          authorName: "Dana",
+          date: new Date("2026-03-15T00:00:00Z"),
+        },
+      ],
+    });
+    const note = out.find((e) => e.kind === "note")!;
+    expect(note).toMatchObject({
+      label: "Called about Q3",
+      detail: "Note · Dana",
+      noteId: "note-1",
+    });
+  });
+
+  test("a note with no author drops the attribution", () => {
+    const out = buildRelationshipTimeline({
+      ...base,
+      notes: [
+        {
+          id: "note-2",
+          body: "Reminder to follow up",
+          authorName: null,
+          date: new Date("2026-03-15T00:00:00Z"),
+        },
+      ],
+    });
+    expect(out.find((e) => e.kind === "note")!.detail).toBe("Note");
+  });
+
+  test("only notes carry a noteId; derived facts do not", () => {
+    const out = buildRelationshipTimeline({
+      ...base,
+      meetings: [{ title: "M", heldAt: new Date("2026-02-01T00:00:00Z") }],
+      notes: [
+        {
+          id: "note-3",
+          body: "N",
+          authorName: null,
+          date: new Date("2026-02-02T00:00:00Z"),
+        },
+      ],
+    });
+    expect(out.find((e) => e.kind === "note")!.noteId).toBe("note-3");
+    expect(out.find((e) => e.kind === "meeting")!.noteId).toBeUndefined();
+  });
+
+  test("shapes value, event, and news sources", () => {
+    const out = buildRelationshipTimeline({
+      ...base,
+      values: [
+        {
+          summary: "Grant secured",
+          outcome: "$50k",
+          date: new Date("2026-02-01T00:00:00Z"),
+        },
+      ],
+      events: [{ name: "Spring Dinner", date: new Date("2026-02-02T00:00:00Z") }],
+      news: [{ headline: "Ribbon cutting", date: new Date("2026-02-03T00:00:00Z") }],
+    });
+    const byKind = Object.fromEntries(out.map((e) => [e.kind, e]));
+    expect(byKind.value).toMatchObject({
+      label: "Grant secured",
+      detail: "Value delivered · $50k",
+    });
+    expect(byKind.event).toMatchObject({
+      label: "Spring Dinner",
+      detail: "Attended event",
+    });
+    expect(byKind.news).toMatchObject({
+      label: "Ribbon cutting",
+      detail: "News",
+    });
+  });
+
+  test("a value with no outcome keeps the bare label", () => {
+    const out = buildRelationshipTimeline({
+      ...base,
+      values: [
+        {
+          summary: "Service rendered",
+          outcome: null,
+          date: new Date("2026-02-01T00:00:00Z"),
+        },
+      ],
+    });
+    expect(out.find((e) => e.kind === "value")!.detail).toBe("Value delivered");
+  });
+
+  test("breaks same-timestamp ties across every kind deterministically", () => {
+    const same = new Date("2026-01-01T00:00:00Z");
+    const out = buildRelationshipTimeline({
+      addedAt: same,
+      meetings: [{ title: "M", heldAt: same }],
+      intros: [
+        { partyAName: "A", partyBName: "B", status: "made", outcome: null, date: same },
+      ],
+      commitments: [{ text: "C", owedByUs: true, date: same }],
+      statusChanges: [{ from: "prospect", to: "member", date: same }],
+      values: [{ summary: "V", outcome: null, date: same }],
+      events: [{ name: "E", date: same }],
+      news: [{ headline: "N", date: same }],
+      notes: [{ id: "n", body: "note", authorName: null, date: same }],
+    });
+    expect(out.map((e) => e.kind)).toEqual([
+      "meeting",
+      "intro",
+      "commitment",
+      "value",
+      "event",
+      "news",
+      "note",
+      "status",
+      "added",
+    ]);
+  });
 });
