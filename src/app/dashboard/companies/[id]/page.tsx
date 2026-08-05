@@ -43,6 +43,7 @@ import { EmailCorrespondence } from "./_email-correspondence";
 import { SavedArticlesCard } from "./_saved-articles";
 import { RelationshipTimeline } from "./_timeline";
 import { IntroductionsCard } from "./_introductions-card";
+import { StatusPill } from "./_status-pill";
 
 // Company detail — the central relationship's home. Surfaces the company's own
 // fields (including the slice-11.0 relationship attributes: what it's looking
@@ -491,7 +492,7 @@ export default async function CompanyDetailPage({
         </Link>
         <div className="mt-1 flex items-center gap-3">
           <PageTitle title={company.name} />
-          <StatusBadge status={company.status} />
+          <StatusPill companyId={company.id} status={company.status} />
         </div>
         {company.networkTags.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
