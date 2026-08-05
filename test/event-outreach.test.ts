@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   buildOutreachPrompt,
   cleanOutreachDraft,
+  isOutreachAngle,
   type OutreachInput,
 } from "@/lib/event-outreach";
 
@@ -103,5 +104,26 @@ describe("buildOutreachPrompt", () => {
   test("lists other confirmed guests when supplied", () => {
     const p = buildOutreachPrompt(input({ confirmedGuests: ["Jane Doe", "Sam Fox"] }));
     expect(p).toContain("Others already attending: Jane Doe, Sam Fox");
+  });
+
+  test("omits the redraft note on a first draft", () => {
+    expect(buildOutreachPrompt(input())).not.toContain("REDRAFT NOTE");
+  });
+
+  test("appends the matching redraft note for a refinement angle", () => {
+    const shorter = buildOutreachPrompt(input({ angle: "shorter" }));
+    expect(shorter).toContain("REDRAFT NOTE: Make this 3 sentences maximum");
+
+    const direct = buildOutreachPrompt(input({ angle: "direct" }));
+    expect(direct).toContain("The first sentence is the invitation");
+  });
+});
+
+describe("isOutreachAngle", () => {
+  test("accepts known angles and rejects anything else", () => {
+    expect(isOutreachAngle("lead_event")).toBe(true);
+    expect(isOutreachAngle("standard")).toBe(true);
+    expect(isOutreachAngle("bogus")).toBe(false);
+    expect(isOutreachAngle("")).toBe(false);
   });
 });

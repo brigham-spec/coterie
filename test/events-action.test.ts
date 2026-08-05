@@ -40,6 +40,7 @@ const {
   removeInvitee,
   generateBrief,
   draftOutreach,
+  markOutreachSent,
   linkEventProject,
   updateEventCost,
   markAllAttended,
@@ -209,6 +210,7 @@ describe("event + guest-list actions", () => {
     );
     expect(state).toEqual({
       status: "ok",
+      inviteeId: aliceInvitee!.id,
       guestName: "Alice A",
       draft: "Come see the mill, Alice.",
     });
@@ -219,6 +221,7 @@ describe("event + guest-list actions", () => {
         host: string;
         guest: { name: string; org: string | null; seeking: string | null; brings: string | null };
         event: { name: string };
+        angle: string | null;
       },
     ];
     expect(arg.host).toBe("Host Person");
@@ -227,6 +230,71 @@ describe("event + guest-list actions", () => {
     expect(arg.guest.org).toBe("Member A");
     expect(arg.guest.seeking).toBe("a capital partner");
     expect(arg.guest.brings).toBe("land-use counsel");
+    // First draft carries no refinement angle.
+    expect(arg.angle).toBeNull();
+
+    // The draft persisted on the invitee and moved it to the "draft" stage.
+    const drafted = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findUnique({ where: { id: aliceInvitee!.id } }),
+    );
+    expect(drafted!.outreachStatus).toBe("draft");
+    expect(drafted!.outreachDraft).toBe("Come see the mill, Alice.");
+  });
+
+  test("redraft passes a validated angle; marking sent sticks and can be undone", async () => {
+    outreachSpy.mockResolvedValue("A shorter note.");
+    const eventId = await findEventId("Fall Dinner");
+    const aliceInvitee = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, contactId: aliceId } }),
+    );
+
+    // A junk angle is dropped; a known angle reaches the engine.
+    await draftOutreach(
+      { status: "idle" },
+      fd({ eventId, inviteeId: aliceInvitee!.id, angle: "bogus" }),
+    );
+    expect((outreachSpy.mock.calls[0][0] as { angle: string | null }).angle).toBeNull();
+
+    await draftOutreach(
+      { status: "idle" },
+      fd({ eventId, inviteeId: aliceInvitee!.id, angle: "shorter" }),
+    );
+    expect((outreachSpy.mock.calls[1][0] as { angle: string | null }).angle).toBe(
+      "shorter",
+    );
+
+    // Mark sent persists the current (edited) draft, the sent stage, and a timestamp.
+    await markOutreachSent(
+      fd({ inviteeId: aliceInvitee!.id, sent: "true", draft: "My edited invite." }),
+    );
+    const sent = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findUnique({ where: { id: aliceInvitee!.id } }),
+    );
+    expect(sent!.outreachStatus).toBe("sent");
+    expect(sent!.outreachDraft).toBe("My edited invite.");
+    expect(sent!.outreachSentAt).not.toBeNull();
+
+    // A subsequent draft leaves an already-sent guest sent.
+    outreachSpy.mockResolvedValue("Another pass.");
+    await draftOutreach(
+      { status: "idle" },
+      fd({ eventId, inviteeId: aliceInvitee!.id }),
+    );
+    const afterDraft = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findUnique({ where: { id: aliceInvitee!.id } }),
+    );
+    expect(afterDraft!.outreachStatus).toBe("sent");
+    expect(afterDraft!.outreachDraft).toBe("Another pass.");
+
+    // Undoing "sent" moves it back to draft and clears the timestamp.
+    await markOutreachSent(
+      fd({ inviteeId: aliceInvitee!.id, sent: "false", draft: "Another pass." }),
+    );
+    const undone = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findUnique({ where: { id: aliceInvitee!.id } }),
+    );
+    expect(undone!.outreachStatus).toBe("draft");
+    expect(undone!.outreachSentAt).toBeNull();
   });
 
   test("refuses to draft for an external guest (no profile)", async () => {

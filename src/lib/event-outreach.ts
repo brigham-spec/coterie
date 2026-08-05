@@ -33,6 +33,41 @@ export type OutreachGuest = {
   recentTopics: string[];
 };
 
+// A refinement angle the host can pick to redraft an invitation a different way
+// (prototype "Try:" chips). "standard" is a plain fresh take.
+export type OutreachAngle =
+  | "shorter"
+  | "lead_event"
+  | "lead_connection"
+  | "direct"
+  | "standard";
+
+export const OUTREACH_ANGLES: readonly OutreachAngle[] = [
+  "shorter",
+  "lead_event",
+  "lead_connection",
+  "direct",
+  "standard",
+];
+
+export function isOutreachAngle(value: string): value is OutreachAngle {
+  return (OUTREACH_ANGLES as readonly string[]).includes(value);
+}
+
+// The extra instruction each angle appends to the redraft prompt.
+const ANGLE_NOTES: Record<OutreachAngle, string> = {
+  shorter:
+    "REDRAFT NOTE: Make this 3 sentences maximum. Cut everything that isn't essential.",
+  lead_event:
+    "REDRAFT NOTE: Open with what makes this event unique and worth attending — then connect to them.",
+  lead_connection:
+    "REDRAFT NOTE: Open by naming a specific person they know who is attending, or a connection you made for them — lead with the relationship.",
+  direct:
+    "REDRAFT NOTE: Skip all warm-up. The first sentence is the invitation. Be direct and brief — 4 sentences max.",
+  standard:
+    "REDRAFT NOTE: This is a fresh take. Try a different opening sentence and a different specific angle than the previous draft.",
+};
+
 export type OutreachInput = {
   orgName: string;
   host: string;
@@ -40,6 +75,8 @@ export type OutreachInput = {
   guest: OutreachGuest;
   // Names of other guests already attending — the "you'll know someone" angle.
   confirmedGuests: string[];
+  // Optional refinement angle for a redraft (null on the first draft).
+  angle?: OutreachAngle | null;
 };
 
 /// PURE: tidy the model's raw completion into a sendable email body. Strips
@@ -75,7 +112,7 @@ function line(label: string, value: string | null | undefined): string {
 /// sparse the model is told NOT to invent history, only to lean on the event and
 /// the guest's known industry/role.
 export function buildOutreachPrompt(input: OutreachInput): string {
-  const { host, event, guest, confirmedGuests, orgName } = input;
+  const { host, event, guest, confirmedGuests, orgName, angle } = input;
 
   const guestLines = [
     line("Name", guest.name),
@@ -99,6 +136,9 @@ export function buildOutreachPrompt(input: OutreachInput): string {
     ? `\n  Others already attending: ${confirmedGuests.join(", ")}`
     : "";
 
+  // On a redraft the host picks an angle; its note steers the rewrite.
+  const angleLine = angle ? `\n- ${ANGLE_NOTES[angle]}` : "";
+
   return `Write a personal invitation email from ${host} at ${orgName} to ${guest.name}${
     guest.org && guest.org !== guest.name ? ` at ${guest.org}` : ""
   } for the event "${event.name}" on ${event.date ?? "TBD"}${
@@ -113,7 +153,7 @@ RULES — follow exactly:
 - Sentence 3: if there's another attendee they'd value knowing, name them; otherwise reference the event's concrete value to someone in their position.
 - Sentence 4: a brief, direct call to action.
 - Do NOT be generic. Every sentence should contain something specific to this person.
-- Tone: first-person ${host}, peer-to-peer, no corporate filler.
+- Tone: first-person ${host}, peer-to-peer, no corporate filler.${angleLine}
 - IMPORTANT: ${contextNote}
 
 EVENT:

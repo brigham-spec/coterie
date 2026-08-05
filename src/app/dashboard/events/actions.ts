@@ -40,6 +40,7 @@ import {
 } from "@/lib/event-guest-suggest";
 import {
   generateOutreachEmail,
+  isOutreachAngle,
   type OutreachGuest,
 } from "@/lib/event-outreach";
 
@@ -763,17 +764,18 @@ export async function suggestGuestList(
 }
 
 // Event outreach email draft (gap-audit cluster D, ported from the prototype's
-// generateInviteEmail). In ONE withOrg tx (RLS-scoped) it loads the event, the one
-// invited CRM guest with their company context and recent meeting topics, and the
-// names of other guests already attending, then the engine drafts a personal
-// invitation email from the host to that guest. External guests have no CRM
-// profile to ground a draft in, so they're refused. Like the other AI features
-// it's a useActionState action returning state (not throwing); the draft is
-// EPHEMERAL — nothing is stored, the host copies and sends it.
+// generateInviteEmail / generateOutreachDraft). In one withOrg read it loads the
+// event, the one invited CRM guest with their company context and recent meeting
+// topics, and the names of other guests already attending; the engine then drafts
+// a personal invitation email from the host to that guest. External guests have no
+// CRM profile to ground a draft in, so they're refused. Unlike the ephemeral AI
+// panels this one PERSISTS the draft on the invitee (outreach_draft) and moves it
+// to the "draft" stage — so a batch survives a reload — while leaving an
+// already-"sent" guest sent. An optional refinement angle steers a redraft.
 
 export type OutreachState =
   | { status: "idle" }
-  | { status: "ok"; guestName: string; draft: string }
+  | { status: "ok"; inviteeId: string; guestName: string; draft: string }
   | { status: "error"; message: string };
 
 export async function draftOutreach(
@@ -784,6 +786,9 @@ export async function draftOutreach(
 
   const eventId = String(formData.get("eventId") ?? "").trim();
   const inviteeId = String(formData.get("inviteeId") ?? "").trim();
+  const angleRaw = String(formData.get("angle") ?? "").trim();
+  // Untrusted — only a known angle may steer the prompt (else no angle).
+  const angle = isOutreachAngle(angleRaw) ? angleRaw : null;
   if (!eventId) return { status: "error", message: "Pick an event." };
   if (!inviteeId) return { status: "error", message: "Pick a guest to invite." };
 
@@ -797,6 +802,7 @@ export async function draftOutreach(
       where: { id: inviteeId },
       select: {
         eventId: true,
+        outreachStatus: true,
         contact: {
           select: {
             id: true,
@@ -869,6 +875,8 @@ export async function draftOutreach(
     recentTopics: data.topics,
   };
 
+  const wasSent = data.invitee.outreachStatus === "sent";
+
   try {
     await enforceAiRateLimit(orgId);
     const draft = await generateOutreachEmail({
@@ -882,10 +890,20 @@ export async function draftOutreach(
       },
       guest,
       confirmedGuests: data.others,
+      angle,
     });
     if (draft === "")
       return { status: "error", message: "The draft came back empty. Try again." };
-    return { status: "ok", guestName: guest.name, draft };
+    // Persist the draft (RLS-scoped update) so a batch survives a reload. A guest
+    // already marked "sent" keeps that stage; otherwise it moves to "draft". No
+    // revalidate — the outreach panel owns its display and re-reads on next load.
+    await withOrg(orgId, (tx) =>
+      tx.eventInvitee.updateMany({
+        where: { id: inviteeId },
+        data: { outreachDraft: draft, outreachStatus: wasSent ? "sent" : "draft" },
+      }),
+    );
+    return { status: "ok", inviteeId, guestName: guest.name, draft };
   } catch (err) {
     console.error("event outreach failed", err);
     if (err instanceof AiRateLimitError)
@@ -896,6 +914,30 @@ export async function draftOutreach(
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not draft the invitation. Try again." };
   }
+}
+
+// Mark a guest's invitation as sent (or move it back to draft). Persists the
+// current draft body too, so a host edit before "Mark sent" sticks. The updateMany
+// is withOrg-scoped, so a foreign invitee id matches nothing (RLS no-op). No
+// revalidate — the outreach panel updates optimistically and re-reads on next load.
+export async function markOutreachSent(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const inviteeId = String(formData.get("inviteeId") ?? "").trim();
+  const sent = String(formData.get("sent") ?? "").trim() === "true";
+  const draft = String(formData.get("draft") ?? "");
+  if (!inviteeId) throw new Error("invitee is required");
+
+  await withOrg(orgId, (tx) =>
+    tx.eventInvitee.updateMany({
+      where: { id: inviteeId },
+      data: {
+        outreachDraft: draft,
+        outreachStatus: sent ? "sent" : "draft",
+        outreachSentAt: sent ? new Date() : null,
+      },
+    }),
+  );
 }
 
 // ── Post-event debrief ──────────────────────────────────────────────────────

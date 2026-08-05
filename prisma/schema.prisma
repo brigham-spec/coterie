@@ -819,6 +819,12 @@ model EventInvitee {
   /// invited, confirmed, declined, attended, no_show
   rsvp          String  @default("invited")
   notes         String  @default("")
+  /// Outreach tracking (demo inv.outreachStatus/outreachDraft/outreachSentAt).
+  /// none → not started, draft → an invitation has been drafted, sent → emailed.
+  outreachStatus String    @default("none") @map("outreach_status")
+  /// The last drafted invitation body — persisted so a batch survives a reload.
+  outreachDraft  String    @default("")     @map("outreach_draft")
+  outreachSentAt DateTime? @map("outreach_sent_at") @db.Timestamptz(6)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

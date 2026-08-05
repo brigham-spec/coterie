@@ -162,10 +162,17 @@ export default async function EventDetailPage({
   const invitable = contacts.filter((c) => !invitedContactIds.has(c.id));
 
   // CRM guests already on the list — the pool the outreach draft can write to
-  // (external guests have no profile to ground a personal invitation in).
+  // (external guests have no profile to ground a personal invitation in). Each
+  // carries its persisted outreach stage + last draft so the panel seeds from it.
   const outreachGuests = event.invitees
     .filter((i) => i.contactId != null && i.contact != null)
-    .map((i) => ({ id: i.id, name: i.contact!.name }));
+    .map((i) => ({
+      id: i.id,
+      name: i.contact!.name,
+      org: i.contact!.company?.name ?? null,
+      status: i.outreachStatus,
+      draft: i.outreachDraft,
+    }));
 
   // Network guests keyed by CONTACT id — the pool for follow-up "they owe" owners
   // and for introductions made in the room (both write contact ids, not invitee ids).
@@ -490,7 +497,14 @@ export default async function EventDetailPage({
 
       <GuestBrief eventId={event.id} />
 
-      <Outreach eventId={event.id} guests={outreachGuests} />
+      {/* Key by the guest-id set: the panel owns local draft state, so it must
+          only remount when a guest is added or removed — an RSVP change (which
+          revalidates this page) must not wipe in-progress edits. */}
+      <Outreach
+        key={outreachGuests.map((g) => g.id).join(",")}
+        eventId={event.id}
+        guests={outreachGuests}
+      />
 
       <Debrief
         eventId={event.id}
