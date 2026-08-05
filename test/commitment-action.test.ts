@@ -5,7 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 
 // Action-level integration test for the interactive commitments slice
-// (addCommitment + updateCommitmentStatus + editCommitment + deleteCommitment).
+// (addCommitment + updateCommitmentStatus + editCommitment + deleteCommitment +
+// reassignCommitment).
 // Runs against the real Neon DB, mocking only Clerk (requireOrgContext) and
 // Next's revalidatePath. Proves the owner-XOR mapping ("we owe" -> staff
 // ownerUserId, "they owe" -> a contact of this company's ownerContactId), the
@@ -25,6 +26,7 @@ const {
   updateCommitmentStatus,
   editCommitment,
   deleteCommitment,
+  reassignCommitment,
 } = await import("@/app/dashboard/companies/[id]/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
@@ -354,5 +356,107 @@ describe("deleteCommitment", () => {
       tx.actionItem.findUnique({ where: { id: commitmentBId } }),
     );
     expect(still).not.toBeNull();
+  });
+});
+
+describe("reassignCommitment", () => {
+  // A fresh we-owe item to flip between owners without disturbing the others.
+  async function seedWeOwe(): Promise<string> {
+    const id = randomUUID();
+    await withOrg(orgA.id, (tx) =>
+      tx.actionItem.create({
+        data: {
+          id,
+          orgId: orgA.id,
+          companyId: companyAId,
+          text: "Reassignable",
+          status: "open",
+          ownerUserId: staffUser.id,
+        },
+      }),
+    );
+    return id;
+  }
+
+  test("flips a we-owe item to a they-owe contact of this company and back", async () => {
+    const id = await seedWeOwe();
+
+    await reassignCommitment(
+      fd({ id, companyId: companyAId, direction: "they_owe", ownerId: contactAId }),
+    );
+    let row = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({
+        where: { id },
+        select: { ownerUserId: true, ownerContactId: true },
+      }),
+    );
+    expect(row).toMatchObject({ ownerUserId: null, ownerContactId: contactAId });
+
+    await reassignCommitment(
+      fd({ id, companyId: companyAId, direction: "we_owe", ownerId: staffUser.id }),
+    );
+    row = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({
+        where: { id },
+        select: { ownerUserId: true, ownerContactId: true },
+      }),
+    );
+    expect(row).toMatchObject({ ownerUserId: staffUser.id, ownerContactId: null });
+
+    await withOrg(orgA.id, (tx) => tx.actionItem.delete({ where: { id } }));
+  });
+
+  test("rejects an invalid direction", async () => {
+    const id = await seedWeOwe();
+    await expect(
+      reassignCommitment(
+        fd({ id, companyId: companyAId, direction: "sideways", ownerId: staffUser.id }),
+      ),
+    ).rejects.toThrow("invalid direction");
+    await withOrg(orgA.id, (tx) => tx.actionItem.delete({ where: { id } }));
+  });
+
+  test("refuses a they-owe owner who is not a contact of this company", async () => {
+    const id = await seedWeOwe();
+    await expect(
+      reassignCommitment(
+        fd({ id, companyId: companyAId, direction: "they_owe", ownerId: contactBId }),
+      ),
+    ).rejects.toThrow("contact not found on this company");
+    // Owner unchanged — the rejected reassign left the staff owner in place.
+    const row = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({
+        where: { id },
+        select: { ownerUserId: true, ownerContactId: true },
+      }),
+    );
+    expect(row).toMatchObject({ ownerUserId: staffUser.id, ownerContactId: null });
+    await withOrg(orgA.id, (tx) => tx.actionItem.delete({ where: { id } }));
+  });
+
+  test("refuses a we-owe owner who is not a member of this org", async () => {
+    const id = await seedWeOwe();
+    await expect(
+      reassignCommitment(
+        fd({ id, companyId: companyAId, direction: "we_owe", ownerId: outsiderUser.id }),
+      ),
+    ).rejects.toThrow("owner is not a member of this organization");
+    await withOrg(orgA.id, (tx) => tx.actionItem.delete({ where: { id } }));
+  });
+
+  test("a foreign item id is refused and leaves the other tenant untouched", async () => {
+    await expect(
+      reassignCommitment(
+        fd({ id: commitmentBId, companyId: companyAId, direction: "we_owe", ownerId: staffUser.id }),
+      ),
+    ).rejects.toThrow("commitment not found on this company");
+
+    const row = await withOrg(orgB.id, (tx) =>
+      tx.actionItem.findUnique({
+        where: { id: commitmentBId },
+        select: { ownerUserId: true, ownerContactId: true },
+      }),
+    );
+    expect(row).toMatchObject({ ownerUserId: null, ownerContactId: contactBId });
   });
 });

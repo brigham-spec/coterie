@@ -69,8 +69,8 @@ gaps are list-view intelligence, a few missing profile fields, and Fireflies-on-
 | 16 | List: industry quick-chips + "Open Actions" sort | Industry chip row + sort option. (~L4230, 4252) | MISSING | Derived | S |
 | 17 | In-header status quick-change pill | Clickable pill, all statuses, logs history. (~L4502) | Partial (lifecycle bar + edit form) | Derived | S |
 | 18 | Consulting/IDA field | `cons` field on profile, exported CSV. (~L5114) | MISSING | **Yes** (col) | S |
-| 19 | Partnership "Synthesize" AI button | Web-search + AI fills category/summary/collab. (~L4653) | Partial (fields exist, no AI fill) | No | M |
-| 20 | Their-Network: link-to-CRM / Add-to-CRM | Inline search to link relationship to a member or create prospect. (~L4781) | MISSING (fields stored, no link/create) | Yes (crmLink) | M |
+| 19 | Partnership "Synthesize" AI button | Web-search + AI fills category/summary/collab. (~L4653) | DONE (P6a: synthesizePartner action + draft fold-in) | No | M |
+| 20 | Their-Network: link-to-CRM / Add-to-CRM | Inline search to link relationship to a member or create prospect. (~L4781) | DONE (P6b: linkKeyRelationship + addRelationshipAsProspect; linkedCompanyId shipped) | Yes (crmLink) | M |
 | 21 | Invoice/billing management UI | Add member to invoice schedule, payment schedule. (~L6761) | MISSING (Invoice model exists, no UI) | Yes (UI only) | L |
 | 22 | Permanent delete company | Destructive delete from profile. (~L6821) | MISSING (archive only) | No | M |
 | 23 | News-scan shortcut from profile | Footer icon opens news pre-filtered to member. (~L6754) | MISSING | No | S |

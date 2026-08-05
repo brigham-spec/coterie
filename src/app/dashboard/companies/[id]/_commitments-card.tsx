@@ -10,6 +10,7 @@ import {
   updateCommitmentStatus,
   editCommitment,
   deleteCommitment,
+  reassignCommitment,
 } from "./actions";
 
 // Interactive commitments (profile-parity port of the prototype's per-member
@@ -101,11 +102,15 @@ export function CommitmentsCard({
             heading="We owe"
             companyId={companyId}
             items={weOwe}
+            staff={staff}
+            contacts={contacts}
           />
           <CommitmentColumn
             heading="They owe"
             companyId={companyId}
             items={theyOwe}
+            staff={staff}
+            contacts={contacts}
           />
         </div>
       )}
@@ -161,10 +166,14 @@ function CommitmentColumn({
   heading,
   companyId,
   items,
+  staff,
+  contacts,
 }: {
   heading: string;
   companyId: string;
   items: CommitmentRow[];
+  staff: Owner[];
+  contacts: Owner[];
 }) {
   return (
     <div>
@@ -176,7 +185,13 @@ function CommitmentColumn({
       ) : (
         <ul className="flex flex-col gap-3">
           {items.map((c) => (
-            <CommitmentItem key={c.id} companyId={companyId} item={c} />
+            <CommitmentItem
+              key={c.id}
+              companyId={companyId}
+              item={c}
+              staff={staff}
+              contacts={contacts}
+            />
           ))}
         </ul>
       )}
@@ -187,11 +202,16 @@ function CommitmentColumn({
 function CommitmentItem({
   companyId,
   item,
+  staff,
+  contacts,
 }: {
   companyId: string;
   item: CommitmentRow;
+  staff: Owner[];
+  contacts: Owner[];
 }) {
   const [editing, setEditing] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
 
   if (editing) {
     return (
@@ -283,6 +303,13 @@ function CommitmentItem({
         >
           Edit
         </button>
+        <button
+          type="button"
+          onClick={() => setReassigning((v) => !v)}
+          className="text-[10px] font-medium tracking-[0.06em] text-ink-3 uppercase hover:underline"
+        >
+          Reassign
+        </button>
         <form action={deleteCommitment}>
           <input type="hidden" name="id" value={item.id} />
           <input type="hidden" name="companyId" value={companyId} />
@@ -294,7 +321,95 @@ function CommitmentItem({
           </button>
         </form>
       </div>
+      {reassigning ? (
+        <ReassignForm
+          companyId={companyId}
+          item={item}
+          staff={staff}
+          contacts={contacts}
+          onDone={() => setReassigning(false)}
+        />
+      ) : null}
     </li>
+  );
+}
+
+// Inline owner picker: staff (→ we owe) or one of this company's contacts (→ they
+// owe). The option value carries both the direction and the id ("we_owe:<id>" /
+// "they_owe:<id>"); the submit derives the two fields reassignCommitment reads.
+function ReassignForm({
+  companyId,
+  item,
+  staff,
+  contacts,
+  onDone,
+}: {
+  companyId: string;
+  item: CommitmentRow;
+  staff: Owner[];
+  contacts: Owner[];
+  onDone: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const sep = value.indexOf(":");
+  const direction = sep >= 0 ? value.slice(0, sep) : "";
+  const ownerId = sep >= 0 ? value.slice(sep + 1) : "";
+
+  return (
+    <form
+      action={async (fd) => {
+        await reassignCommitment(fd);
+        onDone();
+      }}
+      className="mt-1.5 flex flex-wrap items-center gap-1.5"
+    >
+      <input type="hidden" name="id" value={item.id} />
+      <input type="hidden" name="companyId" value={companyId} />
+      <input type="hidden" name="direction" value={direction} />
+      <input type="hidden" name="ownerId" value={ownerId} />
+      <select
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        required
+        className="rounded border border-line bg-surface px-2 py-1 text-[11px] text-ink-2"
+      >
+        <option value="" disabled>
+          Reassign to…
+        </option>
+        {staff.length > 0 ? (
+          <optgroup label="We owe (staff)">
+            {staff.map((s) => (
+              <option key={s.id} value={`we_owe:${s.id}`}>
+                {s.name}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+        {contacts.length > 0 ? (
+          <optgroup label="They owe (contacts)">
+            {contacts.map((c) => (
+              <option key={c.id} value={`they_owe:${c.id}`}>
+                {c.name}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+      </select>
+      <button
+        type="submit"
+        disabled={value === ""}
+        className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline disabled:opacity-40"
+      >
+        Move
+      </button>
+      <button
+        type="button"
+        onClick={onDone}
+        className="text-[10px] font-medium tracking-[0.06em] text-ink-3 uppercase hover:underline"
+      >
+        Cancel
+      </button>
+    </form>
   );
 }
 

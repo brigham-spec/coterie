@@ -2510,6 +2510,58 @@ export async function deleteCommitment(formData: FormData): Promise<void> {
   revalidateActionItemSurfaces();
 }
 
+// Reassign an open commitment's owner (parity: prototype owner chip → reassign,
+// Coterie.html:5878). Swaps the owner-XOR column in place: "we owe" hands it to a
+// staff member, "they owe" to one of THIS company's contacts. The item stays
+// anchored to this company — only who owns it changes — so a they-owe row never
+// ends up owned by a contact of some other firm. Same owner validation as
+// addCommitment so a crafted ownerId can't slip past the picker.
+export async function reassignCommitment(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const direction = String(formData.get("direction") ?? "").trim();
+  const ownerId = String(formData.get("ownerId") ?? "").trim();
+
+  if (!id || !companyId) throw new Error("commitment and company are required");
+  if (direction !== "we_owe" && direction !== "they_owe")
+    throw new Error("invalid direction");
+  if (!ownerId) throw new Error("an owner is required");
+
+  const found = await withOrg(orgId, async (tx) => {
+    let ownerUserId: string | null = null;
+    let ownerContactId: string | null = null;
+    if (direction === "we_owe") {
+      // org_memberships carry no RLS — scope explicitly by org+user.
+      const member = await prisma.orgMembership.findUnique({
+        where: { orgId_userId: { orgId, userId: ownerId } },
+        select: { userId: true },
+      });
+      if (!member) throw new Error("owner is not a member of this organization");
+      ownerUserId = ownerId;
+    } else {
+      const contact = await tx.contact.findFirst({
+        where: { id: ownerId, companyId },
+        select: { id: true },
+      });
+      if (!contact) throw new Error("contact not found on this company");
+      ownerContactId = ownerId;
+    }
+
+    // Scope the write to this company (RLS scopes it to the org) — a foreign or
+    // cross-company id matches nothing, count is 0, and the reassign is refused.
+    const res = await tx.actionItem.updateMany({
+      where: { id, companyId },
+      data: { ownerUserId, ownerContactId },
+    });
+    return res.count > 0;
+  });
+
+  if (!found) throw new Error("commitment not found on this company");
+  revalidateActionItemSurfaces();
+}
+
 // ── Meetings (manual logging on the company profile) ────────────────────────
 // Ports the prototype's "Log Meeting" — a staff-recorded meeting the profile
 // otherwise couldn't create (production meetings come from the org-level
