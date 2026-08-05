@@ -1,3 +1,5 @@
+import { requireOrgContext } from "@/lib/auth";
+
 import { PageTitle } from "@/components/ui";
 
 import { NetworkSearch } from "./_search";
@@ -14,13 +16,14 @@ export default async function NetworkSearchPage({
 }) {
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q : "";
+  const { userId } = await requireOrgContext();
   return (
     <div className="mx-auto w-full max-w-4xl">
       <PageTitle
         title="Network Search"
         subtitle="Ask anything about your network in plain English."
       />
-      <NetworkSearch initialQuery={q} />
+      <NetworkSearch initialQuery={q} currentUserId={userId} />
     </div>
   );
 }

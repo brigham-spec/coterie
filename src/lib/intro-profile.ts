@@ -11,7 +11,7 @@ import type { IntroCompanyProfile } from "@/lib/intro-engine";
 export const introProfileInclude = {
   contacts: {
     orderBy: { name: "asc" },
-    select: { name: true, title: true, isPrimary: true },
+    select: { id: true, name: true, title: true, isPrimary: true },
   },
   projectLinks: {
     orderBy: { role: "asc" },

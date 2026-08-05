@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState, useTransition } from "react";
 
 import { Button, Card, TagBadge } from "@/components/ui";
 
@@ -10,6 +10,7 @@ import {
   type NetworkSearchResult,
   type NetworkSearchState,
 } from "./actions";
+import { addCommitment } from "../companies/[id]/actions";
 
 // Network Search UI (slice 11.5). A client shell over the searchNetwork server
 // action (so the Anthropic key stays server-side). The textarea holds the plain-
@@ -27,7 +28,13 @@ const EXAMPLES = [
   "Who can help with land use permitting?",
 ];
 
-export function NetworkSearch({ initialQuery = "" }: { initialQuery?: string }) {
+export function NetworkSearch({
+  initialQuery = "",
+  currentUserId,
+}: {
+  initialQuery?: string;
+  currentUserId: string;
+}) {
   const [state, formAction, isPending] = useActionState(
     searchNetwork,
     initialState,
@@ -96,7 +103,11 @@ export function NetworkSearch({ initialQuery = "" }: { initialQuery?: string }) 
       ) : state.status === "error" ? (
         <p className="text-[11px] text-red-ink">{state.message}</p>
       ) : state.status === "ok" ? (
-        <Results query={state.query} matches={state.matches} />
+        <Results
+          query={state.query}
+          matches={state.matches}
+          currentUserId={currentUserId}
+        />
       ) : null}
     </div>
   );
@@ -105,9 +116,11 @@ export function NetworkSearch({ initialQuery = "" }: { initialQuery?: string }) 
 function Results({
   query,
   matches,
+  currentUserId,
 }: {
   query: string;
   matches: NetworkSearchResult[];
+  currentUserId: string;
 }) {
   return (
     <div>
@@ -133,7 +146,7 @@ function Results({
       ) : (
         <ul className="flex flex-col gap-2.5">
           {matches.map((m) => (
-            <MatchCard key={m.companyId} m={m} />
+            <MatchCard key={m.companyId} m={m} currentUserId={currentUserId} />
           ))}
         </ul>
       )}
@@ -141,7 +154,24 @@ function Results({
   );
 }
 
-function MatchCard({ m }: { m: NetworkSearchResult }) {
+function MatchCard({
+  m,
+  currentUserId,
+}: {
+  m: NetworkSearchResult;
+  currentUserId: string;
+}) {
+  // A "we owe" follow-up owned by the current user — reuses the company-profile
+  // addCommitment writer verbatim (no new write path), like the news scan cards.
+  const [taskState, setTaskState] = useState<"done" | "error" | null>(null);
+  const [isTasking, startTask] = useTransition();
+
+  // ⇄ Intro seeds the Intro Engine's Party A with this company's primary contact
+  // (a deleted/absent contact falls back to the un-prefilled engine).
+  const introHref = m.introContactId
+    ? `/dashboard/introductions?${new URLSearchParams({ draftA: m.introContactId })}`
+    : "/dashboard/introductions";
+
   return (
     <li className="rounded-md border border-line bg-surface px-3.5 py-3 shadow-card">
       <div className="flex items-start justify-between gap-3">
@@ -163,6 +193,43 @@ function MatchCard({ m }: { m: NetworkSearchResult }) {
       {m.keyDetail ? (
         <p className="mt-1.5 text-[10.5px] text-gold">{m.keyDetail}</p>
       ) : null}
+      <div className="mt-2 flex items-center gap-3">
+        <Link
+          href={introHref}
+          className="text-[11px] text-ink-2 hover:text-gold"
+        >
+          {"\u21C4 Intro"}
+        </Link>
+        <button
+          type="button"
+          disabled={isTasking || taskState === "done"}
+          onClick={() =>
+            startTask(async () => {
+              const f = new FormData();
+              f.set("companyId", m.companyId);
+              f.set("text", `Follow up with ${m.companyName}`);
+              f.set("direction", "we_owe");
+              f.set("ownerId", currentUserId);
+              try {
+                await addCommitment(f);
+                setTaskState("done");
+              } catch {
+                setTaskState("error");
+              }
+            })
+          }
+          className="text-[11px] text-ink-2 hover:text-gold disabled:opacity-40"
+        >
+          {taskState === "done"
+            ? "Action added"
+            : isTasking
+              ? "Adding…"
+              : "+ Commitment"}
+        </button>
+        {taskState === "error" ? (
+          <span className="text-[11px] text-red-ink">Couldn’t add</span>
+        ) : null}
+      </div>
     </li>
   );
 }

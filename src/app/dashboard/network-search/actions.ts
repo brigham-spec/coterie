@@ -34,12 +34,18 @@ type CompanyRow = {
   dealSize: string | null;
   tier: string | null;
   counties: string[];
-  contacts: Array<{ name: string; isPrimary: boolean }>;
+  contacts: Array<{ id: string; name: string; isPrimary: boolean }>;
   projectLinks: Array<{ project: { name: string } }>;
 };
 
+// The company's primary contact (explicit flag wins, else the first) — the one
+// the search reads for a name and links into the Intro Engine as Party A.
+function primaryContact(c: CompanyRow): CompanyRow["contacts"][number] | null {
+  return c.contacts.find((p) => p.isPrimary) ?? c.contacts[0] ?? null;
+}
+
 function toSearchProfile(c: CompanyRow): NetworkSearchProfile {
-  const primary = c.contacts.find((p) => p.isPrimary) ?? c.contacts[0] ?? null;
+  const primary = primaryContact(c);
   return {
     id: c.id,
     name: c.name,
@@ -55,10 +61,15 @@ function toSearchProfile(c: CompanyRow): NetworkSearchProfile {
   };
 }
 
-// A match enriched with the company's org-configured member tier (a free-text
-// label, null when unranked). Tier lives on the Company row, not in the pure
-// NetworkSearchMatch the engine returns, so it's joined back on here by id.
-export type NetworkSearchResult = NetworkSearchMatch & { tier: string | null };
+// A match enriched with data that lives on the Company row (not in the pure
+// NetworkSearchMatch the engine returns), joined back on here by id: the
+// org-configured member tier (free-text, null when unranked) and the primary
+// contact's id (to seed the Intro Engine's Party A; null when the company has
+// no contacts).
+export type NetworkSearchResult = NetworkSearchMatch & {
+  tier: string | null;
+  introContactId: string | null;
+};
 
 export type NetworkSearchState =
   | { status: "idle" }
@@ -86,11 +97,20 @@ export async function searchNetwork(
   try {
     await enforceAiRateLimit(orgId);
     const matches = await generateNetworkMatches(query, profiles);
-    const tierById = new Map(companies.map((c) => [c.id, c.tier]));
-    const enriched = matches.map((m) => ({
-      ...m,
-      tier: tierById.get(m.companyId) ?? null,
-    }));
+    const metaById = new Map(
+      companies.map((c) => [
+        c.id,
+        { tier: c.tier, introContactId: primaryContact(c)?.id ?? null },
+      ]),
+    );
+    const enriched = matches.map((m) => {
+      const meta = metaById.get(m.companyId);
+      return {
+        ...m,
+        tier: meta?.tier ?? null,
+        introContactId: meta?.introContactId ?? null,
+      };
+    });
     return { status: "ok", query, matches: enriched };
   } catch (err) {
     console.error("network search failed", err);

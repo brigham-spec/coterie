@@ -43,6 +43,7 @@ const orgB = { id: randomUUID(), name: `TENANT_B_${randomUUID()}` };
 const base = { industry: "test", annualValue: 1000 };
 
 let activeAId: string;
+let activeAContactId: string;
 let formerAId: string;
 let companyBId: string;
 
@@ -54,19 +55,23 @@ beforeAll(async () => {
     ],
   });
 
-  activeAId = (
-    await withOrg(orgA.id, (tx) =>
-      tx.company.create({
-        data: {
-          orgId: orgA.id,
-          name: "Active (A)",
-          status: "member",
-          tier: "Director",
-          ...base,
+  const activeA = await withOrg(orgA.id, (tx) =>
+    tx.company.create({
+      data: {
+        orgId: orgA.id,
+        name: "Active (A)",
+        status: "member",
+        tier: "Director",
+        ...base,
+        contacts: {
+          create: { orgId: orgA.id, name: "Primary A", isPrimary: true },
         },
-      }),
-    )
-  ).id;
+      },
+      include: { contacts: true },
+    }),
+  );
+  activeAId = activeA.id;
+  activeAContactId = activeA.contacts[0].id;
 
   formerAId = (
     await withOrg(orgA.id, (tx) =>
@@ -118,12 +123,17 @@ describe("searchNetwork action", () => {
 
     const state = await searchNetwork({ status: "idle" }, fd("who does test work"));
 
-    // The ok state joins the company's org-configured tier back onto each match
-    // by id (the engine's pure match has no tier).
+    // The ok state joins Company-row data back onto each match by id: the
+    // org-configured tier and the primary contact's id (to seed the Intro
+    // Engine), neither of which the pure engine match carries.
     expect(state).toEqual({
       status: "ok",
       query: "who does test work",
-      matches: canned.map((m) => ({ ...m, tier: "Director" })),
+      matches: canned.map((m) => ({
+        ...m,
+        tier: "Director",
+        introContactId: activeAContactId,
+      })),
     });
 
     // The engine received org A's ACTIVE company, and neither org B's row nor the
