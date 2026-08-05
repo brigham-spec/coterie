@@ -685,6 +685,8 @@ model EmailMessage {
   projects    String   @default("")
   /// Semicolon-separated follow-ups Claude spotted.
   actionItems String   @default("") @map("action_items")
+  /// Indices (into the parsed actionItems list) the operator has checked off.
+  doneActionItems Int[] @default([]) @map("done_action_items")
   /// positive | neutral | negative (free-text; unknown renders slate).
   sentiment   String   @default("")
   /// The email's date as reported by the sheet (free-text; stored raw).

@@ -30,6 +30,7 @@ const {
   extractEmailThreadAction,
   saveEmailMessage,
   deleteEmailCorrespondence,
+  toggleEmailActionItem,
 } = await import("@/app/dashboard/companies/[id]/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
@@ -214,6 +215,98 @@ describe("saveEmailMessage", () => {
       tx.emailMessage.findMany({ where: { companyId: companyBId } }),
     );
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("toggleEmailActionItem", () => {
+  test("checks and unchecks an item, persisting the index set per tenant", async () => {
+    const id = randomUUID();
+    await withOrg(orgA.id, (tx) =>
+      tx.emailMessage.create({
+        data: {
+          id,
+          orgId: orgA.id,
+          companyId: companyAId,
+          externalKey: `manual:${randomUUID()}`,
+          subject: "Follow-ups",
+          actionItems: "Send term sheet; schedule tour; loop in counsel",
+          syncedAt: new Date(),
+        },
+      }),
+    );
+
+    // Check item 1, then item 0 — the set is stored sorted.
+    let state = await toggleEmailActionItem(
+      fd({ id, companyId: companyAId, index: "1", done: "true" }),
+    );
+    expect(state).toEqual({ status: "saved" });
+    state = await toggleEmailActionItem(
+      fd({ id, companyId: companyAId, index: "0", done: "true" }),
+    );
+    expect(state).toEqual({ status: "saved" });
+
+    let row = await withOrg(orgA.id, (tx) =>
+      tx.emailMessage.findUnique({ where: { id } }),
+    );
+    expect(row?.doneActionItems).toEqual([0, 1]);
+
+    // Unchecking item 1 leaves only item 0.
+    await toggleEmailActionItem(
+      fd({ id, companyId: companyAId, index: "1", done: "false" }),
+    );
+    row = await withOrg(orgA.id, (tx) =>
+      tx.emailMessage.findUnique({ where: { id } }),
+    );
+    expect(row?.doneActionItems).toEqual([0]);
+
+    // Re-sending the state we already hold is a no-op (still reports saved).
+    state = await toggleEmailActionItem(
+      fd({ id, companyId: companyAId, index: "0", done: "true" }),
+    );
+    expect(state).toEqual({ status: "saved" });
+    row = await withOrg(orgA.id, (tx) =>
+      tx.emailMessage.findUnique({ where: { id } }),
+    );
+    expect(row?.doneActionItems).toEqual([0]);
+
+    await withOrg(orgA.id, (tx) => tx.emailMessage.deleteMany({ where: { id } }));
+  });
+
+  test("rejects a non-integer index without a write", async () => {
+    const state = await toggleEmailActionItem(
+      fd({ id: randomUUID(), companyId: companyAId, index: "x", done: "true" }),
+    );
+    expect(state).toEqual({ status: "error", message: "Invalid action item." });
+  });
+
+  test("refuses a foreign email id (RLS → not found)", async () => {
+    const foreignId = randomUUID();
+    await withOrg(orgB.id, (tx) =>
+      tx.emailMessage.create({
+        data: {
+          id: foreignId,
+          orgId: orgB.id,
+          companyId: companyBId,
+          externalKey: `manual:${randomUUID()}`,
+          subject: "Beta only",
+          actionItems: "secret",
+          syncedAt: new Date(),
+        },
+      }),
+    );
+
+    const state = await toggleEmailActionItem(
+      fd({ id: foreignId, companyId: companyAId, index: "0", done: "true" }),
+    );
+    expect(state).toEqual({
+      status: "error",
+      message: "Email not found in this organization.",
+    });
+
+    const row = await withOrg(orgB.id, (tx) =>
+      tx.emailMessage.findUnique({ where: { id: foreignId } }),
+    );
+    expect(row?.doneActionItems).toEqual([]);
   });
 });
 

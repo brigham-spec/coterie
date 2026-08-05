@@ -36,9 +36,19 @@ export function sentimentTone(sentiment: string): "teal" | "red" | "slate" {
   return "slate";
 }
 
+// Split the semicolon/newline-separated actionItems blob into individual,
+// trimmed follow-ups (empties dropped). The position of each item is stable, so
+// its index is used as the key for the per-item checked state (Email item 9).
+export function parseActionItems(raw: string): string[] {
+  return raw
+    .split(/[;\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
+}
+
 // Count the follow-ups in a semicolon/newline-separated actionItems string.
 export function actionItemCount(raw: string): number {
-  return raw.split(/[;\n]/).filter((s) => s.trim() !== "").length;
+  return parseActionItems(raw).length;
 }
 
 // Reject anything that isn't a Google-published CSV URL before the server fetches

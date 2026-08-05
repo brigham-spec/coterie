@@ -1353,6 +1353,53 @@ export async function saveEmailMessage(
   return { status: "saved" };
 }
 
+export type ToggleEmailItemState =
+  | { status: "saved" }
+  | { status: "error"; message: string };
+
+// Check/uncheck one email action item (Email item 9). The checked set is stored
+// as indices into the parsed actionItems list on the row; a read-modify-write
+// inside one withOrg tx toggles the index (findUnique returns null for a foreign
+// id, so RLS refuses). Mirrors the prototype's EMAIL_CHECKS_KEY, but persisted
+// per-tenant instead of in localStorage. Only the company profile renders this
+// state, so only that path is revalidated (the org inbox shows a bare count).
+export async function toggleEmailActionItem(
+  formData: FormData,
+): Promise<ToggleEmailItemState> {
+  const { orgId } = await requireOrgContext();
+  const id = String(formData.get("id") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const index = Number(formData.get("index"));
+  const done = formData.get("done") === "true";
+  if (id === "" || !Number.isInteger(index) || index < 0)
+    return { status: "error", message: "Invalid action item." };
+
+  const result = await withOrg(orgId, async (tx) => {
+    const row = await tx.emailMessage.findUnique({
+      where: { id },
+      select: { doneActionItems: true },
+    });
+    if (row == null) return "not-found" as const;
+    // A double-click or stale render can re-send the state we already hold; skip
+    // the write (and the revalidation) when nothing actually changes.
+    if (row.doneActionItems.includes(index) === done) return "unchanged" as const;
+    const set = new Set(row.doneActionItems);
+    if (done) set.add(index);
+    else set.delete(index);
+    await tx.emailMessage.update({
+      where: { id },
+      data: { doneActionItems: [...set].sort((a, b) => a - b) },
+    });
+    return "updated" as const;
+  });
+
+  if (result === "not-found")
+    return { status: "error", message: "Email not found in this organization." };
+  if (result === "updated" && companyId !== "")
+    revalidatePath(`/dashboard/companies/${companyId}`);
+  return { status: "saved" };
+}
+
 export async function deleteEmailCorrespondence(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();
 

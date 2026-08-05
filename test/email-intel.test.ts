@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  actionItemCount,
   isPublishedSheetUrl,
   matchEmailToCompany,
+  parseActionItems,
   parseEmailSheet,
   type EmailRow,
   type MatchCompany,
@@ -15,6 +17,22 @@ import {
 
 const HEADER =
   "date,from_name,from_email,subject,member_match,org_match,summary,projects,action_items,sentiment,thread_id";
+
+describe("parseActionItems", () => {
+  test("splits on ; and newlines, trims, and drops blanks", () => {
+    expect(
+      parseActionItems("Send term sheet; schedule tour\n\n  loop in counsel  ;"),
+    ).toEqual(["Send term sheet", "schedule tour", "loop in counsel"]);
+    expect(parseActionItems("")).toEqual([]);
+    expect(parseActionItems("  ;  \n ")).toEqual([]);
+  });
+
+  test("actionItemCount matches the parsed length", () => {
+    const raw = "a; b\nc";
+    expect(actionItemCount(raw)).toBe(parseActionItems(raw).length);
+    expect(actionItemCount(raw)).toBe(3);
+  });
+});
 
 describe("parseEmailSheet", () => {
   test("parses a clean row and maps every column", () => {

@@ -1,14 +1,15 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 
 import { Button, Card, CardHeader, TagBadge, Textarea } from "@/components/ui";
-import { actionItemCount, sentimentTone } from "@/lib/email-intel";
+import { parseActionItems, sentimentTone } from "@/lib/email-intel";
 
 import {
   deleteEmailCorrespondence,
   extractEmailThreadAction,
   saveEmailMessage,
+  toggleEmailActionItem,
   type ExtractEmailState,
   type SaveEmailMessageState,
 } from "./actions";
@@ -33,6 +34,7 @@ export type EmailRow = {
   summary: string;
   projects: string;
   actionItems: string;
+  doneActionItems: number[];
   sentiment: string;
   emailDate: string;
   fromName: string;
@@ -187,7 +189,7 @@ function EmailItem({
   companyId: string;
   message: EmailRow;
 }) {
-  const aiCount = actionItemCount(message.actionItems);
+  const items = parseActionItems(message.actionItems);
   return (
     <li className="flex flex-col gap-1.5 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -230,11 +232,75 @@ function EmailItem({
           {message.projects}
         </p>
       ) : null}
-      {aiCount > 0 ? (
-        <p className="text-[10.5px] text-gold-ink">
-          {aiCount} action item{aiCount === 1 ? "" : "s"}
-        </p>
+      {items.length > 0 ? (
+        <EmailActionItems
+          companyId={companyId}
+          messageId={message.id}
+          items={items}
+          done={message.doneActionItems}
+        />
       ) : null}
     </li>
+  );
+}
+
+// The email's action items as checkable follow-ups (Email item 9). Local state
+// flips the checkbox instantly; the server action persists the checked index set
+// per tenant (the page revalidation reconciles the authoritative order).
+function EmailActionItems({
+  companyId,
+  messageId,
+  items,
+  done,
+}: {
+  companyId: string;
+  messageId: string;
+  items: string[];
+  done: number[];
+}) {
+  const [doneSet, setDoneSet] = useState<Set<number>>(() => new Set(done));
+  const [, startToggle] = useTransition();
+
+  return (
+    <ul className="mt-0.5 flex flex-col gap-1">
+      {items.map((item, i) => {
+        const isDone = doneSet.has(i);
+        return (
+          <li key={i}>
+            <label className="flex cursor-pointer items-start gap-1.5 text-[10.5px] leading-snug">
+              <input
+                type="checkbox"
+                checked={isDone}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  const flip = (checked: boolean) =>
+                    setDoneSet((prev) => {
+                      const s = new Set(prev);
+                      if (checked) s.add(i);
+                      else s.delete(i);
+                      return s;
+                    });
+                  flip(next); // optimistic
+                  startToggle(async () => {
+                    const f = new FormData();
+                    f.set("id", messageId);
+                    f.set("companyId", companyId);
+                    f.set("index", String(i));
+                    f.set("done", String(next));
+                    const r = await toggleEmailActionItem(f);
+                    // Roll the checkbox back if the write was refused.
+                    if (r.status === "error") flip(!next);
+                  });
+                }}
+                className="mt-0.5 shrink-0 accent-gold"
+              />
+              <span className={isDone ? "text-ink-3 line-through" : "text-gold-ink"}>
+                {item}
+              </span>
+            </label>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
