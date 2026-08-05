@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 
-import { Button, Card, cn } from "@/components/ui";
+import { Button, Card, cn, TagBadge } from "@/components/ui";
 
 import {
   addProspect,
@@ -11,6 +11,7 @@ import {
   type ProspectFinderState,
 } from "./actions";
 import type { ProspectMode, ProspectTarget } from "@/lib/prospect-finder";
+import { buildOutreachDraft, type OutreachSender } from "@/lib/prospect-outreach";
 
 // Prospect Finder UI (slice 11.6). A client shell over the findProspects server
 // action (web-search discovery stays server-side) with two modes: network-gap
@@ -77,7 +78,13 @@ const PRESETS = [
 
 const emptyFilters = { industry: "", county: "", projectType: "", person: "" };
 
-export function ProspectFinder({ context }: { context: ContextSummary }) {
+export function ProspectFinder({
+  context,
+  sender,
+}: {
+  context: ContextSummary;
+  sender: OutreachSender;
+}) {
   const [mode, setMode] = useState<ProspectMode>("recommendations");
   const [focusArea, setFocusArea] = useState("");
   const [filters, setFilters] = useState(emptyFilters);
@@ -231,7 +238,7 @@ export function ProspectFinder({ context }: { context: ContextSummary }) {
       ) : state.status === "error" ? (
         <p className="text-[11px] text-red-ink">{state.message}</p>
       ) : state.status === "ok" ? (
-        <Results mode={state.mode} targets={state.targets} />
+        <Results mode={state.mode} targets={state.targets} sender={sender} />
       ) : null}
     </div>
   );
@@ -240,9 +247,11 @@ export function ProspectFinder({ context }: { context: ContextSummary }) {
 function Results({
   mode,
   targets,
+  sender,
 }: {
   mode: ProspectMode;
   targets: ProspectTarget[];
+  sender: OutreachSender;
 }) {
   if (targets.length === 0) {
     return (
@@ -263,16 +272,17 @@ function Results({
       </div>
       <ul className="flex flex-col gap-2.5">
         {targets.map((t, i) => (
-          <ProspectCard key={`${t.org}-${i}`} t={t} />
+          <ProspectCard key={`${t.org}-${i}`} t={t} sender={sender} />
         ))}
       </ul>
     </div>
   );
 }
 
-function ProspectCard({ t }: { t: ProspectTarget }) {
+function ProspectCard({ t, sender }: { t: ProspectTarget; sender: OutreachSender }) {
   const [dismissed, setDismissed] = useState(false);
   const [result, setResult] = useState<AddProspectResult | null>(null);
+  const [copied, setCopied] = useState(false);
   const [isAdding, startAdd] = useTransition();
 
   if (dismissed) return null;
@@ -280,14 +290,30 @@ function ProspectCard({ t }: { t: ProspectTarget }) {
   const added = result?.status === "added";
   const exists = result?.status === "exists";
 
+  async function copyDraft() {
+    try {
+      await navigator.clipboard.writeText(buildOutreachDraft(t, sender));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable (insecure context / denied) — no-op.
+    }
+  }
+
   return (
     <li className="rounded-md border border-line bg-surface px-3.5 py-3 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[12.5px] font-semibold text-ink">{t.org}</div>
           <div className="mt-0.5 text-[10.5px] text-ink-3">
-            {[t.contact, t.title, t.county].filter(Boolean).join(" · ")}
+            {[t.contact, t.title].filter(Boolean).join(" · ")}
           </div>
+          {t.industry || t.county ? (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {t.industry ? <TagBadge label={t.industry} tone="teal" /> : null}
+              {t.county ? <TagBadge label={t.county} tone="slate" /> : null}
+            </div>
+          ) : null}
         </div>
         <span className="flex shrink-0 items-center gap-0.5" title={`Fit ${t.score}/5`}>
           {[1, 2, 3, 4, 5].map((n) => (
@@ -330,6 +356,9 @@ function ProspectCard({ t }: { t: ProspectTarget }) {
               : isAdding
                 ? "Adding…"
                 : "Add to pipeline"}
+        </Button>
+        <Button type="button" onClick={copyDraft}>
+          {copied ? "Copied" : "Draft outreach"}
         </Button>
         <Button type="button" onClick={() => setDismissed(true)}>
           Dismiss

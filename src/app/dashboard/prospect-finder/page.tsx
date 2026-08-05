@@ -13,7 +13,7 @@ import { ProspectFinder } from "./_finder";
 // Anthropic key never crosses to the browser).
 
 export default async function ProspectFinderPage() {
-  const { orgId } = await requireOrgContext();
+  const { orgId, orgName, userName } = await requireOrgContext();
 
   const context = await withOrg(orgId, async (tx) => {
     const companies = await tx.company.findMany({
@@ -40,7 +40,10 @@ export default async function ProspectFinderPage() {
         title="Prospect Finder"
         subtitle="Discover new organisations to add to your network."
       />
-      <ProspectFinder context={context} />
+      <ProspectFinder
+        context={context}
+        sender={{ userName, orgName }}
+      />
     </div>
   );
 }
