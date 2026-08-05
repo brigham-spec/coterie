@@ -319,6 +319,18 @@ function ArticleCard({
           {article.significance}
         </p>
       ) : null}
+      {article.keyFacts.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {article.keyFacts.map((f, i) => (
+            <span
+              key={`${f}-${i}`}
+              className="rounded-full bg-gold-bg px-2 py-0.5 text-[10px] text-gold-ink"
+            >
+              {f}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
         <Button
@@ -332,6 +344,7 @@ function ArticleCard({
               f.set("headline", article.headline);
               f.set("url", article.url ?? "");
               f.set("summary", article.summary);
+              f.set("keyFacts", JSON.stringify(article.keyFacts));
               setResult(await saveNewsItem(f));
             })
           }

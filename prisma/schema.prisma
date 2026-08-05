@@ -646,6 +646,12 @@ model NewsItem {
   headline   String
   url        String
   summary    String?
+  // A free-text user annotation and the AI-extracted key facts (News audit item
+  // 6). note is edited inline on the saved-articles list; keyFacts is populated
+  // from the web-search scan and rendered as chips. Both are additive (nullable /
+  // default empty) so the column add is safe against existing rows.
+  note       String?
+  keyFacts   String[] @default([]) @map("key_facts")
   capturedAt DateTime @map("captured_at") @db.Timestamptz(6)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

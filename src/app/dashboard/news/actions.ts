@@ -105,6 +105,28 @@ export type SaveNewsResult =
   | { status: "exists" }
   | { status: "error"; message: string };
 
+const MAX_FACTS = 5;
+const FACT_MAX_LEN = 120;
+
+// Coerce the scan card's JSON-encoded keyFacts payload into a bounded string[].
+// Trusts nothing: non-JSON, non-array, and non-string entries all collapse to an
+// empty list, and each fact is trimmed and length-capped.
+function parseKeyFacts(raw: FormDataEntryValue | null): string[] {
+  if (typeof raw !== "string" || raw === "") return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((f): f is string => typeof f === "string")
+    .map((f) => f.trim().slice(0, FACT_MAX_LEN))
+    .filter((f) => f !== "")
+    .slice(0, MAX_FACTS);
+}
+
 // Persist one discovered article to the NewsItem ledger. Re-verifies the company
 // belongs to THIS org inside the tx (news_items.company_id is a plain FK — RLS
 // WITH CHECK only guards our own org_id, so without this a crafted request could
@@ -116,6 +138,9 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
   const headline = String(formData.get("headline") ?? "").trim();
   const url = String(formData.get("url") ?? "").trim();
   const summary = String(formData.get("summary") ?? "").trim();
+  // The scan card ships the article's AI-extracted facts as a JSON array; a bad
+  // or absent value just persists no facts (they're display-only chips).
+  const keyFacts = parseKeyFacts(formData.get("keyFacts"));
   if (companyId === "" || headline === "" || url === "")
     return { status: "error", message: "Missing article details." };
   // The URL is later rendered as a clickable href, so only http(s) links may be
@@ -145,6 +170,7 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
           headline,
           url,
           summary: summary || null,
+          keyFacts,
           capturedAt: new Date(),
         },
       });
@@ -171,4 +197,35 @@ export async function deleteNewsItem(formData: FormData): Promise<void> {
   await withOrg(orgId, (tx) => tx.newsItem.deleteMany({ where: { id } }));
   revalidatePath("/dashboard/news");
   if (companyId !== "") revalidatePath(`/dashboard/companies/${companyId}`);
+}
+
+export type UpdateNoteResult =
+  | { status: "saved" }
+  | { status: "error"; message: string };
+
+// Save (or clear) a saved article's free-text note (News audit item 6). An empty
+// note clears the field. RLS scopes the update — a foreign id matches no row and
+// affects nothing, surfaced to the caller as a not-found error.
+export async function updateNewsNote(
+  formData: FormData,
+): Promise<UpdateNoteResult> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (id === "") return { status: "error", message: "Missing article." };
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+
+  const updated = await withOrg(orgId, (tx) =>
+    tx.newsItem.updateMany({
+      where: { id },
+      data: { note: note === "" ? null : note },
+    }),
+  );
+  if (updated.count === 0)
+    return { status: "error", message: "Article not found in this organization." };
+
+  revalidatePath("/dashboard/news");
+  if (companyId !== "") revalidatePath(`/dashboard/companies/${companyId}`);
+  return { status: "saved" };
 }

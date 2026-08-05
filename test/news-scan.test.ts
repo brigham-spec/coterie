@@ -15,6 +15,7 @@ describe("parseNewsArticles", () => {
         date: "03/01/2026",
         url: "https://hvbj.example/acme-mill",
         summary: "Acme started construction.",
+        keyFacts: ["$40M investment", "120 jobs"],
         significance: "First major project in the county.",
       },
     ]);
@@ -26,8 +27,33 @@ describe("parseNewsArticles", () => {
         url: "https://hvbj.example/acme-mill",
         summary: "Acme started construction.",
         significance: "First major project in the county.",
+        keyFacts: ["$40M investment", "120 jobs"],
       },
     ]);
+  });
+
+  test("coerces keyFacts: strips citations, drops blanks, caps at 5, defaults []", () => {
+    const raw = JSON.stringify([
+      {
+        headline: "With facts",
+        url: "https://x.example/facts",
+        keyFacts: [
+          '$40M <cite index="1">raise</cite>',
+          "",
+          "  200 jobs  ",
+          "f3",
+          "f4",
+          "f5",
+          "f6-dropped",
+        ],
+      },
+      { headline: "No facts field", url: "https://x.example/nofacts" },
+      { headline: "Facts not an array", url: "https://x.example/bad", keyFacts: "nope" },
+    ]);
+    const out = parseNewsArticles(raw);
+    expect(out[0].keyFacts).toEqual(["$40M raise", "200 jobs", "f3", "f4", "f5"]);
+    expect(out[1].keyFacts).toEqual([]);
+    expect(out[2].keyFacts).toEqual([]);
   });
 
   test("extracts the array even when wrapped in prose / code fences", () => {

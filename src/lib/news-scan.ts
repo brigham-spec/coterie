@@ -15,6 +15,8 @@ import { extractJsonArray } from "@/lib/json-extract";
 
 // One discovered article. `date` is a free-text publication date the model
 // reports (may be blank); `url` is null when the model can't cite a source.
+// `keyFacts` are short extracted facts (dollar amounts, dates, counts) rendered
+// as chips (News audit item 6); empty when the model reports none.
 export type NewsArticle = {
   headline: string;
   source: string;
@@ -22,6 +24,7 @@ export type NewsArticle = {
   url: string | null;
   summary: string;
   significance: string;
+  keyFacts: string[];
 };
 
 // The company context a scan reasons over. Terse and factual so the model
@@ -38,6 +41,8 @@ export type NewsScanInput = {
 
 // Defensive cap on how many articles we accept back (the prompt asks for 5).
 const MAX_ARTICLES = 8;
+// Cap on key-fact chips kept per article (the prompt asks for up to 3).
+const MAX_FACTS = 5;
 
 // The web_search tool wraps cited claims in <cite index="…">…</cite> markup; if
 // left in place it renders as literal tag text on the news card and, once saved,
@@ -60,6 +65,13 @@ function coerceArticle(item: unknown): NewsArticle | null {
   const urlRaw = str(o.url);
   const url = /^https?:\/\//i.test(urlRaw) ? urlRaw : null;
 
+  const keyFacts = Array.isArray(o.keyFacts)
+    ? o.keyFacts
+        .map(str)
+        .filter((f) => f !== "")
+        .slice(0, MAX_FACTS)
+    : [];
+
   return {
     headline,
     source: str(o.source),
@@ -67,6 +79,7 @@ function coerceArticle(item: unknown): NewsArticle | null {
     url,
     summary: str(o.summary),
     significance: str(o.significance),
+    keyFacts,
   };
 }
 
@@ -127,7 +140,7 @@ Region: ${region}${input.website ? `\nWebsite: ${input.website}` : ""}${projectL
 Search specifically for: "${searchTerms.join('" OR "')}" — regional news, project announcements, permits, capital raises, groundbreakings, and press coverage published in the last 12 months. Only include articles published within the past 12 months; exclude anything older.
 
 Return a JSON array of up to 5 results, ONLY the array — no preamble, no markdown code fences:
-[{"headline":"<title>","source":"<publication>","date":"<publication date>","url":"<url or null>","summary":"<2-3 sentences>","significance":"<1 sentence on why this matters for the network>"}]
+[{"headline":"<title>","source":"<publication>","date":"<publication date>","url":"<url or null>","summary":"<2-3 sentences>","keyFacts":["<up to 3 short concrete facts: dollar amounts, dates, job counts, square footage>"],"significance":"<1 sentence on why this matters for the network>"}]
 If nothing relevant is found, return []. Ground every result in a real, verifiable source from your search — do not invent articles.`;
 }
 

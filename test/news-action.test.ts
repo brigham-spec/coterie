@@ -26,7 +26,7 @@ vi.mock("@/lib/news-scan", async (importOriginal) => {
   return { ...actual, scanCompanyNews: scanSpy };
 });
 
-const { scanNews, saveNewsItem, deleteNewsItem } = await import(
+const { scanNews, saveNewsItem, deleteNewsItem, updateNewsNote } = await import(
   "@/app/dashboard/news/actions"
 );
 
@@ -187,5 +187,55 @@ describe("saveNewsItem / deleteNewsItem actions", () => {
       tx.newsItem.findMany({ where: { headline: "Tenant-scoped headline" } }),
     );
     expect(seenByB).toEqual([]);
+  });
+
+  test("persists keyFacts from the scan card and edits/clears the note", async () => {
+    const saved = await saveNewsItem(
+      fd({
+        companyId: companyAId,
+        headline: "Article with facts",
+        url: "https://x.example/facts",
+        summary: "",
+        keyFacts: JSON.stringify(["$40M raise", "120 jobs"]),
+      }),
+    );
+    expect(saved).toEqual({ status: "saved" });
+
+    const row = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.findFirst({ where: { url: "https://x.example/facts" } }),
+    );
+    expect(row?.keyFacts).toEqual(["$40M raise", "120 jobs"]);
+    expect(row?.note).toBeNull();
+
+    // Set a note, then clear it.
+    const noted = await updateNewsNote(
+      fd({ id: row!.id, companyId: companyAId, note: "Follow up with Pat" }),
+    );
+    expect(noted).toEqual({ status: "saved" });
+    const withNote = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.findUnique({ where: { id: row!.id } }),
+    );
+    expect(withNote?.note).toBe("Follow up with Pat");
+
+    const cleared = await updateNewsNote(
+      fd({ id: row!.id, companyId: companyAId, note: "" }),
+    );
+    expect(cleared).toEqual({ status: "saved" });
+    const afterClear = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.findUnique({ where: { id: row!.id } }),
+    );
+    expect(afterClear?.note).toBeNull();
+
+    await deleteNewsItem(fd({ id: row!.id }));
+  });
+
+  test("updateNewsNote refuses a foreign article id (RLS)", async () => {
+    const result = await updateNewsNote(
+      fd({ id: randomUUID(), companyId: companyAId, note: "nope" }),
+    );
+    expect(result).toEqual({
+      status: "error",
+      message: "Article not found in this organization.",
+    });
   });
 });
