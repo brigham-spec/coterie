@@ -32,6 +32,7 @@ type CompanyRow = {
   canOffer: string | null;
   agencyContacts: string | null;
   dealSize: string | null;
+  tier: string | null;
   counties: string[];
   contacts: Array<{ name: string; isPrimary: boolean }>;
   projectLinks: Array<{ project: { name: string } }>;
@@ -54,9 +55,14 @@ function toSearchProfile(c: CompanyRow): NetworkSearchProfile {
   };
 }
 
+// A match enriched with the company's org-configured member tier (a free-text
+// label, null when unranked). Tier lives on the Company row, not in the pure
+// NetworkSearchMatch the engine returns, so it's joined back on here by id.
+export type NetworkSearchResult = NetworkSearchMatch & { tier: string | null };
+
 export type NetworkSearchState =
   | { status: "idle" }
-  | { status: "ok"; query: string; matches: NetworkSearchMatch[] }
+  | { status: "ok"; query: string; matches: NetworkSearchResult[] }
   | { status: "error"; message: string };
 
 export async function searchNetwork(
@@ -80,7 +86,12 @@ export async function searchNetwork(
   try {
     await enforceAiRateLimit(orgId);
     const matches = await generateNetworkMatches(query, profiles);
-    return { status: "ok", query, matches };
+    const tierById = new Map(companies.map((c) => [c.id, c.tier]));
+    const enriched = matches.map((m) => ({
+      ...m,
+      tier: tierById.get(m.companyId) ?? null,
+    }));
+    return { status: "ok", query, matches: enriched };
   } catch (err) {
     console.error("network search failed", err);
     if (err instanceof AiRateLimitError)

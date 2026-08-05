@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useActionState } from "react";
 
-import { Button, Card } from "@/components/ui";
+import { Button, Card, TagBadge } from "@/components/ui";
 
-import { searchNetwork, type NetworkSearchState } from "./actions";
-import type { NetworkSearchMatch } from "@/lib/network-search";
+import {
+  searchNetwork,
+  type NetworkSearchResult,
+  type NetworkSearchState,
+} from "./actions";
 
 // Network Search UI (slice 11.5). A client shell over the searchNetwork server
 // action (so the Anthropic key stays server-side). The textarea holds the plain-
@@ -46,6 +49,14 @@ export function NetworkSearch({ initialQuery = "" }: { initialQuery?: string }) 
             required
             defaultValue={initialQuery}
             disabled={isPending}
+            onKeyDown={(e) => {
+              // ⌘↵ / Ctrl+↵ submits without leaving the textarea (a plain Enter
+              // is left for newlines).
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
             placeholder="e.g. Who has experience with adaptive-reuse projects in Newburgh?"
             className="w-full resize-none rounded-sm border border-line-2 bg-surface px-3 py-2 text-xs text-ink outline-none focus:border-gold-line disabled:opacity-50"
           />
@@ -53,9 +64,14 @@ export function NetworkSearch({ initialQuery = "" }: { initialQuery?: string }) 
             <p className="text-[10px] text-ink-3">
               Searches your active network. Results are grounded in your own data.
             </p>
-            <Button type="submit" variant="gold" disabled={isPending}>
-              {isPending ? "Searching…" : "Search"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <kbd className="hidden rounded-sm border border-line-2 bg-surface-2 px-1.5 py-0.5 text-[9px] text-ink-3 sm:inline">
+                {"\u2318\u21B5"}
+              </kbd>
+              <Button type="submit" variant="gold" disabled={isPending}>
+                {isPending ? "Searching…" : "Search"}
+              </Button>
+            </div>
           </div>
         </form>
 
@@ -91,13 +107,25 @@ function Results({
   matches,
 }: {
   query: string;
-  matches: NetworkSearchMatch[];
+  matches: NetworkSearchResult[];
 }) {
   return (
     <div>
       <div className="mb-2 text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
         {matches.length} match{matches.length === 1 ? "" : "es"} for “{query}”
       </div>
+      {matches.length >= 2 ? (
+        <p className="mb-2 text-[10.5px] text-ink-3">
+          Several companies matched —{" "}
+          <Link
+            href="/dashboard/introductions"
+            className="text-gold hover:underline"
+          >
+            open the Intro Engine
+          </Link>{" "}
+          to connect them.
+        </p>
+      ) : null}
       {matches.length === 0 ? (
         <p className="text-[11px] text-ink-3 italic">
           No companies in your network matched that. Try rephrasing.
@@ -113,21 +141,20 @@ function Results({
   );
 }
 
-function MatchCard({ m }: { m: NetworkSearchMatch }) {
+function MatchCard({ m }: { m: NetworkSearchResult }) {
   return (
     <li className="rounded-md border border-line bg-surface px-3.5 py-3 shadow-card">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <Link
             href={`/dashboard/companies/${m.companyId}`}
             className="text-[12px] font-semibold text-ink hover:underline"
           >
             {m.companyName}
           </Link>
+          {m.tier ? <TagBadge label={m.tier} tone="slate" /> : null}
           {m.contactName ? (
-            <span className="ml-1.5 text-[11px] text-ink-3">
-              · {m.contactName}
-            </span>
+            <span className="text-[11px] text-ink-3">· {m.contactName}</span>
           ) : null}
         </div>
         <RelevancePips relevance={m.relevance} />

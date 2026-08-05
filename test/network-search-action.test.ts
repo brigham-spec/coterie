@@ -57,7 +57,13 @@ beforeAll(async () => {
   activeAId = (
     await withOrg(orgA.id, (tx) =>
       tx.company.create({
-        data: { orgId: orgA.id, name: "Active (A)", status: "member", ...base },
+        data: {
+          orgId: orgA.id,
+          name: "Active (A)",
+          status: "member",
+          tier: "Director",
+          ...base,
+        },
       }),
     )
   ).id;
@@ -112,7 +118,13 @@ describe("searchNetwork action", () => {
 
     const state = await searchNetwork({ status: "idle" }, fd("who does test work"));
 
-    expect(state).toEqual({ status: "ok", query: "who does test work", matches: canned });
+    // The ok state joins the company's org-configured tier back onto each match
+    // by id (the engine's pure match has no tier).
+    expect(state).toEqual({
+      status: "ok",
+      query: "who does test work",
+      matches: canned.map((m) => ({ ...m, tier: "Director" })),
+    });
 
     // The engine received org A's ACTIVE company, and neither org B's row nor the
     // former member — proving the action's withOrg query is tenant-scoped and
