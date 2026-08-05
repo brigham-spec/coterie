@@ -18,3 +18,13 @@ export function revalidateActionItemSurfaces(): void {
   revalidatePath("/dashboard/events/[id]", "page");
   revalidatePath("/dashboard");
 }
+
+// An introduction always shows on the org-wide ledger, and — when the mutation
+// originated on a company profile (create/advance/confirm/delete there, slice
+// S8d) — on that profile too. The concrete companyId (not the "page" variant)
+// is enough here: an intro belongs to a known company, so there's nothing
+// cross-attributed to bust. Callers pass companyId only when they have it.
+export function revalidateIntroSurfaces(companyId?: string): void {
+  revalidatePath("/dashboard/introductions");
+  if (companyId) revalidatePath(`/dashboard/companies/${companyId}`);
+}

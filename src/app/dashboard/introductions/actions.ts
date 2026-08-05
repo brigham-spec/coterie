@@ -1,10 +1,10 @@
 "use server";
 
 import Anthropic from "@anthropic-ai/sdk";
-import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { revalidateIntroSurfaces } from "@/lib/revalidate";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { optionalDate } from "@/lib/form-fields";
 import { isIntroStage } from "@/lib/intro-stages";
@@ -36,6 +36,8 @@ export async function createIntroduction(formData: FormData): Promise<void> {
   const connectionType = String(formData.get("connectionType") ?? "").trim();
   const headline = String(formData.get("headline") ?? "").trim().slice(0, 200);
   const notes = String(formData.get("notes") ?? "").trim().slice(0, 1000);
+  // Optional: when logged from a company profile, also revalidate that page.
+  const companyId = String(formData.get("companyId") ?? "").trim();
 
   if (!partyAContactId || !partyBContactId)
     throw new Error("both parties are required");
@@ -73,7 +75,7 @@ export async function createIntroduction(formData: FormData): Promise<void> {
     });
   });
 
-  revalidatePath("/dashboard/introductions");
+  revalidateIntroSurfaces(companyId);
 }
 
 // Advance an introduction along the lifecycle (slice 11.4a) and optionally record
@@ -88,6 +90,8 @@ export async function updateIntroduction(formData: FormData): Promise<void> {
   const outcome = String(formData.get("outcome") ?? "").trim();
   if (!introId || !status) throw new Error("introduction and status are required");
   if (!isIntroStage(status)) throw new Error("invalid introduction status");
+  // Optional: when advanced from a company profile, also revalidate that page.
+  const companyId = String(formData.get("companyId") ?? "").trim();
 
   await withOrg(orgId, async (tx) => {
     const intro = await tx.introduction.findUnique({ where: { id: introId } });
@@ -99,7 +103,27 @@ export async function updateIntroduction(formData: FormData): Promise<void> {
     });
   });
 
-  revalidatePath("/dashboard/introductions");
+  revalidateIntroSurfaces(companyId);
+}
+
+// Delete an introduction (slice S8d, inline management on the company profile).
+// The row is re-loaded withOrg-scoped from the form id (RLS → a foreign id
+// resolves null → refused), never trusting client-passed ownership. Any linked
+// value_delivered row survives — its introduction FK is SetNull.
+export async function deleteIntroduction(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const introId = String(formData.get("introId") ?? "").trim();
+  if (!introId) throw new Error("introduction is required");
+  const companyId = String(formData.get("companyId") ?? "").trim();
+
+  await withOrg(orgId, async (tx) => {
+    const intro = await tx.introduction.findUnique({ where: { id: introId } });
+    if (!intro) throw new Error("introduction not found in this organization");
+    await tx.introduction.delete({ where: { id: introId } });
+  });
+
+  revalidateIntroSurfaces(companyId);
 }
 
 // Draft-introduction-email (gap-audit cluster E). Writes the warm double-opt-in

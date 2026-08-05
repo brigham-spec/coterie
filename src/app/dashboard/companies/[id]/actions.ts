@@ -66,7 +66,10 @@ import {
   type IntroSuggestion,
 } from "@/lib/intro-engine";
 import { introProfileInclude, toIntroProfile } from "@/lib/intro-profile";
-import { revalidateActionItemSurfaces } from "@/lib/revalidate";
+import {
+  revalidateActionItemSurfaces,
+  revalidateIntroSurfaces,
+} from "@/lib/revalidate";
 import {
   buildMeetingIntelContext,
   meetingIntelCutoff,
@@ -469,8 +472,7 @@ export async function confirmIntroAdvance(formData: FormData): Promise<void> {
     await tx.introduction.update({ where: { id: introId }, data: { status } });
   });
 
-  revalidatePath("/dashboard/introductions");
-  if (companyId) revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidateIntroSurfaces(companyId);
 }
 
 // Why-join membership pitch (gap-audit cluster E). Written for a prospect: the
