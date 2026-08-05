@@ -16,6 +16,8 @@ import {
   Tr,
 } from "@/components/ui";
 
+import { ContactDetails } from "./_details";
+
 // Contact detail — a person's home in the CRM. Surfaces their own fields (title,
 // email, phone, LinkedIn, tags, notes) and the relations that make a contact
 // worth a click-through: introductions they're a party to, meetings they've
@@ -47,7 +49,17 @@ export default async function ContactDetailPage({
     async (tx) => {
       const contact = await tx.contact.findUnique({
         where: { id },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          title: true,
+          email: true,
+          additionalEmails: true,
+          phone: true,
+          linkedin: true,
+          notes: true,
+          tags: true,
+          isPrimary: true,
           company: { select: { id: true, name: true, status: true } },
         },
       });
@@ -88,12 +100,6 @@ export default async function ContactDetailPage({
   );
 
   if (contact == null) notFound();
-
-  const facts: Array<{ label: string; value: string | null }> = [
-    { label: "Title", value: contact.title },
-    { label: "Email", value: contact.email },
-    { label: "Phone", value: contact.phone },
-  ];
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -140,46 +146,20 @@ export default async function ContactDetailPage({
         ) : null}
       </div>
 
-      <Card>
-        <CardHeader title="Details" />
-        <dl className="grid grid-cols-2 gap-4 p-4 text-xs sm:grid-cols-3">
-          {facts.map((f) => (
-            <div key={f.label}>
-              <dt className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
-                {f.label}
-              </dt>
-              <dd className="text-ink">{f.value ?? "—"}</dd>
-            </div>
-          ))}
-          <div>
-            <dt className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
-              LinkedIn
-            </dt>
-            <dd className="text-ink">
-              {contact.linkedin ? (
-                <a
-                  href={contact.linkedin}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-gold hover:underline"
-                >
-                  Profile
-                </a>
-              ) : (
-                "—"
-              )}
-            </dd>
-          </div>
-        </dl>
-        {contact.notes ? (
-          <div className="border-t border-line px-4 py-3">
-            <div className="mb-1 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
-              Notes
-            </div>
-            <p className="text-xs whitespace-pre-wrap text-ink-2">{contact.notes}</p>
-          </div>
-        ) : null}
-      </Card>
+      <ContactDetails
+        contact={{
+          id: contact.id,
+          name: contact.name,
+          title: contact.title,
+          email: contact.email,
+          additionalEmails: contact.additionalEmails,
+          phone: contact.phone,
+          linkedin: contact.linkedin,
+          notes: contact.notes,
+          tags: contact.tags,
+          isPrimary: contact.isPrimary,
+        }}
+      />
 
       <Card>
         <CardHeader title="Introductions" />

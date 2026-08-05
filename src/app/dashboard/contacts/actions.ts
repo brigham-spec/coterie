@@ -51,9 +51,10 @@ function readAdditionalEmails(formData: FormData): string[] {
   return out;
 }
 
-function revalidateContact(companyId: string): void {
+function revalidateContact(companyId: string, contactId?: string): void {
   revalidatePath(`/dashboard/companies/${companyId}`);
   revalidatePath("/dashboard/contacts");
+  if (contactId) revalidatePath(`/dashboard/contacts/${contactId}`);
 }
 
 export async function createContact(formData: FormData): Promise<void> {
@@ -120,7 +121,7 @@ export async function updateContact(formData: FormData): Promise<void> {
   });
 
   if (companyId == null) throw new Error("contact not found in this organization");
-  revalidateContact(companyId);
+  revalidateContact(companyId, contactId);
 }
 
 export async function removeContact(formData: FormData): Promise<void> {
@@ -140,6 +141,7 @@ export async function removeContact(formData: FormData): Promise<void> {
   });
 
   if (companyId == null) throw new Error("contact not found in this organization");
+  // No per-contact bust: the row is gone, so /dashboard/contacts/{id} 404s.
   revalidateContact(companyId);
 }
 
@@ -170,5 +172,5 @@ export async function setPrimaryContact(formData: FormData): Promise<void> {
   });
 
   if (companyId == null) throw new Error("contact not found in this organization");
-  revalidateContact(companyId);
+  revalidateContact(companyId, contactId);
 }

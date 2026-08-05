@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { Button, Card, CardHeader, Field, Textarea } from "@/components/ui";
-import { CONTACT_TAGS, getTagDef } from "@/lib/tags";
+import { Card, CardHeader } from "@/components/ui";
+import { getTagDef } from "@/lib/tags";
 
 import {
   createContact,
@@ -12,26 +12,15 @@ import {
   removeContact,
   setPrimaryContact,
 } from "@/app/dashboard/contacts/actions";
+import { ContactForm, type ContactRow } from "@/app/dashboard/contacts/_contact-form";
 
 // Editable Contacts card (profile-parity P2). The company detail page was
 // read-only; this owns the add/edit/remove/set-primary surface for the firm's
 // people, mirroring the prototype's in-modal contact editing. All writes go
 // through the withOrg-scoped contact actions — this holds only local UI state
 // (which row is open, whether the add form is showing). After a successful save
-// the server revalidates and the open form closes.
-
-export type ContactRow = {
-  id: string;
-  name: string;
-  title: string | null;
-  email: string | null;
-  additionalEmails: string[];
-  phone: string | null;
-  linkedin: string | null;
-  notes: string;
-  tags: string[];
-  isPrimary: boolean;
-};
+// the server revalidates and the open form closes. The row editor itself lives
+// in the shared _contact-form module (also used by the standalone contact page).
 
 export function ContactsCard({
   companyId,
@@ -188,94 +177,5 @@ function ContactItem({ contact }: { contact: ContactRow }) {
         <p className="text-xs whitespace-pre-wrap text-ink-2">{contact.notes}</p>
       ) : null}
     </li>
-  );
-}
-
-function ContactForm({
-  action,
-  hidden,
-  defaults,
-  submitLabel,
-  onDone,
-}: {
-  action: (formData: FormData) => Promise<void>;
-  hidden: Record<string, string>;
-  defaults?: ContactRow;
-  submitLabel: string;
-  onDone: () => void;
-}) {
-  const tagSet = new Set(defaults?.tags ?? []);
-
-  return (
-    <form
-      action={async (fd) => {
-        await action(fd);
-        onDone();
-      }}
-      className="flex flex-col gap-4"
-    >
-      {Object.entries(hidden).map(([name, value]) => (
-        <input key={name} type="hidden" name={name} value={value} />
-      ))}
-
-      <div className="grid grid-cols-2 gap-4">
-        <Field name="name" label="Name" defaultValue={defaults?.name ?? ""} required />
-        <Field name="title" label="Title" defaultValue={defaults?.title ?? ""} />
-        <Field
-          name="email"
-          label="Email"
-          type="email"
-          defaultValue={defaults?.email ?? ""}
-        />
-        <Field name="phone" label="Phone" defaultValue={defaults?.phone ?? ""} />
-        <Field
-          name="linkedin"
-          label="LinkedIn"
-          defaultValue={defaults?.linkedin ?? ""}
-          className="col-span-2"
-        />
-        <Field
-          name="additionalEmails"
-          label="Additional emails (comma-separated)"
-          defaultValue={defaults?.additionalEmails.join(", ") ?? ""}
-          className="col-span-2"
-        />
-      </div>
-
-      <Textarea name="notes" label="Notes" defaultValue={defaults?.notes ?? ""} />
-
-      <div>
-        <span className="mb-1.5 block text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase">
-          Tags
-        </span>
-        <div className="flex flex-wrap gap-2">
-          {CONTACT_TAGS.map((t) => (
-            <label
-              key={t.key}
-              title={t.desc}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm border border-line-2 bg-surface px-2.5 py-1 text-[11px] text-ink-2 has-[:checked]:border-gold-line has-[:checked]:bg-gold-bg has-[:checked]:text-gold-ink"
-            >
-              <input
-                type="checkbox"
-                name="tags"
-                value={t.key}
-                defaultChecked={tagSet.has(t.key)}
-                className="sr-only"
-              />
-              {t.label}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex justify-end gap-2">
-        <Button type="button" onClick={onDone}>
-          Cancel
-        </Button>
-        <Button type="submit" variant="primary">
-          {submitLabel}
-        </Button>
-      </div>
-    </form>
   );
 }
