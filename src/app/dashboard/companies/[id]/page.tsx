@@ -543,6 +543,7 @@ export default async function CompanyDetailPage({
       <DetailsCard
         company={{
           id: company.id,
+          name: company.name,
           status: company.status,
           tier: company.tier,
           tierLocked: company.tierLocked,

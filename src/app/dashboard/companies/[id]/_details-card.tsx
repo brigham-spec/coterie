@@ -14,7 +14,7 @@ import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
 import { autoAssignTier, type MemberTier } from "@/lib/member-tiers";
 import { ORG_TAGS } from "@/lib/tags";
 
-import { updateCompany, changeCompanyStatus } from "./actions";
+import { updateCompany, changeCompanyStatus, deleteCompany } from "./actions";
 
 // Editable Details card (profile-parity P1 + S7 field parity). The company
 // detail page is otherwise read-only; this owns the view/edit toggle for the
@@ -31,6 +31,7 @@ const currency = new Intl.NumberFormat("en-US", {
 
 export type DetailsCompany = {
   id: string;
+  name: string;
   status: string;
   tier: string | null;
   tierLocked: boolean;
@@ -190,7 +191,51 @@ function ReadView({
         </div>
       ) : null}
       <LifecycleBar company={company} />
+      <DangerZone company={company} />
     </Card>
+  );
+}
+
+// Permanent delete (Members 22). Distinct from Archive above (a reversible status
+// change) — this destroys the record and everything hanging off it, so it sits
+// behind a two-step inline confirm rather than firing on a single click. The
+// server action redirects to the directory once the row is gone.
+function DangerZone({ company }: { company: DetailsCompany }) {
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <div className="border-t border-line px-4 py-3">
+      {confirming ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-ink-2">
+            Permanently delete <span className="font-medium">{company.name}</span>{" "}
+            and all of its contacts, meetings, notes, and history? This cannot be
+            undone.
+          </p>
+          <div className="flex items-center gap-2">
+            <Button type="button" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <form action={deleteCompany}>
+              <input type="hidden" name="companyId" value={company.id} />
+              <Button type="submit" variant="danger">
+                Delete permanently
+              </Button>
+            </form>
+          </div>
+        </div>
+      ) : (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="text-[10px] font-medium tracking-[0.06em] text-red uppercase hover:underline"
+          >
+            Delete company
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

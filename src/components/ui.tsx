@@ -14,12 +14,13 @@ export function cn(...parts: Array<string | false | null | undefined>): string {
 }
 
 // ── Button ──────────────────────────────────────────────────────────────────
-type ButtonVariant = "default" | "gold" | "primary";
+type ButtonVariant = "default" | "gold" | "primary" | "danger";
 
 const buttonVariants: Record<ButtonVariant, string> = {
   default: "border-line-2 bg-surface text-ink-2 hover:bg-surface-2",
   gold: "border-gold-line bg-gold-bg text-gold-ink hover:brightness-[0.98]",
   primary: "border-ink bg-ink text-white hover:bg-ink-hover",
+  danger: "border-red-line bg-red-bg text-red-ink hover:brightness-[0.98]",
 };
 
 export function Button({

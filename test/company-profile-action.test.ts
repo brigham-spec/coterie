@@ -15,13 +15,16 @@ import { withOrg } from "@/lib/tenant";
 // untouched.
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// deleteCompany redirects to the directory once the row is gone; a real redirect
+// throws NEXT_REDIRECT, so stub it to a no-op for the action-level assertion.
+vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
 const mockCtx = vi.hoisted(() => ({ orgId: "", orgName: "", userId: "", userName: "" }));
 vi.mock("@/lib/auth", () => ({
   requireOrgContext: vi.fn(async () => mockCtx),
 }));
 
-const { updateCompany, changeCompanyStatus } = await import(
+const { updateCompany, changeCompanyStatus, deleteCompany } = await import(
   "@/app/dashboard/companies/[id]/actions"
 );
 const { createCompany } = await import("@/app/dashboard/companies/actions");
@@ -438,6 +441,156 @@ describe("changeCompanyStatus", () => {
       }),
     );
     expect(companyB!.status).toBe("member");
+  });
+});
+
+describe("deleteCompany", () => {
+  test("permanently removes the company, its contacts, and their introductions/meetings/news/activity", async () => {
+    // Seed a self-contained member with the dependents a real profile carries:
+    // two contacts, an introduction between them (a RESTRICT FK that would block
+    // the contact cascade), a meeting attended by one of them, a news item, and
+    // an activity. All of it must be gone after the delete.
+    const seeded = await withOrg(orgA.id, async (tx) => {
+      const company = await tx.company.create({
+        data: {
+          orgId: orgA.id,
+          name: "Deletable Co",
+          status: "member",
+          industry: "Manufacturing",
+          annualValue: 1000,
+          contacts: {
+            create: [
+              { orgId: orgA.id, name: "First Person", isPrimary: true },
+              { orgId: orgA.id, name: "Second Person" },
+            ],
+          },
+        },
+        include: { contacts: true },
+      });
+      const [c1, c2] = company.contacts;
+
+      const intro = await tx.introduction.create({
+        data: {
+          orgId: orgA.id,
+          partyAContactId: c1.id,
+          partyBContactId: c2.id,
+          status: "suggested",
+          source: "manual",
+        },
+      });
+      const meeting = await tx.meeting.create({
+        data: { orgId: orgA.id, title: "Kickoff", heldAt: new Date() },
+      });
+      await tx.meetingAttendee.create({
+        data: {
+          orgId: orgA.id,
+          meetingId: meeting.id,
+          contactId: c1.id,
+          matchMethod: "manual",
+          confidence: 1,
+          confirmed: true,
+        },
+      });
+      const news = await tx.newsItem.create({
+        data: {
+          orgId: orgA.id,
+          companyId: company.id,
+          headline: "In the news",
+          url: `https://news.test/${randomUUID()}`,
+          capturedAt: new Date(),
+        },
+      });
+      const activity = await tx.activity.create({
+        data: {
+          orgId: orgA.id,
+          companyId: company.id,
+          type: "status_changed",
+          payload: { from: null, to: "member" },
+          occurredAt: new Date(),
+        },
+      });
+      // A meeting-derived "they owe" item owned by a contact but NOT scoped to the
+      // company (no companyId). Its owner_contact_id FK is SET NULL, but the
+      // action_items owner-XOR CHECK forbids a row with no owner — so the delete
+      // must pre-clear this item rather than let the cascade null it into an
+      // invalid state (which would abort the whole transaction).
+      const orphanItem = await tx.actionItem.create({
+        data: {
+          orgId: orgA.id,
+          meetingId: meeting.id,
+          text: "They owe us documents",
+          ownerContactId: c1.id,
+          status: "open",
+        },
+      });
+      // A company-scoped item (composite company FK): CASCADE — dies with the firm.
+      const scopedItem = await tx.actionItem.create({
+        data: {
+          orgId: orgA.id,
+          companyId: company.id,
+          text: "We owe a follow-up",
+          ownerUserId: staffUser.id,
+          status: "open",
+        },
+      });
+      return {
+        companyId: company.id,
+        contactIds: [c1.id, c2.id],
+        meetingId: meeting.id,
+        introId: intro.id,
+        newsId: news.id,
+        activityId: activity.id,
+        orphanItemId: orphanItem.id,
+        scopedItemId: scopedItem.id,
+      };
+    });
+
+    await deleteCompany(fd({ companyId: seeded.companyId }));
+
+    const after = await withOrg(orgA.id, async (tx) => ({
+      company: await tx.company.count({ where: { id: seeded.companyId } }),
+      contacts: await tx.contact.count({ where: { id: { in: seeded.contactIds } } }),
+      intro: await tx.introduction.count({ where: { id: seeded.introId } }),
+      attendees: await tx.meetingAttendee.count({
+        where: { contactId: { in: seeded.contactIds } },
+      }),
+      news: await tx.newsItem.count({ where: { id: seeded.newsId } }),
+      activity: await tx.activity.count({ where: { id: seeded.activityId } }),
+      // The Meeting row itself has no companyId — it is not deleted, only its
+      // attendee link is.
+      meeting: await tx.meeting.count({ where: { id: seeded.meetingId } }),
+      // Both action items are gone: the company-scoped one via the company
+      // cascade, the contact-owned one via the up-front pre-clear.
+      scopedItem: await tx.actionItem.count({ where: { id: seeded.scopedItemId } }),
+      orphanItem: await tx.actionItem.count({ where: { id: seeded.orphanItemId } }),
+    }));
+    expect(after).toEqual({
+      company: 0,
+      contacts: 0,
+      intro: 0,
+      attendees: 0,
+      news: 0,
+      activity: 0,
+      meeting: 1,
+      scopedItem: 0,
+      orphanItem: 0,
+    });
+
+    // Clean up the orphaned meeting so the tenant teardown stays tidy.
+    await withOrg(orgA.id, (tx) =>
+      tx.meeting.delete({ where: { id: seeded.meetingId } }),
+    );
+  });
+
+  test("refuses a company id from another tenant and leaves it untouched", async () => {
+    await expect(
+      deleteCompany(fd({ companyId: companyBId })),
+    ).rejects.toThrow("company not found in this organization");
+
+    const companyB = await withOrg(orgB.id, (tx) =>
+      tx.company.count({ where: { id: companyBId } }),
+    );
+    expect(companyB).toBe(1);
   });
 });
 

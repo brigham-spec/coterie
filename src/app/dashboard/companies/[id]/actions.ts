@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -2324,6 +2325,62 @@ export async function changeCompanyStatus(formData: FormData): Promise<void> {
   revalidatePath(`/dashboard/companies/${companyId}`);
   revalidatePath("/dashboard/companies");
   revalidatePath("/dashboard");
+}
+
+// Permanent, irreversible delete of a company and everything hanging off it
+// (Members 22). Distinct from Archive (a status change that keeps the record) —
+// this tears the row out. Almost every dependent (contacts, meetings-attendance,
+// invoices, news, activity, notes, value, proposals, project links) is wired ON
+// DELETE CASCADE / SET NULL, so a single company delete cleans them up. Two
+// dependents that hang off the firm's *contacts* need clearing first inside the
+// same tx, though:
+//   - Introductions reference party contacts through a RESTRICT foreign key,
+//     which would block the contact cascade outright.
+//   - Action items owned by a contact carry an owner_contact_id SET NULL FK, but
+//     action_items also has a CHECK that exactly one owner (user XOR contact) is
+//     set. A contact-owned item with no user owner (e.g. a meeting-derived "they
+//     owe") would be SET NULL'd to *no* owner by the cascade, violating that
+//     CHECK and aborting the whole transaction. So we delete the firm's
+//     contacts' action items up front rather than let the cascade null them.
+// The confirm gate lives in the UI; here we only re-check the company is ours
+// (RLS) before deleting.
+export async function deleteCompany(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) throw new Error("missing company");
+
+  const ok = await withOrg(orgId, async (tx) => {
+    // findUnique doubles as the not-found / RLS guard (a foreign id resolves to
+    // null under the org GUC), matching the boolean idiom the other writers use.
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (company == null) return false;
+
+    // Clear the RESTRICT introductions and contact-owned action items first (both
+    // deleteMany 0 rows when the firm has none), via a relation filter on the
+    // party / owner contacts' companyId — no need to fan out through contact ids.
+    await tx.introduction.deleteMany({
+      where: {
+        OR: [{ partyA: { companyId } }, { partyB: { companyId } }],
+      },
+    });
+    await tx.actionItem.deleteMany({
+      where: { ownerContact: { companyId } },
+    });
+
+    await tx.company.delete({ where: { id: companyId } });
+    return true;
+  });
+
+  if (!ok) throw new Error("company not found in this organization");
+
+  revalidatePath("/dashboard/companies");
+  revalidatePath("/dashboard");
+  // The profile no longer exists — send the user back to the directory.
+  redirect("/dashboard/companies");
 }
 
 // ── Commitments (interactive action items on the company profile) ───────────
