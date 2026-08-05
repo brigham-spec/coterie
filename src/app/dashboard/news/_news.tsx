@@ -10,6 +10,7 @@ import {
   type NewsScanState,
   type SaveNewsResult,
 } from "./actions";
+import { addNote, addCommitment } from "../companies/[id]/actions";
 import type { NewsArticle } from "@/lib/news-scan";
 
 // News scanner UI (slice 11.9; batch scan = slice S9b, News item 2). A client
@@ -43,9 +44,11 @@ const idleScan: NewsScanState = { status: "idle" };
 export function NewsScanner({
   companies,
   initialCompanyId = "",
+  currentUserId,
 }: {
   companies: ScanCompany[];
   initialCompanyId?: string;
+  currentUserId: string;
 }) {
   // Arriving from a company profile's "Scan the web" shortcut pre-selects that
   // company (initialCompanyId) so the scan is one click away. We deliberately do
@@ -228,6 +231,7 @@ export function NewsScanner({
                 companyId={r.companyId}
                 companyName={r.companyName}
                 articles={r.articles}
+                currentUserId={currentUserId}
               />
             ),
           )}
@@ -241,10 +245,12 @@ function CompanyResults({
   companyId,
   companyName,
   articles,
+  currentUserId,
 }: {
   companyId: string;
   companyName: string;
   articles: NewsArticle[];
+  currentUserId: string;
 }) {
   if (articles.length === 0) {
     return (
@@ -260,7 +266,12 @@ function CompanyResults({
       </div>
       <ul className="flex flex-col gap-2.5">
         {articles.map((a, i) => (
-          <ArticleCard key={`${a.url ?? a.headline}-${i}`} companyId={companyId} article={a} />
+          <ArticleCard
+            key={`${a.url ?? a.headline}-${i}`}
+            companyId={companyId}
+            article={a}
+            currentUserId={currentUserId}
+          />
         ))}
       </ul>
     </div>
@@ -270,12 +281,22 @@ function CompanyResults({
 function ArticleCard({
   companyId,
   article,
+  currentUserId,
 }: {
   companyId: string;
   article: NewsArticle;
+  currentUserId: string;
 }) {
   const [result, setResult] = useState<SaveNewsResult | null>(null);
   const [isSaving, startSave] = useTransition();
+  // Two lightweight, reuse-driven quick actions on each scan card: log the
+  // article as a timeline touchpoint (addNote) or open a "we owe" follow-up
+  // action item owned by the current user (addCommitment). Both reuse the
+  // company-profile server actions verbatim — no new write path, no migration.
+  const [noteState, setNoteState] = useState<"done" | "error" | null>(null);
+  const [isNoting, startNote] = useTransition();
+  const [taskState, setTaskState] = useState<"done" | "error" | null>(null);
+  const [isTasking, startTask] = useTransition();
 
   const saved = result?.status === "saved";
   const exists = result?.status === "exists";
@@ -325,6 +346,55 @@ function ArticleCard({
                   ? "Save"
                   : "No link to save"}
         </Button>
+        <button
+          type="button"
+          disabled={isNoting || noteState === "done"}
+          onClick={() =>
+            startNote(async () => {
+              const f = new FormData();
+              f.set("companyId", companyId);
+              f.set(
+                "body",
+                `News: ${article.headline}${article.url ? ` — ${article.url}` : ""}`,
+              );
+              const r = await addNote(f);
+              setNoteState(r.status === "saved" ? "done" : "error");
+            })
+          }
+          className="text-[11px] text-ink-2 hover:text-gold disabled:opacity-40"
+        >
+          {noteState === "done"
+            ? "On timeline"
+            : isNoting
+              ? "Adding…"
+              : "+ Timeline"}
+        </button>
+        <button
+          type="button"
+          disabled={isTasking || taskState === "done"}
+          onClick={() =>
+            startTask(async () => {
+              const f = new FormData();
+              f.set("companyId", companyId);
+              f.set("text", `Follow up: ${article.headline}`);
+              f.set("direction", "we_owe");
+              f.set("ownerId", currentUserId);
+              try {
+                await addCommitment(f);
+                setTaskState("done");
+              } catch {
+                setTaskState("error");
+              }
+            })
+          }
+          className="text-[11px] text-ink-2 hover:text-gold disabled:opacity-40"
+        >
+          {taskState === "done"
+            ? "Action added"
+            : isTasking
+              ? "Adding…"
+              : "+ Action item"}
+        </button>
         {article.url ? (
           <a
             href={article.url}
@@ -337,6 +407,16 @@ function ArticleCard({
         ) : null}
         {result?.status === "error" ? (
           <span className="text-[11px] text-red-ink">{result.message}</span>
+        ) : null}
+        {noteState === "error" ? (
+          <span className="text-[11px] text-red-ink">
+            Couldn&apos;t add to timeline.
+          </span>
+        ) : null}
+        {taskState === "error" ? (
+          <span className="text-[11px] text-red-ink">
+            Couldn&apos;t add action item.
+          </span>
         ) : null}
       </div>
     </li>

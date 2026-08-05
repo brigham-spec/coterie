@@ -18,7 +18,7 @@ export default async function NewsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { orgId } = await requireOrgContext();
+  const { orgId, userId } = await requireOrgContext();
   const sp = await searchParams;
   const rawCompany = typeof sp.company === "string" ? sp.company : "";
 
@@ -64,7 +64,11 @@ export default async function NewsPage({
         subtitle="Track recent press, project announcements, and developments across your network."
       />
 
-      <NewsScanner companies={scannable} initialCompanyId={initialCompanyId} />
+      <NewsScanner
+        companies={scannable}
+        initialCompanyId={initialCompanyId}
+        currentUserId={userId}
+      />
 
       <SavedArticlesList
         articles={newsItems.map((n) => ({
