@@ -3,6 +3,8 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useRef } from "react";
 
+import { COMPANY_SORT_OPTIONS } from "@/lib/company-list";
+
 // Client filter bar for the companies table. Search / owner / tag / sort all
 // live in the URL query string so the view is shareable and server-rendered —
 // this component only translates control changes into router.push, preserving
@@ -11,12 +13,6 @@ import { useRef } from "react";
 
 export type OwnerOption = { id: string; name: string };
 export type TagOption = { key: string; label: string };
-
-const sortOptions = [
-  { value: "name", label: "Name (A–Z)" },
-  { value: "value", label: "Value (high–low)" },
-  { value: "recent", label: "Last contact" },
-];
 
 export function CompanyFilters({
   owners,
@@ -132,7 +128,7 @@ export function CompanyFilters({
         aria-label="Sort by"
         className={control}
       >
-        {sortOptions.map((s) => (
+        {COMPANY_SORT_OPTIONS.map((s) => (
           <option key={s.value} value={s.value}>
             {s.label}
           </option>

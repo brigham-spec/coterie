@@ -5,7 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
 import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
+import { ACTIVE_COMMITMENT_STATUSES } from "@/lib/commitments";
 import { readMemberTiers } from "@/lib/member-tiers";
+import {
+  staleTone,
+  tallyIntrosByCompany,
+  tallyOpenActionsByCompany,
+  type StaleTone,
+} from "@/lib/company-list";
 import {
   Button,
   Card,
@@ -54,15 +61,24 @@ const SEGMENTS: Segment[] = [
 
 const DAY = 86_400_000;
 
-function relContact(date: Date | null): string {
+function relContact(date: Date | null, now: Date): string {
   if (date == null) return "—";
-  const days = Math.floor((Date.now() - date.getTime()) / DAY);
+  const days = Math.floor((now.getTime() - date.getTime()) / DAY);
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   if (days < 30) return `${days}d ago`;
   if (days < 365) return `${Math.floor(days / 30)}mo ago`;
   return `${Math.floor(days / 365)}y ago`;
 }
+
+// Full class strings per staleness bucket (Tailwind JIT needs literals). Mirrors
+// the dashboard Needs-a-Call red/amber, with teal for a fresh contact.
+const STALE_CLASS: Record<StaleTone, string> = {
+  fresh: "text-teal-ink",
+  warm: "text-gold-ink",
+  stale: "text-red-ink",
+  none: "text-ink-3",
+};
 
 function one(value: string | string[] | undefined): string {
   return typeof value === "string" ? value : "";
@@ -88,30 +104,53 @@ export default async function CompaniesPage({
   const ownerFilter = one(sp.owner);
   const tagFilter = one(sp.tag);
   const tierFilter = one(sp.tier);
+  const industryFilter = one(sp.industry);
   const likelihoodFilter = Number(one(sp.likelihood)) || 0;
   const sort = one(sp.sort) || "name";
+  const now = new Date();
 
-  // Companies (RLS-scoped) and the org's configured member tiers (organizations
-  // carry no RLS — a plain query). The tier list orders the filter facet.
-  const [companies, org] = await Promise.all([
-    withOrg(ctx.orgId, (tx) =>
-      tx.company.findMany({
-        orderBy: { name: "asc" },
-        include: {
-          owner: { select: { id: true, name: true } },
-          contacts: {
-            where: { isPrimary: true },
-            take: 1,
-            select: { name: true },
+  // Companies (RLS-scoped) plus the per-company open-action and introduction
+  // tallies (both bounded per-tenant reads, attributed in memory), and the org's
+  // configured member tiers (organizations carry no RLS — a plain query). The
+  // tier list orders the filter facet.
+  const [{ companies, openActionByCompany, introByCompany }, org] =
+    await Promise.all([
+      withOrg(ctx.orgId, async (tx) => {
+        const companies = await tx.company.findMany({
+          orderBy: { name: "asc" },
+          include: {
+            owner: { select: { id: true, name: true } },
+            contacts: {
+              where: { isPrimary: true },
+              take: 1,
+              select: { name: true },
+            },
           },
-        },
+        });
+        const actionRows = await tx.actionItem.findMany({
+          where: { status: { in: [...ACTIVE_COMMITMENT_STATUSES] } },
+          select: {
+            companyId: true,
+            ownerContact: { select: { companyId: true } },
+          },
+        });
+        const introRows = await tx.introduction.findMany({
+          select: {
+            partyA: { select: { companyId: true } },
+            partyB: { select: { companyId: true } },
+          },
+        });
+        return {
+          companies,
+          openActionByCompany: tallyOpenActionsByCompany(actionRows),
+          introByCompany: tallyIntrosByCompany(introRows),
+        };
       }),
-    ),
-    prisma.organization.findUnique({
-      where: { id: ctx.orgId },
-      select: { settings: true },
-    }),
-  ]);
+      prisma.organization.findUnique({
+        where: { id: ctx.orgId },
+        select: { settings: true },
+      }),
+    ]);
   const configuredTiers = readMemberTiers(org?.settings);
 
   const segment = SEGMENTS.find((s) => s.key === segmentKey) ?? SEGMENTS[0];
@@ -126,11 +165,18 @@ export default async function CompaniesPage({
   const ownerMap = new Map<string, string>();
   const tagSet = new Set<string>();
   const tierSet = new Set<string>();
+  const industryCount = new Map<string, number>();
   for (const c of companies) {
     if (c.owner) ownerMap.set(c.owner.id, c.owner.name);
     for (const t of c.networkTags) tagSet.add(t);
     if (c.tier) tierSet.add(c.tier);
+    if (c.industry)
+      industryCount.set(c.industry, (industryCount.get(c.industry) ?? 0) + 1);
   }
+  // Industry quick-chips — the industries present, busiest first (name tie-break).
+  const industries = [...industryCount.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const owners = [...ownerMap.entries()]
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -157,6 +203,7 @@ export default async function CompaniesPage({
     .filter((c) => (ownerFilter ? c.ownerUserId === ownerFilter : true))
     .filter((c) => (tagFilter ? c.networkTags.includes(tagFilter) : true))
     .filter((c) => (tierFilter ? c.tier === tierFilter : true))
+    .filter((c) => (industryFilter ? c.industry === industryFilter : true))
     .filter((c) =>
       likelihoodFilter ? (c.likelihood ?? 0) >= likelihoodFilter : true,
     );
@@ -168,24 +215,40 @@ export default async function CompaniesPage({
       const bt = b.lastContactAt?.getTime() ?? 0;
       return bt - at;
     }
+    if (sort === "actions") {
+      const ac = openActionByCompany.get(a.id) ?? 0;
+      const bc = openActionByCompany.get(b.id) ?? 0;
+      return bc - ac || a.name.localeCompare(b.name);
+    }
     return a.name.localeCompare(b.name);
   });
 
   const totalValue = rows.reduce((t, c) => t + Number(c.annualValue), 0);
 
-  // Segment tab hrefs preserve the active filters (but reset nothing else).
-  function segmentHref(key: string): string {
+  // Build a list href from the active filters with a patch applied — so a segment
+  // tab or industry chip preserves every other filter and only changes its own.
+  function makeHref(patch: Record<string, string>): string {
+    const base: Record<string, string> = {
+      segment: segmentKey === "all" ? "" : segmentKey,
+      q: one(sp.q),
+      owner: ownerFilter,
+      tag: tagFilter,
+      tier: tierFilter,
+      industry: industryFilter,
+      likelihood: likelihoodFilter ? String(likelihoodFilter) : "",
+      sort: sort === "name" ? "" : sort,
+    };
     const params = new URLSearchParams();
-    if (key !== "all") params.set("segment", key);
-    if (q) params.set("q", one(sp.q));
-    if (ownerFilter) params.set("owner", ownerFilter);
-    if (tagFilter) params.set("tag", tagFilter);
-    if (tierFilter) params.set("tier", tierFilter);
-    if (likelihoodFilter) params.set("likelihood", String(likelihoodFilter));
-    if (sort !== "name") params.set("sort", sort);
+    for (const [key, value] of Object.entries({ ...base, ...patch }))
+      if (value) params.set(key, value);
     const query = params.toString();
     return query ? `/dashboard/companies?${query}` : "/dashboard/companies";
   }
+  const segmentHref = (key: string) =>
+    makeHref({ segment: key === "all" ? "" : key });
+  // Clicking the active industry chip clears it.
+  const industryHref = (name: string) =>
+    makeHref({ industry: industryFilter === name ? "" : name });
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -276,6 +339,31 @@ export default async function CompaniesPage({
           })}
         </div>
 
+        {industries.length > 1 ? (
+          <div className="flex flex-wrap items-center gap-1 border-b border-line px-3 py-2">
+            {industries.map((ind) => {
+              const active = industryFilter === ind.name;
+              return (
+                <Link
+                  key={ind.name}
+                  href={industryHref(ind.name)}
+                  className={cn(
+                    "rounded-full px-2.5 py-0.5 text-[10.5px] transition-colors",
+                    active
+                      ? "bg-ink text-white"
+                      : "bg-surface-2 text-ink-3 hover:bg-surface-3 hover:text-ink",
+                  )}
+                >
+                  {ind.name}
+                  <span className={cn("ml-1", active ? "text-white/60" : "text-ink-3")}>
+                    {ind.count}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
+
         <CompanyFilters owners={owners} tags={tags} tiers={tiers} />
 
         {rows.length === 0 ? (
@@ -296,23 +384,43 @@ export default async function CompaniesPage({
                 </>
               }
             >
-              {rows.map((c) => (
-                <Tr key={c.id}>
-                  <Td className="font-medium">
-                    <Link
-                      href={`/dashboard/companies/${c.id}`}
-                      className="hover:text-gold hover:underline"
-                    >
-                      {c.name}
-                    </Link>
-                    <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] font-normal text-ink-3">
-                      <StatusBadge status={c.status} />
-                      {c.industry ? <span>{c.industry}</span> : null}
-                      {consultingTag(c.consulting) ? (
-                        <span className="rounded-sm border border-line-2 px-1.5 py-0.5 text-[9.5px] tracking-[0.04em] text-ink-2 uppercase">
-                          {consultingTag(c.consulting)}
-                        </span>
-                      ) : null}
+              {rows.map((c) => {
+                const openActions = openActionByCompany.get(c.id) ?? 0;
+                const introCount = introByCompany.get(c.id) ?? 0;
+                const consulting = consultingTag(c.consulting);
+                return (
+                  <Tr key={c.id}>
+                    <Td className="font-medium">
+                      <Link
+                        href={`/dashboard/companies/${c.id}`}
+                        className="hover:text-gold hover:underline"
+                      >
+                        {c.name}
+                      </Link>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] font-normal text-ink-3">
+                        <StatusBadge status={c.status} />
+                        {c.industry ? <span>{c.industry}</span> : null}
+                        {openActions > 0 ? (
+                          <span
+                            className="rounded-sm bg-gold-bg px-1.5 py-0.5 text-[9.5px] text-gold-ink"
+                            title={`${openActions} open action item${openActions === 1 ? "" : "s"}`}
+                          >
+                            {openActions} open
+                          </span>
+                        ) : null}
+                        {introCount > 0 ? (
+                          <span
+                            className="rounded-sm bg-teal-bg px-1.5 py-0.5 text-[9.5px] text-teal-ink"
+                            title={`${introCount} introduction${introCount === 1 ? "" : "s"}`}
+                          >
+                            {introCount} intro{introCount === 1 ? "" : "s"}
+                          </span>
+                        ) : null}
+                        {consulting ? (
+                          <span className="rounded-sm border border-line-2 px-1.5 py-0.5 text-[9.5px] tracking-[0.04em] text-ink-2 uppercase">
+                            {consulting}
+                          </span>
+                        ) : null}
                       {c.likelihood != null ? (
                         <span
                           className="flex gap-0.5"
@@ -357,9 +465,12 @@ export default async function CompaniesPage({
                     )}
                   </Td>
                   <Td>{currency.format(Number(c.annualValue))}</Td>
-                  <Td className="text-ink-2">{relContact(c.lastContactAt)}</Td>
+                  <Td className={STALE_CLASS[staleTone(c.lastContactAt, now)]}>
+                    {relContact(c.lastContactAt, now)}
+                  </Td>
                 </Tr>
-              ))}
+                );
+              })}
             </Table>
             <div className="flex items-center justify-between px-4 py-2.5 text-[11px] text-ink-3">
               <span>
