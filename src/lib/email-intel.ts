@@ -27,6 +27,22 @@ export type MatchCompany = {
   contactNames: string[];
 };
 
+// Shape a loaded company (with its contacts) into the MatchCompany the matcher
+// wants: non-empty contact emails and every contact name. Shared by the sheet
+// sync and the paste-a-thread flow so the mapping lives in one place.
+export function toMatchCompany(company: {
+  id: string;
+  name: string;
+  contacts: { name: string; email: string | null }[];
+}): MatchCompany {
+  return {
+    id: company.id,
+    name: company.name,
+    contactEmails: company.contacts.map((k) => k.email ?? "").filter(Boolean),
+    contactNames: company.contacts.map((k) => k.name),
+  };
+}
+
 // Map a sentiment string to a TagBadge tone (positive → teal, negative → red,
 // else slate). Shared by the org-level inbox and the per-company profile card.
 export function sentimentTone(sentiment: string): "teal" | "red" | "slate" {

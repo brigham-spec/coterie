@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 
 import { EmailSync } from "./_email";
+import { PasteThread } from "./_paste-thread";
 import { deleteEmailMessage } from "./actions";
 
 // Email Intelligence (slice 11.12) — a Zapier zap has Claude analyse each inbound
@@ -81,6 +82,8 @@ export default async function EmailPage() {
       />
 
       <EmailSync savedUrl={savedUrl} lastSync={lastSync ? lastSync.toISOString() : null} />
+
+      <PasteThread />
 
       {emails.length === 0 ? (
         <Card>
