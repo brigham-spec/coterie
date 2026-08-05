@@ -41,6 +41,7 @@ const {
   generateBrief,
   draftOutreach,
   markOutreachSent,
+  findEventTargets,
   linkEventProject,
   updateEventCost,
   markAllAttended,
@@ -437,5 +438,47 @@ describe("event + guest-list actions", () => {
       tx.event.findMany({ where: { name: "Fall Dinner" } }),
     );
     expect(seenByB).toEqual([]);
+  });
+
+  test("finds a connection-graph target for a current guest's company", async () => {
+    const eventId = await findEventId("Fall Dinner");
+    // A second orgA member connected to the invited Member A (via Alice) through
+    // an active introduction — the warm target we expect surfaced.
+    const connectorContactId = await withOrg(orgA.id, async (tx) => {
+      const connector = await tx.company.create({
+        data: {
+          orgId: orgA.id,
+          name: "Connector Co",
+          status: "member",
+          industry: "Capital",
+          annualValue: 1000,
+          contacts: { create: { orgId: orgA.id, name: "Dana C", isPrimary: true } },
+        },
+        include: { contacts: true },
+      });
+      await tx.introduction.create({
+        data: {
+          orgId: orgA.id,
+          partyAContactId: aliceId,
+          partyBContactId: connector.contacts[0].id,
+          status: "made",
+          source: "manual",
+        },
+      });
+      return connector.contacts[0].id;
+    });
+
+    const state = await findEventTargets({ status: "idle" }, fd({ eventId }));
+    expect(state.status).toBe("ok");
+    if (state.status !== "ok") return;
+    expect(state.guestCount).toBeGreaterThanOrEqual(1);
+    const connector = state.suggestions.find((s) => s.org === "Connector Co");
+    expect(connector).toBeDefined();
+    expect(connector!.contactId).toBe(connectorContactId);
+    expect(connector!.edges).toEqual([
+      { type: "intro", label: "Introduced to Member A (Made)" },
+    ]);
+    // No other tenant's company is ever suggested (RLS).
+    expect(state.suggestions.some((s) => s.org === "Member B")).toBe(false);
   });
 });

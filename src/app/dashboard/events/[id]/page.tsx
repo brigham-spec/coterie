@@ -40,6 +40,7 @@ import {
 } from "../actions";
 import { GuestBrief } from "./_guest-brief";
 import { Outreach } from "./_outreach";
+import { FindTargets } from "./_find-targets";
 import { SuggestGuests } from "./_suggest-guests";
 import {
   Debrief,
@@ -494,6 +495,8 @@ export default async function EventDetailPage({
       </Card>
 
       <SuggestGuests eventId={event.id} />
+
+      <FindTargets eventId={event.id} />
 
       <GuestBrief eventId={event.id} />
 

@@ -9,7 +9,12 @@ import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { optionalDate } from "@/lib/form-fields";
 import { getTagDef } from "@/lib/tags";
-import { isIntroStage } from "@/lib/intro-stages";
+import { isIntroStage, TERMINAL_INTRO_STAGES } from "@/lib/intro-stages";
+import {
+  computeEventTargets,
+  type TargetCandidate,
+  type TargetSuggestion,
+} from "@/lib/event-targets";
 import { COMMITMENT_STATUSES } from "@/lib/commitments";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES } from "@/lib/company-statuses";
@@ -761,6 +766,142 @@ export async function suggestGuestList(
 
   revalidatePath(`/dashboard/events/${eventId}`);
   return added === 0 ? { status: "empty" } : { status: "ok", added };
+}
+
+// Find-Targets connection graph (slice S10b, ported from the prototype's
+// scanForTargets). Unlike the AI curator above, this is a deterministic scan of
+// the relationship graph: it loads who's already on this event's guest list
+// (their companies), then network companies connected to those guests through an
+// introduction, a shared project, or a referral, and returns them scored
+// strongest-first with the reasons. Read-only — the operator adds a suggestion
+// through the normal addInvitee flow. The graph scoring lives in
+// @/lib/event-targets so it stays testable without a database.
+
+export type FindTargetsState =
+  | { status: "idle" }
+  | { status: "ok"; suggestions: TargetSuggestion[]; guestCount: number }
+  | { status: "error"; message: string };
+
+export async function findEventTargets(
+  _prev: FindTargetsState,
+  formData: FormData,
+): Promise<FindTargetsState> {
+  const { orgId } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  if (!eventId) return { status: "error", message: "Pick an event." };
+
+  const data = await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: { id: true },
+    });
+    if (!event) return null;
+
+    // The companies already represented on the guest list (via a CRM contact).
+    const invitees = await tx.eventInvitee.findMany({
+      where: { eventId, contactId: { not: null } },
+      select: { contact: { select: { companyId: true } } },
+    });
+    const invitedCompanyIds = [
+      ...new Set(
+        invitees
+          .map((i) => i.contact?.companyId)
+          .filter((v): v is string => v != null),
+      ),
+    ];
+    // No CRM guests yet → no graph to walk.
+    if (invitedCompanyIds.length === 0)
+      return { invited: [], candidates: [], intros: [], projectLinks: [] };
+
+    const invited = await tx.company.findMany({
+      where: { id: { in: invitedCompanyIds } },
+      select: { id: true, name: true, referredById: true },
+    });
+
+    // Network companies not already on the list, each with the contact we'd add.
+    const candidateRows = await tx.company.findMany({
+      where: {
+        status: { in: [...NETWORK_STATUSES] },
+        id: { notIn: invitedCompanyIds },
+      },
+      select: {
+        id: true,
+        name: true,
+        referredById: true,
+        contacts: {
+          orderBy: [{ isPrimary: "desc" }, { name: "asc" }],
+          take: 1,
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    // Only active intros that touch an invited guest can form an edge.
+    const introRows = await tx.introduction.findMany({
+      where: {
+        status: { notIn: [...TERMINAL_INTRO_STAGES] },
+        OR: [
+          { partyA: { companyId: { in: invitedCompanyIds } } },
+          { partyB: { companyId: { in: invitedCompanyIds } } },
+        ],
+      },
+      select: {
+        status: true,
+        partyA: { select: { companyId: true } },
+        partyB: { select: { companyId: true } },
+      },
+    });
+
+    // Only links in projects that an invited guest participates in can be shared.
+    const linkRows = await tx.projectLink.findMany({
+      where: {
+        project: {
+          projectLinks: { some: { companyId: { in: invitedCompanyIds } } },
+        },
+      },
+      select: {
+        companyId: true,
+        project: { select: { id: true, name: true } },
+      },
+    });
+
+    return { invited, candidates: candidateRows, intros: introRows, projectLinks: linkRows };
+  });
+
+  if (data === null) return { status: "error", message: "Event not found." };
+
+  const guestCount = data.invited.length;
+  const candidates: TargetCandidate[] = data.candidates
+    .filter((c) => c.contacts.length > 0)
+    .map((c) => ({
+      companyId: c.id,
+      contactId: c.contacts[0].id,
+      contactName: c.contacts[0].name,
+      orgName: c.name,
+      referredById: c.referredById,
+    }));
+
+  const suggestions = computeEventTargets({
+    invited: data.invited.map((c) => ({
+      companyId: c.id,
+      name: c.name,
+      referredById: c.referredById,
+    })),
+    candidates,
+    intros: data.intros.map((i) => ({
+      aCompanyId: i.partyA.companyId,
+      bCompanyId: i.partyB.companyId,
+      status: i.status,
+    })),
+    projectLinks: data.projectLinks.map((l) => ({
+      projectId: l.project.id,
+      projectName: l.project.name,
+      companyId: l.companyId,
+    })),
+  });
+
+  return { status: "ok", suggestions, guestCount };
 }
 
 // Event outreach email draft (gap-audit cluster D, ported from the prototype's
