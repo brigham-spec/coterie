@@ -16,7 +16,18 @@ const initialState: EmailSyncState = { status: "idle" };
 const SHEET_HEADERS =
   "date | from_name | from_email | subject | member_match | org_match | summary | projects | action_items | sentiment | thread_id";
 
-const GUIDE_STEPS: { title: string; body: string }[] = [
+const CLAUDE_REQUEST_BODY = `{
+  "model": "claude-haiku-4-5-20251001",
+  "max_tokens": 400,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Analyse this email and reply with ONLY a JSON object (no prose) using these keys: member_match (the sender's likely contact name), org_match (their likely company/org), summary (one sentence), projects (semicolon-separated project names, or empty), action_items (semicolon-separated follow-ups, or empty), sentiment (one of: positive, neutral, negative).\\n\\nFrom: {{from_name}} <{{from_email}}>\\nSubject: {{subject}}\\n\\n{{body}}"
+    }
+  ]
+}`;
+
+const GUIDE_STEPS: { title: string; body: string; code?: string }[] = [
   {
     title: "1. Create the Google Sheet",
     body: 'Make a new sheet named "Email Intelligence". Paste the header row below into row 1, then File → Share → Publish to web → CSV → Publish, and copy that URL.',
@@ -27,7 +38,8 @@ const GUIDE_STEPS: { title: string; body: string }[] = [
   },
   {
     title: "3. Analyse with Claude",
-    body: 'Add a Webhooks by Zapier → POST to https://api.anthropic.com/v1/messages. Ask Claude (haiku) to return JSON with member_match, org_match, summary, projects, action_items, and sentiment for the email body.',
+    body: "Add a Webhooks by Zapier → Custom Request → POST to https://api.anthropic.com/v1/messages. Set headers x-api-key: <your key>, anthropic-version: 2023-06-01, content-type: application/json. Paste the request body below (the {{…}} tokens are Zapier fields from step 2).",
+    code: CLAUDE_REQUEST_BODY,
   },
   {
     title: "4. Append a row",
@@ -128,6 +140,11 @@ export function EmailSync({
                   <li key={s.title}>
                     <div className="text-[11.5px] font-medium text-ink">{s.title}</div>
                     <div className="text-[11px] leading-relaxed text-ink-2">{s.body}</div>
+                    {s.code ? (
+                      <pre className="mt-1 overflow-x-auto rounded-sm bg-surface px-2 py-1.5 text-[10px] leading-relaxed text-ink-2">
+                        <code>{s.code}</code>
+                      </pre>
+                    ) : null}
                   </li>
                 ))}
               </ol>

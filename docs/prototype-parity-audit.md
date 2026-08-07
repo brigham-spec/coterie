@@ -190,10 +190,10 @@ sonnet→opus and added hallucination guards). News and Email carry the real deb
 
 | # | Feature | Prototype behavior | Prod status | Persistence | Size |
 |---|---------|--------------------|-------------|-------------|------|
-| 8 | Org-level "Paste email thread" modal | Paste→AI extract {matchedMember, contact, meetingTitle/date, summary, actionItems, newProspects, insights}→save as MEETING note + create prospects. (~L16460) | Partial (paste exists only on company profile, saves EmailMessage not meeting; no prospect creation) | Derived + Company writes | M |
-| 9 | Interactive email action-item checkboxes | Check/uncheck email action items (EMAIL_CHECKS_KEY). (~L16105) | MISSING (prod shows count only) | **Yes** (check state) | M |
-| 10 | Auto-create prospect from unmatched email | Unmatched sender + newProspects[]→new prospect records. (~L16541) | MISSING | **Yes** (Company writes) | M |
-| 11 | Full Zapier body template in setup guide | 6-step guide incl literal Anthropic API JSON body. (~L16146) | Partial (5-step, concept only, no JSON body) | No | S |
+| 8 | Org-level "Paste email thread" modal | Paste→AI extract {matchedMember, contact, meetingTitle/date, summary, actionItems, newProspects, insights}→save as MEETING note + create prospects. (~L16460) | DONE (extractEmailThread sonnet parse + saveEmailThread → creates a Meeting + attendee on the matched/created company, folds action items + insights into the summary, auto-creates prospects; email/actions.ts:201-436) | Derived + Company writes | M |
+| 9 | Interactive email action-item checkboxes | Check/uncheck email action items (EMAIL_CHECKS_KEY). (~L16105) | DONE — col ALREADY shipped (EmailMessage.doneActionItems Int[] schema.prisma:689); toggleEmailActionItem persists per-index checked state on the company-profile email card (companies/[id]/actions.ts:1367-1402). Org inbox intentionally shows a bare count. NOT a pending migration | **Yes** (check state) | M |
+| 10 | Auto-create prospect from unmatched email | Unmatched sender + newProspects[]→new prospect records. (~L16541) | DONE — saveEmailThread creates a prospect Company from an unmatched sender + each surfaced newProspect (deduped by name; email/actions.ts:338-416). Uses the existing Company table, NOT a pending migration | **Yes** (Company writes) | M |
+| 11 | Full Zapier body template in setup guide | 6-step guide incl literal Anthropic API JSON body. (~L16146) | DONE (setup guide step 3 now ships the literal copy-paste Anthropic /v1/messages JSON request body + required headers; _email.tsx CLAUDE_REQUEST_BODY) | No | S |
 
 **Prod has that prototype lacks (email):** SSRF redirect-safe CSV fetch (Google-host
 allowlist), RFC-4180 quoted-field parser, `externalKey` upsert dedup, per-message delete,
