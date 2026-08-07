@@ -64,7 +64,7 @@ gaps are list-view intelligence, a few missing profile fields, and Fireflies-on-
 | 8 | "Load from Fireflies" on profile | Pull all Fireflies meetings mentioning member's contacts/domains. (~L5244) | MISSING | Yes (writes meetings) | M |
 | 9 | AI "Extract action items" per meeting on profile | Per-meeting button extracts items → deliverables. (~L5317) | MISSING (exists on global meeting, not profile) | Yes | M |
 | 10 | Second-degree contacts from meeting transcripts | Names in action items not in CRM surface as "+ Add to CRM" chips. (~L5528) | MISSING | Yes (creates contacts) | L |
-| 11 | Action-item extra statuses: Waiting / Skipped | ⏳ waiting + ⊘ skipped, distinct from open/done. (~L5856) | Partial (open/done/dropped) | **Yes** (status enum) | S |
+| 11 | Action-item extra statuses: Waiting / Skipped | ⏳ waiting + ⊘ skipped, distinct from open/done. (~L5856) | DONE (`COMMITMENT_STATUSES = open/waiting/done/dropped` in `lib/commitments.ts`; `waiting` = blocked-but-active with gold badge + left-border in `_commitments-card.tsx:256,280`; `dropped` = the prototype's "skipped" (dismissed); `updateCommitmentStatus` validates the vocab `actions.ts:2475`; tested `commitments.test.ts:117`, `commitment-action.test.ts:277`) | **Yes** (`status` text, no enum/migration) | S |
 | 12 | Action-item bulk select + batch done/delete | ☑ select mode, multi-select, select-all. (~L5726) | MISSING | No | M |
 | 13 | Move/reassign action item to different member | Owner chip → reassign across companies. (~L5684) | Partial (owner edit within company only) | Yes | M |
 | 14 | List: open-action count + intro count per row | Per-row badges. (~L4308, 4320) | DONE (S11a: gold "N open" + teal "N intros" badges per row) | Derived | M |
