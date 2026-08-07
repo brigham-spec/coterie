@@ -67,7 +67,7 @@ gaps are list-view intelligence, a few missing profile fields, and Fireflies-on-
 | 14 | List: open-action count + intro count per row | Per-row badges. (~L4308, 4320) | DONE (S11a: gold "N open" + teal "N intros" badges per row) | Derived | M |
 | 15 | List: color-coded last-contact staleness | Red >90d / amber >60d / green. (~L4315) | DONE (S11a: STALE_CLASS red >90d / amber >60d / teal fresh) | Derived | S |
 | 16 | List: industry quick-chips + "Open Actions" sort | Industry chip row + sort option. (~L4230, 4252) | DONE (S11a: industry quick-chip row + "Open actions" sort) | Derived | S |
-| 17 | In-header status quick-change pill | Clickable pill, all statuses, logs history. (~L4502) | Partial (lifecycle bar + edit form) | Derived | S |
+| 17 | In-header status quick-change pill | Clickable pill, all statuses, logs history. (~L4502) | DONE (StatusPill: header badge → menu of all statuses → changeCompanyStatus logs an Activity) | Derived | S |
 | 18 | Consulting/IDA field | `cons` field on profile, exported CSV. (~L5114) | DONE (company.consulting field editable on profile details card + "Consulting"/"IDA" list badge; prod has no member-CSV export) | **Yes** (col) | S |
 | 19 | Partnership "Synthesize" AI button | Web-search + AI fills category/summary/collab. (~L4653) | DONE (P6a: synthesizePartner action + draft fold-in) | No | M |
 | 20 | Their-Network: link-to-CRM / Add-to-CRM | Inline search to link relationship to a member or create prospect. (~L4781) | DONE (P6b: linkKeyRelationship + addRelationshipAsProspect; linkedCompanyId shipped) | Yes (crmLink) | M |
