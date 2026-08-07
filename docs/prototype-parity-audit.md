@@ -16,24 +16,27 @@ active/current/prospects/partners, commitments, introductions, news, finder
 
 ## Events  (researched — Coterie.html event modal ~L8195–8660)
 
-Prod detail (`events/[id]/page.tsx`) is a stub: Details facts, Advance-stage, guest
-table (RSVP + remove), ephemeral GuestBrief + single-guest Outreach draft, Add-guest.
-The prototype event modal is a full pre/post-event workspace.
+ALL 12 rows below shipped in slice S10 (a-c) — verified 2026-08-07 against
+`events/page.tsx`, `events/[id]/page.tsx`, `events/actions.ts`, and
+`prisma/schema.prisma`. The prod event detail is now a full pre/post-event workspace
+(Details + stage/project, Cost & ROI + conversions, guest list w/ bulk attend,
+Suggest guests, Find targets, Guest brief, batch Outreach w/ send tracking, Debrief:
+notes + follow-ups + intros-at-event). No open Events work remains.
 
 | # | Feature | Prototype behavior (line #) | Prod status | Persistence | Size |
 |---|---------|-----------------------------|-------------|-------------|------|
-| 1 | AI Suggest Guest List | sonnet-4-6 curates N guests from the network w/ a per-guest *reason*; prioritizes theme-fit, never-invited, active-project relevance; feeds Fireflies meeting intel. Reason stored as invitee note. (~L8210) | MISSING | No (writes invitees) | M |
-| 2 | Cost & ROI | `net = Σ(conversion ARR × $1k) − cost`; `roi% = round(net/cost×100)`; "$Xk net gain/loss · +Y% ROI". (~L8330) | Partial (cost shown, no ROI) | Derived | S |
-| 3 | New Members from event (conversions) | Log attendees/prospects who joined as paying members; each carries ARR $k/yr; drives ROI + list stats. (~L8360) | MISSING | **Yes** (new store) | M |
-| 4 | Follow-up action items | `{text, person, done}` checklist per event. (~L8250) | MISSING | **Yes** (or reuse action_items w/ eventId) | S |
-| 5 | Introductions made at this event | Log intro between two attendees → Intro Log ("Event Introduction / Met at &lt;event&gt;") + both timelines. (~L8270) | MISSING | **Yes** (introductions + eventId) | M |
-| 6 | Notes & debrief | Free-text event recap. | MISSING | **Yes** (event.notes) | S |
-| 7 | Outreach → Find Targets | Scans network for non-invited members connected to current guests via 4 edge types (intro history, intro obligation, shared project, referral), strength-ranked; +Add/Dismiss; stores connection chain. (~L8470–8560) | MISSING | No | M |
-| 8 | Outreach → Draft All + send tracking | Batch-draft invite emails for every guest; per-guest status none/draft/sent; refinement chips (Shorter/Event first/Connection first/Direct/Fresh take); Redraft/Copy/Mark Sent. (~L8570+) | Partial (single-guest, ephemeral, no status) | **Yes** (per-invitee draft+status) | L |
-| 9 | Mark All Confirmed → Attended | Bulk RSVP transition. (~L8239) | MISSING | No | S |
-| 10 | Link to Project | `projectId` field on event create/detail. | MISSING | **Yes** (event.projectId) | S |
-| 11 | List stats + "Never invited" roster | 5 metrics (adds New members, Net ROI) + never-invited member chips. | Partial (3 metrics) | Derived (from #3) | S |
-| 12 | External guest fields | Prototype captures external name/org/**email/title**. | Partial (name/org only) | Yes (2 cols) | S |
+| 1 | AI Suggest Guest List | sonnet-4-6 curates N guests from the network w/ a per-guest *reason*; prioritizes theme-fit, never-invited, active-project relevance; feeds Fireflies meeting intel. Reason stored as invitee note. (~L8210) | DONE (`suggestGuestList` + `_suggest-guests.tsx`) | No (writes invitees) | M |
+| 2 | Cost & ROI | `net = Σ(conversion ARR × $1k) − cost`; `roi% = round(net/cost×100)`; "$Xk net gain/loss · +Y% ROI". (~L8330) | DONE (Cost & ROI card, `events/[id]/page.tsx`) | Derived | S |
+| 3 | New Members from event (conversions) | Log attendees/prospects who joined as paying members; each carries ARR $k/yr; drives ROI + list stats. (~L8360) | DONE (`EventConversion` model; `addConversion`/`removeConversion`) | **Yes** (shipped) | M |
+| 4 | Follow-up action items | `{text, person, done}` checklist per event. (~L8250) | DONE (action_items w/ eventId; `addEventActionItem` + Debrief) | **Yes** (shipped) | S |
+| 5 | Introductions made at this event | Log intro between two attendees → Intro Log ("Event Introduction / Met at &lt;event&gt;") + both timelines. (~L8270) | DONE (`logIntroductionAtEvent`; introductions.eventId) | **Yes** (shipped) | M |
+| 6 | Notes & debrief | Free-text event recap. | DONE (`event.notes`; `updateEventNotes` + Debrief) | **Yes** (shipped) | S |
+| 7 | Outreach → Find Targets | Scans network for non-invited members connected to current guests via 4 edge types (intro history, intro obligation, shared project, referral), strength-ranked; +Add/Dismiss; stores connection chain. (~L8470–8560) | DONE (`findEventTargets` + `_find-targets.tsx`, `lib/event-targets`) | No | M |
+| 8 | Outreach → Draft All + send tracking | Batch-draft invite emails for every guest; per-guest status none/draft/sent; refinement chips (Shorter/Event first/Connection first/Direct/Fresh take); Redraft/Copy/Mark Sent. (~L8570+) | DONE (`draftOutreach`/`markOutreachSent` + `_outreach.tsx`; invitee.outreachStatus/outreachDraft) | **Yes** (shipped) | L |
+| 9 | Mark All Confirmed → Attended | Bulk RSVP transition. (~L8239) | DONE (`markAllAttended`) | No | S |
+| 10 | Link to Project | `projectId` field on event create/detail. | DONE (`linkEventProject`; projectId on create) | **Yes** (shipped) | S |
+| 11 | List stats + "Never invited" roster | 5 metrics (adds New members, Net ROI) + never-invited member chips. | DONE (5 metrics + never-invited roster, `events/page.tsx`) | Derived | S |
+| 12 | External guest fields | Prototype captures external name/org/**email/title**. | DONE (externalEmail/externalTitle on `EventInvitee`) | **Yes** (shipped) | S |
 
 **Prod has that prototype lacks:** proper RLS tenant isolation; composite-FK guest
 scoping; server-side AI seams w/ rate limiting.
