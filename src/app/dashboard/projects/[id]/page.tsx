@@ -10,6 +10,7 @@ import { openRoles } from "@/lib/disciplines";
 import { parseImpactForm } from "@/lib/value-created";
 import { parseHvServices } from "@/lib/hv-services";
 import {
+  AddDisclosure,
   Button,
   Card,
   CardHeader,
@@ -305,11 +306,7 @@ export default async function ProjectDetailPage({
           </SelectField>
           <Button type="submit">Update stage</Button>
         </form>
-        <details className="group border-t border-line">
-          <summary className="cursor-pointer list-none px-4 py-3 text-xs text-ink-3 hover:text-ink">
-            <span className="group-open:hidden">+ Edit details</span>
-            <span className="hidden group-open:inline">Cancel</span>
-          </summary>
+        <AddDisclosure label="Edit details" className="border-t border-line">
           <form
             action={updateProjectDetails}
             className="grid grid-cols-2 gap-4 border-t border-line p-4"
@@ -346,7 +343,7 @@ export default async function ProjectDetailPage({
               </Button>
             </div>
           </form>
-        </details>
+        </AddDisclosure>
       </Card>
 
       {timeline.length > 0 ? (

@@ -14,6 +14,7 @@ import {
   type StaleTone,
 } from "@/lib/company-list";
 import {
+  AddDisclosure,
   Button,
   Card,
   CardHeader,
@@ -261,11 +262,7 @@ export default async function CompaniesPage({
 
       <Card>
         <CardHeader title="Add company" />
-        <details className="group">
-          <summary className="cursor-pointer list-none px-4 py-3 text-xs text-ink-3 hover:text-ink">
-            <span className="group-open:hidden">+ Add a company</span>
-            <span className="hidden group-open:inline">Cancel</span>
-          </summary>
+        <AddDisclosure label="+ Add a company">
           <form
             action={createCompany}
             className="grid grid-cols-2 gap-4 border-t border-line p-4"
@@ -302,7 +299,7 @@ export default async function CompaniesPage({
               </Button>
             </div>
           </form>
-        </details>
+        </AddDisclosure>
       </Card>
 
       <LinkedInParse />

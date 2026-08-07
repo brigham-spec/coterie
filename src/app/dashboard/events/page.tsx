@@ -10,6 +10,7 @@ import {
   isAttending,
 } from "@/lib/event-stages";
 import {
+  AddDisclosure,
   Button,
   Card,
   CardHeader,
@@ -122,11 +123,7 @@ export default async function EventsPage() {
 
       <Card>
         <CardHeader title="Add event" />
-        <details className="group">
-          <summary className="flex w-full cursor-pointer list-none items-center px-4 py-3 text-xs text-ink-3 select-none hover:text-ink [&::-webkit-details-marker]:hidden">
-            <span className="group-open:hidden">+ Add an event</span>
-            <span className="hidden group-open:inline">Cancel</span>
-          </summary>
+        <AddDisclosure label="+ Add an event">
           <form
             action={createEvent}
             className="grid grid-cols-2 gap-4 border-t border-line p-4"
@@ -181,7 +178,7 @@ export default async function EventsPage() {
               </Button>
             </div>
           </form>
-        </details>
+        </AddDisclosure>
       </Card>
 
       <EventIdeas />

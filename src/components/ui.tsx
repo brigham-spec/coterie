@@ -16,6 +16,9 @@ export function cn(...parts: Array<string | false | null | undefined>): string {
 // ── Button ──────────────────────────────────────────────────────────────────
 type ButtonVariant = "default" | "gold" | "primary" | "danger";
 
+const buttonBase =
+  "inline-flex items-center gap-1.5 rounded-sm border px-3.5 py-1.5 text-xs font-medium transition-colors";
+
 const buttonVariants: Record<ButtonVariant, string> = {
   default: "border-line-2 bg-surface text-ink-2 hover:bg-surface-2",
   gold: "border-gold-line bg-gold-bg text-gold-ink hover:brightness-[0.98]",
@@ -31,12 +34,40 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-sm border px-3.5 py-1.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
+        buttonBase,
+        "disabled:pointer-events-none disabled:opacity-50",
         buttonVariants[variant],
         className,
       )}
       {...props}
     />
+  );
+}
+
+// ── Add disclosure (button-styled <details> for inline add/edit forms) ──────
+// A collapsed trigger that stays zero-JS (native <details>), but reads as a real
+// button rather than faint text so the action is discoverable. Open swaps the
+// label to "Cancel". The label is caller-supplied verbatim (e.g. "+ Add a
+// company" / "Edit details"). Pass the form (or any body) as children.
+export function AddDisclosure({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <details className={cn("group", className)}>
+      <summary className="cursor-pointer list-none p-3 select-none [&::-webkit-details-marker]:hidden">
+        <span className={cn(buttonBase, buttonVariants.default)}>
+          <span className="group-open:hidden">{label}</span>
+          <span className="hidden group-open:inline">Cancel</span>
+        </span>
+      </summary>
+      {children}
+    </details>
   );
 }
 
