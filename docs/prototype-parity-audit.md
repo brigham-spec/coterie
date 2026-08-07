@@ -51,7 +51,7 @@ gaps are list-view intelligence, a few missing profile fields, and Fireflies-on-
 
 | # | Feature | Prototype behavior | Prod status | Persistence | Size |
 |---|---------|--------------------|-------------|-------------|------|
-| 1 | Prospect likelihood field (1–5) + pips + filter | Editable 1–5 on profile; pip dots + score filter on prospects list; drives auto-tier. (~L4306, 5113) | MISSING | **Yes** (company.likelihood) | M |
+| 1 | Prospect likelihood field (1–5) + pips + filter | Editable 1–5 on profile; pip dots + score filter on prospects list; drives auto-tier. (~L4306, 5113) | DONE (editable on profile details card; pip dots + likelihood filter on the companies list). Auto-tier = item 2. | **Yes** (company.likelihood) | M |
 | 2 | Auto-tier from annual value + override toggle | `autoAssignTier()` Director ≥$20k else Advisory; manual-lock checkbox. (~L712, 5098) | Partial (manual select only) | Derived + override flag | M |
 | 3 | "Referred By" referral tracking | Dropdown links referrer member (or External); header badge → their profile. (~L4486) | MISSING | **Yes** (company.referredById) | M |
 | 4 | Contact "Additional Emails" array | Chip multi-email per contact; used for Fireflies matching. (~L4931) | MISSING (single email col) | **Yes** (contact.emails[]) | M |
@@ -64,16 +64,16 @@ gaps are list-view intelligence, a few missing profile fields, and Fireflies-on-
 | 11 | Action-item extra statuses: Waiting / Skipped | ⏳ waiting + ⊘ skipped, distinct from open/done. (~L5856) | Partial (open/done/dropped) | **Yes** (status enum) | S |
 | 12 | Action-item bulk select + batch done/delete | ☑ select mode, multi-select, select-all. (~L5726) | MISSING | No | M |
 | 13 | Move/reassign action item to different member | Owner chip → reassign across companies. (~L5684) | Partial (owner edit within company only) | Yes | M |
-| 14 | List: open-action count + intro count per row | Per-row badges. (~L4308, 4320) | MISSING | Derived | M |
-| 15 | List: color-coded last-contact staleness | Red >90d / amber >60d / green. (~L4315) | Partial (relative text, no color) | Derived | S |
-| 16 | List: industry quick-chips + "Open Actions" sort | Industry chip row + sort option. (~L4230, 4252) | MISSING | Derived | S |
+| 14 | List: open-action count + intro count per row | Per-row badges. (~L4308, 4320) | DONE (S11a: gold "N open" + teal "N intros" badges per row) | Derived | M |
+| 15 | List: color-coded last-contact staleness | Red >90d / amber >60d / green. (~L4315) | DONE (S11a: STALE_CLASS red >90d / amber >60d / teal fresh) | Derived | S |
+| 16 | List: industry quick-chips + "Open Actions" sort | Industry chip row + sort option. (~L4230, 4252) | DONE (S11a: industry quick-chip row + "Open actions" sort) | Derived | S |
 | 17 | In-header status quick-change pill | Clickable pill, all statuses, logs history. (~L4502) | Partial (lifecycle bar + edit form) | Derived | S |
-| 18 | Consulting/IDA field | `cons` field on profile, exported CSV. (~L5114) | MISSING | **Yes** (col) | S |
+| 18 | Consulting/IDA field | `cons` field on profile, exported CSV. (~L5114) | DONE (company.consulting field editable on profile details card + "Consulting"/"IDA" list badge; prod has no member-CSV export) | **Yes** (col) | S |
 | 19 | Partnership "Synthesize" AI button | Web-search + AI fills category/summary/collab. (~L4653) | DONE (P6a: synthesizePartner action + draft fold-in) | No | M |
 | 20 | Their-Network: link-to-CRM / Add-to-CRM | Inline search to link relationship to a member or create prospect. (~L4781) | DONE (P6b: linkKeyRelationship + addRelationshipAsProspect; linkedCompanyId shipped) | Yes (crmLink) | M |
 | 21 | Invoice/billing management UI | Add member to invoice schedule, payment schedule. (~L6761) | MISSING (Invoice model exists, no UI) | Yes (UI only) | L |
 | 22 | Permanent delete company | Destructive delete from profile. (~L6821) | MISSING (archive only) | No | M |
-| 23 | News-scan shortcut from profile | Footer icon opens news pre-filtered to member. (~L6754) | MISSING | No | S |
+| 23 | News-scan shortcut from profile | Footer icon opens news pre-filtered to member. (~L6754) | DONE (S8a: "Scan the web" link → /dashboard/news?company= on the Saved Articles card) | No | S |
 | 24 | Relationship Timeline: Add-Note + broader sources | Add/edit/delete manual notes; timeline pulls value-delivered, events-attended, news touchpoints too. (~L6217) | Partial (read-only; only status/meetings/intros/done-commitments) | **Yes** (timeline notes) | M |
 | 25 | Inline Log-Intro + stage/edit/delete on profile intros | + Log Introduction (member pre-filled Party A); per-intro inline stage cycle / edit outcome / delete. (~L6457) | Partial (read-only list + "record on intros page" link) | Derived | M |
 
