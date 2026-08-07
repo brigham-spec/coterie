@@ -9,7 +9,13 @@ import { groupConnections } from "@/lib/new-connections";
 import { getIntroStageDef } from "@/lib/intro-stages";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { buildProposalNudge } from "@/lib/proposal-nudge";
-import { classifySyncStatus, type SyncStatus } from "@/lib/sync-status";
+import {
+  classifySyncStatus,
+  summarizeRecentSync,
+  RECENT_SYNC_WINDOW_MS,
+  type SyncStatus,
+  type RecentSyncSummary,
+} from "@/lib/sync-status";
 import {
   buildEnrichmentNudges,
   type EnrichmentNudge as EnrichmentNudgeItem,
@@ -83,6 +89,7 @@ export default async function DashboardPage() {
     unmatched,
     pendingIntros,
     firefliesCred,
+    recentSyncedMeetings,
   } = await withOrg(ctx.orgId, async (tx) => {
     const companies = await tx.company.findMany({
       select: {
@@ -178,6 +185,24 @@ export default async function DashboardPage() {
       where: { provider: "fireflies" },
       select: { lastSyncedAt: true },
     });
+    // Meetings that landed in the recent window feed the sync bar's meeting
+    // count + member pills. Bounded by the recency window, and capped so an
+    // unusually heavy sync can't bloat the dashboard read.
+    const recentSyncedMeetings = await tx.meeting.findMany({
+      where: {
+        firefliesId: { not: null },
+        createdAt: { gte: new Date(now.getTime() - RECENT_SYNC_WINDOW_MS) },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      select: {
+        attendees: {
+          select: {
+            contact: { select: { company: { select: { id: true, name: true } } } },
+          },
+        },
+      },
+    });
     return {
       companies,
       projects,
@@ -188,6 +213,7 @@ export default async function DashboardPage() {
       unmatched,
       pendingIntros,
       firefliesCred,
+      recentSyncedMeetings,
     };
   });
 
@@ -199,6 +225,8 @@ export default async function DashboardPage() {
     firefliesCred?.lastSyncedAt ?? null,
     now,
   );
+  // Meeting count + which members were touched, for the sync bar's pills.
+  const recentSync = summarizeRecentSync(recentSyncedMeetings);
 
   // Enrichment nudge — in-network members whose network-facing fields are blank.
   const enrichmentNudges = buildEnrichmentNudges(
@@ -295,7 +323,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Fireflies sync status — connection health + last-sync freshness */}
-      <SyncStatusBar status={syncStatus} now={now} />
+      <SyncStatusBar status={syncStatus} recentSync={recentSync} now={now} />
 
       {/* Daily Focus — AI briefing over open commitments + upcoming events,
           across Today / This Week / This Month horizons (on-demand). */}
@@ -715,7 +743,15 @@ function RevMetric({
 // Thin Fireflies sync-status bar (gap-audit cluster B). Mirrors the prototype's
 // "last synced …" bar (Coterie.html:3116) in the durable-job model: freshness is
 // read from the persisted last-sync clock, and "Sync now" enqueues the job.
-function SyncStatusBar({ status, now }: { status: SyncStatus; now: Date }) {
+function SyncStatusBar({
+  status,
+  recentSync,
+  now,
+}: {
+  status: SyncStatus;
+  recentSync: RecentSyncSummary;
+  now: Date;
+}) {
   if (status.health === "disconnected") {
     return (
       <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-line bg-surface-2 px-4 py-2">
@@ -745,27 +781,58 @@ function SyncStatusBar({ status, now }: { status: SyncStatus; now: Date }) {
         ? `Fireflies last synced ${rel} — sync is overdue`
         : `Fireflies synced ${rel}`;
 
+  const shown = recentSync.members.slice(0, 8);
+  const extra = recentSync.members.length - shown.length;
+
   return (
     <div
       className={cn(
-        "mb-4 flex items-center justify-between gap-3 rounded-md border border-l-[3px] px-4 py-2",
+        "mb-4 rounded-md border border-l-[3px] px-4 py-2",
         tone.border,
         tone.bg,
       )}
     >
-      <p className={cn("text-[11.5px]", tone.ink)}>{label}</p>
-      <form action={syncFirefliesNow}>
-        <button
-          type="submit"
-          className={cn(
-            "flex-shrink-0 rounded-md border px-2.5 py-1 text-[10px] font-semibold whitespace-nowrap transition-opacity hover:opacity-80",
-            tone.border,
-            tone.ink,
-          )}
-        >
-          Sync now
-        </button>
-      </form>
+      <div className="flex items-center justify-between gap-3">
+        <p className={cn("text-[11.5px]", tone.ink)}>{label}</p>
+        <form action={syncFirefliesNow}>
+          <button
+            type="submit"
+            className={cn(
+              "flex-shrink-0 rounded-md border px-2.5 py-1 text-[10px] font-semibold whitespace-nowrap transition-opacity hover:opacity-80",
+              tone.border,
+              tone.ink,
+            )}
+          >
+            Sync now
+          </button>
+        </form>
+      </div>
+      {recentSync.meetingCount > 0 ? (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span className={cn("text-[10px]", tone.ink)}>
+            {recentSync.meetingCount} meeting
+            {recentSync.meetingCount === 1 ? "" : "s"} this week
+            {shown.length > 0 ? " \u00b7" : ""}
+          </span>
+          {shown.map((m) => (
+            <Link
+              key={m.id}
+              href={`/dashboard/companies/${m.id}`}
+              className={cn(
+                "rounded-full border bg-surface px-2 py-0.5 text-[10px] whitespace-nowrap transition-opacity hover:opacity-80",
+                tone.border,
+                tone.ink,
+              )}
+            >
+              {m.name}
+              {m.count > 1 ? ` (${m.count})` : ""}
+            </Link>
+          ))}
+          {extra > 0 ? (
+            <span className={cn("text-[10px]", tone.ink)}>+{extra} more</span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

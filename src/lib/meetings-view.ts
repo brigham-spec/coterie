@@ -47,7 +47,7 @@ export interface MeetingStats {
 
 /// Distinct companies across a meeting's attendees, sorted by name — the dedup at
 /// the heart of Meet 9 (one tag per firm no matter how many of its contacts attended).
-function dedupeMembers(
+export function dedupeMembers(
   attendees: { contact: { company: { id: string; name: string } } }[],
 ): MeetingMember[] {
   const map = new Map<string, MeetingMember>();

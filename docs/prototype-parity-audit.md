@@ -105,7 +105,7 @@ is concentrated in the economic-impact / revenue data model and three prototype 
 | 10 | Referral Leaderboard | Ranks members by referrals made. | MISSING | Derived | M |
 | 11 | Intro-to-Deal conversions | Tracks which intros became deals. | MISSING | **Yes** (link intro→deal) | M |
 | 12 | Delete project / unlink company | Housekeeping actions. | MISSING | No | S |
-| 13 | Sync-status pills | Meeting count + member pills on sync status. | MISSING | Derived | S |
+| 13 | Sync-status pills | Meeting count + member pills on sync status. | DONE (S11V — summarizeRecentSync lib/sync-status.ts derives meeting count + companies-touched from meetings synced in the recency window, reusing dedupeMembers/MeetingMember/RawMeetingForView from meetings-view; dashboard SyncStatusBar page.tsx renders "N meetings this week ·" + clickable company pills → /dashboard/companies/{id}; tested sync-status.test.ts) | Derived | S |
 
 **Prod has that prototype lacks:** value-report page, per-invoice detail page,
 `lastFollowUpAt` on proposals, project stage-history timeline, professional-team table.

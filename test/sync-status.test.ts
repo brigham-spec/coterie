@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { classifySyncStatus, STALE_MS } from "@/lib/sync-status";
+import {
+  classifySyncStatus,
+  summarizeRecentSync,
+  STALE_MS,
+  type RawSyncedMeeting,
+} from "@/lib/sync-status";
 
 // Pure-logic tests for the Fireflies sync-status classifier: a disconnected
 // integration, a connected-but-never-synced one, and the fresh/stale split at
@@ -44,5 +49,42 @@ describe("classifySyncStatus", () => {
   test("just under the boundary is still fresh", () => {
     const s = classifySyncStatus(true, new Date(NOW.getTime() - STALE_MS + 1), NOW);
     expect(s.health).toBe("fresh");
+  });
+});
+
+// A recently synced meeting attended by the given companies (each entry becomes
+// one attendee); repeat a company to simulate two of its contacts attending.
+function meeting(companies: { id: string; name: string }[]): RawSyncedMeeting {
+  return { attendees: companies.map((company) => ({ contact: { company } })) };
+}
+
+describe("summarizeRecentSync", () => {
+  const acme = { id: "a", name: "Acme" };
+  const beta = { id: "b", name: "Beta" };
+  const zeta = { id: "z", name: "Zeta" };
+
+  test("returns an empty summary for no meetings", () => {
+    expect(summarizeRecentSync([])).toEqual({ meetingCount: 0, members: [] });
+  });
+
+  test("counts a company once per meeting even with two attendees", () => {
+    const result = summarizeRecentSync([meeting([acme, acme])]);
+    expect(result.meetingCount).toBe(1);
+    expect(result.members).toEqual([{ id: "a", name: "Acme", count: 1 }]);
+  });
+
+  test("tallies across meetings and sorts by count desc then name", () => {
+    const result = summarizeRecentSync([
+      meeting([acme, beta]),
+      meeting([acme, zeta]),
+      meeting([acme]),
+    ]);
+    expect(result.meetingCount).toBe(3);
+    // Acme in all 3; Beta and Zeta once each — ties break by name (Beta<Zeta).
+    expect(result.members).toEqual([
+      { id: "a", name: "Acme", count: 3 },
+      { id: "b", name: "Beta", count: 1 },
+      { id: "z", name: "Zeta", count: 1 },
+    ]);
   });
 });
