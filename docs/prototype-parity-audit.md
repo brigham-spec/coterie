@@ -122,12 +122,12 @@ global pages — filters, scans, cross-link buttons, and proactive-intro intelli
 
 | # | Feature | Prototype behavior | Prod status | Persistence | Size |
 |---|---------|--------------------|-------------|-------------|------|
-| 1 | "Scan for Commitments" AI on the page | Reads meetings+email+Fireflies, regex-surfaces intro-language items into an editable review panel (direction toggle, member/project pickers, Save All). (~L12690) | MISSING (per-meeting extract only, not aggregated) | Derived | L |
-| 2 | List / Board / Completed view modes | Board = kanban by staff owner + "They Owe Us"; Completed ledger. (~L13050) | MISSING (2-section list) | Derived | M |
-| 3 | Global "+ Log Commitment" button | Manual obligation modal from the page. (~L12623) | MISSING (add exists only on company profile) | No | S |
-| 4 | Urgency + owner filter chips + search | Overdue/7+/Recent + per-staff chips + text search. (~L13007, 13027, 13061) | MISSING | Derived | S |
-| 5 | Inline commitment text edit | ✎ swaps text to textarea, blur saves. (~L13099) | MISSING (on page; edit exists on profile card) | No | S |
-| 6 | Per-commitment cross-links: Search Network / ⇄ Connections / + Log Intro | Jump to network-search / intro engine pre-filled; log-intro marks done. (~L13157–13204) | MISSING | No | M |
+| 1 | "Scan for Commitments" AI on the page | Reads meetings+email+Fireflies, regex-surfaces intro-language items into an editable review panel (direction toggle, member/project pickers, Save All). (~L12690) | ADAPTED (persisted per-meeting AI extraction on /dashboard/meetings + "Meetings to scan" gap card commitments/page.tsx:32-36,167-196; the in-memory aggregated review panel intentionally not duplicated) | Derived | L |
+| 2 | List / Board / Completed view modes | Board = kanban by staff owner + "They Owe Us"; Completed ledger. (~L13050) | DONE (view=list\|board\|completed commitments/page.tsx:59-60,198-222; Board=groupByOwner + "They owe us" column) | Derived | M |
+| 3 | Global "+ Log Commitment" button | Manual obligation modal from the page. (~L12623) | DONE (<LogCommitment staff contacts> commitments/page.tsx:163, _log.tsx) | No | S |
+| 4 | Urgency + owner filter chips + search | Overdue/7+/Recent + per-staff chips + text search. (~L13007, 13027, 13061) | DONE (_filters.tsx: view tabs + debounced search + Overdue/Due-soon urgency chips + per-owner count chips; filterCommitments/ownerFacets lib/commitments) | Derived | S |
+| 5 | Inline commitment text edit | ✎ swaps text to textarea, blur saves. (~L13099) | DONE (_commitment-row.tsx:41-78 editing toggle → text+due inputs → editCommitment, parity 13099) | No | S |
+| 6 | Per-commitment cross-links: Search Network / ⇄ Connections / + Log Intro | Jump to network-search / intro engine pre-filled; log-intro marks done. (~L13157–13204) | DONE (toRow searchHref/connectHref/logIntroHref commitments/page.tsx:247-258 → CrossLink _commitment-row.tsx:98-104, URLSearchParams prefill) | No | M |
 
 ### Meetings (`meetingsLogView`)
 
