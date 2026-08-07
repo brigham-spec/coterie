@@ -334,6 +334,65 @@ describe("updateCompany member tier", () => {
   });
 });
 
+describe("updateCompany auto-tier override", () => {
+  // companyAId is a member of orgA, whose configured tiers are Chairman ≥50000,
+  // Director ≥20000, Advisory ≥1. The override toggle (tierLocked): unlocked
+  // members auto-assign from annual value and discard the submitted tier; locked
+  // members honor the hand-picked tier even when it disagrees with the value.
+  function tierFd(fields: Record<string, string>): FormData {
+    return fd({
+      companyId: companyAId,
+      status: "member",
+      industry: "Advanced Manufacturing",
+      annualValue: "25000",
+      ...fields,
+    });
+  }
+
+  function readTier() {
+    return withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: companyAId },
+        select: { tier: true, tierLocked: true },
+      }),
+    );
+  }
+
+  test("auto-assigns from annual value, discarding the submitted tier when unlocked", async () => {
+    // 25000 clears Director (20000) but not Chairman (50000); the submitted
+    // "Chairman" is ignored because the tier is not locked.
+    await updateCompany(tierFd({ annualValue: "25000", tier: "Chairman" }));
+    const company = await readTier();
+    expect(company!.tier).toBe("Director");
+    expect(company!.tierLocked).toBe(false);
+  });
+
+  test("auto-assigns the top tier when annual value clears its threshold", async () => {
+    await updateCompany(tierFd({ annualValue: "60000", tier: "Advisory" }));
+    const company = await readTier();
+    expect(company!.tier).toBe("Chairman");
+  });
+
+  test("honors a locked manual tier even when annual value disagrees", async () => {
+    await updateCompany(
+      tierFd({ annualValue: "25000", tier: "Chairman", tierLocked: "on" }),
+    );
+    const company = await readTier();
+    expect(company!.tier).toBe("Chairman");
+    expect(company!.tierLocked).toBe(true);
+  });
+
+  test("resumes auto-assignment once the lock is cleared", async () => {
+    await updateCompany(
+      tierFd({ annualValue: "25000", tier: "Chairman", tierLocked: "on" }),
+    );
+    await updateCompany(tierFd({ annualValue: "25000", tier: "Chairman" }));
+    const company = await readTier();
+    expect(company!.tier).toBe("Director");
+    expect(company!.tierLocked).toBe(false);
+  });
+});
+
 describe("updateCompany owner reassignment", () => {
   function ownerFd(ownerUserId: string): FormData {
     return fd({
