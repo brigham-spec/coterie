@@ -75,7 +75,7 @@ gaps are list-view intelligence, a few missing profile fields, and Fireflies-on-
 | 22 | Permanent delete company | Destructive delete from profile. (~L6821) | MISSING (archive only) | No | M |
 | 23 | News-scan shortcut from profile | Footer icon opens news pre-filtered to member. (~L6754) | DONE (S8a: "Scan the web" link → /dashboard/news?company= on the Saved Articles card) | No | S |
 | 24 | Relationship Timeline: Add-Note + broader sources | Add/edit/delete manual notes; timeline pulls value-delivered, events-attended, news touchpoints too. (~L6217) | Partial (read-only; only status/meetings/intros/done-commitments) | **Yes** (timeline notes) | M |
-| 25 | Inline Log-Intro + stage/edit/delete on profile intros | + Log Introduction (member pre-filled Party A); per-intro inline stage cycle / edit outcome / delete. (~L6457) | Partial (read-only list + "record on intros page" link) | Derived | M |
+| 25 | Inline Log-Intro + stage/edit/delete on profile intros | + Log Introduction (member pre-filled Party A); per-intro inline stage cycle / edit outcome / delete. (~L6457) | DONE (S8d IntroductionsCard: inline Log-intro form + per-row advance/edit-outcome/delete + Fireflies-detected advance confirms) | Derived | M |
 
 **Prod has that prototype lacks:** multi-tenant RLS/auth; relational projects module;
 structured Introductions w/ Fireflies-detected confirmations; value-report printable page;
