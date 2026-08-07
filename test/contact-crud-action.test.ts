@@ -152,6 +152,31 @@ describe("createContact", () => {
     expect(created!.isPrimary).toBe(false);
   });
 
+  test("parses additional emails: splits on comma/newline, lowercases, requires @, drops the primary, de-dupes", async () => {
+    await createContact(
+      fd({
+        companyId: companyAId,
+        name: "Mara Voss",
+        email: "primary@acme.test",
+        additionalEmails:
+          "Extra@Acme.test, primary@acme.test\n second@acme.test , not-an-email, extra@acme.test",
+      }),
+    );
+
+    const created = await withOrg(orgA.id, (tx) =>
+      tx.contact.findFirst({
+        where: { companyId: companyAId, name: "Mara Voss" },
+        select: { additionalEmails: true },
+      }),
+    );
+    // "primary@acme.test" is the primary (dropped); "not-an-email" lacks @;
+    // the second "extra" is a case-folded duplicate. Order is preserved.
+    expect(created!.additionalEmails).toEqual([
+      "extra@acme.test",
+      "second@acme.test",
+    ]);
+  });
+
   test("refuses a company id from another tenant", async () => {
     await expect(
       createContact(fd({ companyId: companyBId, name: "Hijacked" })),
@@ -187,6 +212,25 @@ describe("updateContact", () => {
     expect(updated!.title).toBe("Director");
     expect(updated!.email).toBe("new@acme.test");
     expect(updated!.tags).toEqual(["board_candidate"]);
+  });
+
+  test("overwrites additional emails on edit, excluding the new primary", async () => {
+    await updateContact(
+      fd({
+        contactId: existingContactId,
+        name: "New Name",
+        email: "lead@acme.test",
+        additionalEmails: "lead@acme.test, ALT@acme.test",
+      }),
+    );
+
+    const updated = await withOrg(orgA.id, (tx) =>
+      tx.contact.findUnique({
+        where: { id: existingContactId },
+        select: { additionalEmails: true },
+      }),
+    );
+    expect(updated!.additionalEmails).toEqual(["alt@acme.test"]);
   });
 
   test("refuses a contact id from another tenant and leaves it untouched", async () => {
