@@ -133,12 +133,12 @@ global pages — filters, scans, cross-link buttons, and proactive-intro intelli
 
 | # | Feature | Prototype behavior | Prod status | Persistence | Size |
 |---|---------|--------------------|-------------|-------------|------|
-| 7 | Global "+ Log Meeting" modal (multi-member) | Title/date/duration/location/multi-member/summary/action-items; cross-attributes items. (~L1893) | Partial (manual log only on company profile) | Yes (duration+location cols) | M |
-| 8 | Member / source / keyword filters | Filter list by member, Manual-vs-Fireflies, and text. (~L2173–2196) | MISSING | Derived | S |
-| 9 | Multi-member dedup + member tags on card | One row w/ all member org tags → profile. (~L2200) | MISSING | Derived | M |
-| 10 | Stats bar + collapse/expand cards | Unique/manual/Fireflies counts; 2-sentence preview collapsed. (~L2240, 2265) | MISSING | Derived | S |
-| 11 | Duration + location fields | Per-meeting minutes + location. (~L1919) | MISSING | **Yes** (2 cols) | S |
-| 12 | Cross-attribution of action items | Item mentioning another member copies to their deliverables. (~L2062) | MISSING | Yes | M |
+| 7 | Global "+ Log Meeting" modal (multi-member) | Title/date/duration/location/multi-member/summary/action-items; cross-attributes items. (~L1893) | DONE (_log-meeting.tsx global multi-attendee log: title/date/duration/location/searchable multi-select/summary → logManualMeeting; meetings/page.tsx:7) | Yes (duration+location cols) | M |
+| 8 | Member / source / keyword filters | Filter list by member, Manual-vs-Fireflies, and text. (~L2173–2196) | DONE (MeetingFilters {q,source,member} → matchesMeetingFilters lib/meetings-view; meetings/page.tsx:8) | Derived | S |
+| 9 | Multi-member dedup + member tags on card | One row w/ all member org tags → profile. (~L2200) | DONE (dedupeMembers → MeetingCard member tags are Links to /dashboard/companies/{id}; _meeting-card.tsx:80-86) | Derived | M |
+| 10 | Stats bar + collapse/expand cards | Unique/manual/Fireflies counts; 2-sentence preview collapsed. (~L2240, 2265) | DONE (meetingStats Metric bar + meetingPreview 2-sentence collapse; MeetingCard open toggle) | Derived | S |
+| 11 | Duration + location fields | Per-meeting minutes + location. (~L1919) | DONE (durationMinutes+location cols shipped; logged via _log-meeting.tsx, shown in MeetingCard header) | **Yes** (2 cols) | S |
+| 12 | Cross-attribution of action items | Item mentioning another member copies to their deliverables. (~L2062) | DONE (networkOptions = contacts NOT at meeting → MeetingActionItems cross-attribution; meetings/page.tsx:12) | Yes | M |
 
 ### Introductions (`introductionsView`)
 

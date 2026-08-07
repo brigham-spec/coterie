@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import { Card } from "@/components/ui";
@@ -8,7 +9,8 @@ import type { MeetingMember, MeetingSource } from "@/lib/meetings-view";
 // A meeting card that collapses to a preview (parity: Meet 9/10). The header,
 // source badge, and member tags always show; the full summary plus the attendee
 // and action-item detail (passed as children so their server-action forms stay
-// server-rendered) expand on demand. Collapsed shows a two-sentence preview.
+// server-rendered) expand on demand. Collapsed shows a two-sentence preview. Each
+// member tag links to that company's profile (Meet 9's "→ profile").
 
 export function MeetingCard({
   title,
@@ -76,12 +78,13 @@ export function MeetingCard({
         {members.length > 0 ? (
           <div className="mb-3 flex flex-wrap gap-1.5">
             {members.map((m) => (
-              <span
+              <Link
                 key={m.id}
-                className="rounded-full bg-teal-bg px-2 py-0.5 text-[10px] font-medium text-teal-ink"
+                href={`/dashboard/companies/${m.id}`}
+                className="rounded-full bg-teal-bg px-2 py-0.5 text-[10px] font-medium text-teal-ink hover:underline"
               >
                 {m.name}
-              </span>
+              </Link>
             ))}
           </div>
         ) : null}
