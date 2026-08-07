@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 
 import { Button, Card, CardHeader } from "@/components/ui";
 
+import { ArticleQuickActions } from "./_article-quick-actions";
 import { saveNewsItem, deleteNewsItem, updateNewsNote } from "./actions";
 
 // Manual "Paste article URL" save row (slice S9a, News item 3) — the prototype's
@@ -38,9 +39,11 @@ export type CompanyOption = { id: string; name: string };
 export function SavedArticlesList({
   articles,
   companies,
+  currentUserId,
 }: {
   articles: SavedArticle[];
   companies: CompanyOption[];
+  currentUserId: string;
 }) {
   const [adding, setAdding] = useState(false);
 
@@ -80,7 +83,7 @@ export function SavedArticlesList({
       ) : (
         <ul className="divide-y divide-line">
           {articles.map((a) => (
-            <ArticleItem key={a.id} article={a} />
+            <ArticleItem key={a.id} article={a} currentUserId={currentUserId} />
           ))}
         </ul>
       )}
@@ -88,7 +91,13 @@ export function SavedArticlesList({
   );
 }
 
-function ArticleItem({ article }: { article: SavedArticle }) {
+function ArticleItem({
+  article,
+  currentUserId,
+}: {
+  article: SavedArticle;
+  currentUserId: string;
+}) {
   return (
     <li className="flex items-start justify-between gap-3 px-4 py-3">
       <div className="min-w-0">
@@ -132,6 +141,15 @@ function ArticleItem({ article }: { article: SavedArticle }) {
           companyId={article.companyId}
           note={article.note}
         />
+        <div className="mt-1.5 flex flex-wrap items-center gap-3">
+          <ArticleQuickActions
+            companyId={article.companyId}
+            headline={article.headline}
+            url={article.url}
+            currentUserId={currentUserId}
+            textClass="text-[10px]"
+          />
+        </div>
       </div>
       <form action={deleteNewsItem} className="shrink-0">
         <input type="hidden" name="id" value={article.id} />

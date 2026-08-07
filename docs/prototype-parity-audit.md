@@ -179,12 +179,12 @@ sonnet→opus and added hallucination guards). News and Email carry the real deb
 | # | Feature | Prototype behavior | Prod status | Persistence | Size |
 |---|---------|--------------------|-------------|-------------|------|
 | 1 | Google News RSS pre-fetch layer | Two-tier: RSS via CORS proxies (allorigins→rss2json→corsproxy) shown as "Google News (N)" alongside AI deep scan; top 5 auto-saved. (~L9468, 11014) | MISSING (prod is AI-web-search only) | No (ephemeral) | L |
-| 2 | Multi-member batch scan + progress | Chip-select N members; "Scan N Members" runs sequential AI scans w/ 2s delay + "Scanning N of N". Quick-select All-Director/All-Advisory/Hot-Prospects. (~L10966, 11045) | MISSING (prod = one company at a time) | No | M |
-| 3 | Manual "Paste article URL" save row | Per-member inline URL+title row to save a link directly. (~L11140) | MISSING (prod saved list is Remove-only) | No | S |
-| 4 | Saved articles grouped per member + Touchpoint/Action-Item buttons | Per-member card w/ +Touchpoint (→ timeline) + +Action Item (→ obligation modal). (~L11083) | Partial (flat global list, no per-co grouping, no touchpoint/AI buttons) | No | M |
-| 5 | Article → project cross-link | Articles link `memberIds[]` AND `projectIds[]`. (~L9722) | MISSING (NewsItem has only companyId) | **Yes** (newsItem.projectId) | M |
-| 6 | Article `note` + `keyFacts` fields | Free-text note + merged keyFacts on articles. | MISSING | **Yes** (2 cols) | S |
-| 7 | 429 retry w/ backoff | callWithRetry 2×. (~L9644) | MISSING (prod errors on RateLimitError) | No | S |
+| 2 | Multi-member batch scan + progress | Chip-select N members; "Scan N Members" runs sequential AI scans w/ 2s delay + "Scanning N of N". Quick-select All-Director/All-Advisory/Hot-Prospects. (~L10966, 11045) | Partial — batch chip-select + sequential scan + live "Scanning N of N" DONE (_news.tsx:57-219; runBatch loop); tier quick-selects (All-Director/Advisory/Hot-Prospects) not ported (only Select-all-shown/Clear) | No | M |
+| 3 | Manual "Paste article URL" save row | Per-member inline URL+title row to save a link directly. (~L11140) | DONE (AddLinkForm company-picker + URL + optional title → saveNewsItem; _saved-articles.tsx:212-282) | No | S |
+| 4 | Saved articles grouped per member + Touchpoint/Action-Item buttons | Per-member card w/ +Touchpoint (→ timeline) + +Action Item (→ obligation modal). (~L11083) | DONE (per-article +Timeline addNote + +Action item addCommitment via shared ArticleQuickActions _article-quick-actions.tsx, on both scan cards + saved list _saved-articles.tsx:144). Per-company grouping intentionally NOT ported — org ledger is a flat reverse-chron list w/ per-row company link | No | M |
+| 5 | Article → project cross-link | Articles link `memberIds[]` AND `projectIds[]`. (~L9722) | MISSING — MIGRATION (NewsItem has companyId only; no projectId col in schema.prisma:642-666) | **Yes** (newsItem.projectId) | M |
+| 6 | Article `note` + `keyFacts` fields | Free-text note + merged keyFacts on articles. | DONE — cols ALREADY shipped (schema.prisma:653 note + :654 key_facts); NoteEditor inline edit _saved-articles.tsx + keyFacts chips + scan populates them (actions.ts). NOT a pending migration | **Yes** (2 cols) | S |
+| 7 | 429 retry w/ backoff | callWithRetry 2×. (~L9644) | MISSING (no-migration; prod surfaces "AI is busy, try again" gracefully via catch, no auto-retry — news-scan.ts) | No | S |
 
 ### Email
 

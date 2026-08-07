@@ -85,6 +85,7 @@ export default async function NewsPage({
           companyName: n.company.name,
         }))}
         companies={companies.map((c) => ({ id: c.id, name: c.name }))}
+        currentUserId={userId}
       />
     </div>
   );
