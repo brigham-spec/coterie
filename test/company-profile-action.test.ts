@@ -387,6 +387,76 @@ describe("updateCompany owner reassignment", () => {
   });
 });
 
+describe("updateCompany referral source", () => {
+  function referFd(fields: Record<string, string>): FormData {
+    return fd({
+      companyId: companyAId,
+      status: "member",
+      industry: "Advanced Manufacturing",
+      annualValue: "25000",
+      ...fields,
+    });
+  }
+
+  function readReferral() {
+    return withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: companyAId },
+        select: { referredById: true, referredByExternal: true },
+      }),
+    );
+  }
+
+  test("links an in-network referrer from this org", async () => {
+    await updateCompany(referFd({ referredById: statusCompanyId }));
+    const company = await readReferral();
+    expect(company!.referredById).toBe(statusCompanyId);
+    expect(company!.referredByExternal).toBeNull();
+  });
+
+  test("an in-network referrer wins and clears any external name", async () => {
+    await updateCompany(
+      referFd({ referredById: statusCompanyId, referredByExternal: "Someone Else" }),
+    );
+    const company = await readReferral();
+    expect(company!.referredById).toBe(statusCompanyId);
+    expect(company!.referredByExternal).toBeNull();
+  });
+
+  test("records an external referrer when no in-network one is picked", async () => {
+    await updateCompany(referFd({ referredByExternal: "Jamie Rivera" }));
+    const company = await readReferral();
+    expect(company!.referredById).toBeNull();
+    expect(company!.referredByExternal).toBe("Jamie Rivera");
+  });
+
+  test("clears both when left blank", async () => {
+    await updateCompany(referFd({ referredById: statusCompanyId }));
+    await updateCompany(referFd({ referredById: "", referredByExternal: "" }));
+    const company = await readReferral();
+    expect(company!.referredById).toBeNull();
+    expect(company!.referredByExternal).toBeNull();
+  });
+
+  test("refuses a company that refers itself", async () => {
+    await expect(
+      updateCompany(referFd({ referredById: companyAId })),
+    ).rejects.toThrow("a company cannot refer itself");
+  });
+
+  test("refuses an in-network referrer from another tenant and leaves the referral untouched", async () => {
+    // Seed a known referrer so the rejected write can be shown to change nothing.
+    await updateCompany(referFd({ referredById: statusCompanyId }));
+
+    await expect(
+      updateCompany(referFd({ referredById: companyBId })),
+    ).rejects.toThrow("referrer is not a company in this organization");
+
+    const company = await readReferral();
+    expect(company!.referredById).toBe(statusCompanyId);
+  });
+});
+
 describe("changeCompanyStatus", () => {
   test("transitions the status and journals the change", async () => {
     await changeCompanyStatus(
