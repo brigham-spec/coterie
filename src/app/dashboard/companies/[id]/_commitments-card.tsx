@@ -11,6 +11,7 @@ import {
   editCommitment,
   deleteCommitment,
   reassignCommitment,
+  moveCommitment,
 } from "./actions";
 
 // Interactive commitments (profile-parity port of the prototype's per-member
@@ -41,6 +42,7 @@ export type CommitmentRow = {
 
 type Owner = { id: string; name: string };
 type Project = { id: string; name: string };
+type MoveTarget = { id: string; name: string };
 
 export function CommitmentsCard({
   companyId,
@@ -49,6 +51,7 @@ export function CommitmentsCard({
   staff,
   contacts,
   projects,
+  moveTargets,
 }: {
   companyId: string;
   currentUserId: string;
@@ -56,6 +59,8 @@ export function CommitmentsCard({
   staff: Owner[];
   contacts: Owner[];
   projects: Project[];
+  // Other companies in this tenant a "we owe" item can be re-homed to.
+  moveTargets: MoveTarget[];
 }) {
   const [adding, setAdding] = useState(false);
 
@@ -104,6 +109,7 @@ export function CommitmentsCard({
             items={weOwe}
             staff={staff}
             contacts={contacts}
+            moveTargets={moveTargets}
           />
           <CommitmentColumn
             heading="They owe"
@@ -111,6 +117,7 @@ export function CommitmentsCard({
             items={theyOwe}
             staff={staff}
             contacts={contacts}
+            moveTargets={moveTargets}
           />
         </div>
       )}
@@ -168,12 +175,14 @@ function CommitmentColumn({
   items,
   staff,
   contacts,
+  moveTargets,
 }: {
   heading: string;
   companyId: string;
   items: CommitmentRow[];
   staff: Owner[];
   contacts: Owner[];
+  moveTargets: MoveTarget[];
 }) {
   return (
     <div>
@@ -191,6 +200,7 @@ function CommitmentColumn({
               item={c}
               staff={staff}
               contacts={contacts}
+              moveTargets={moveTargets}
             />
           ))}
         </ul>
@@ -204,14 +214,20 @@ function CommitmentItem({
   item,
   staff,
   contacts,
+  moveTargets,
 }: {
   companyId: string;
   item: CommitmentRow;
   staff: Owner[];
   contacts: Owner[];
+  moveTargets: MoveTarget[];
 }) {
   const [editing, setEditing] = useState(false);
   const [reassigning, setReassigning] = useState(false);
+  const [moving, setMoving] = useState(false);
+  // Only a "we owe" (staff-owned) item can move to another company; a they-owe
+  // item is owed by a contact of this company, so it stays put (reassign first).
+  const canMove = item.ownerUserId != null && moveTargets.length > 0;
 
   if (editing) {
     return (
@@ -310,6 +326,15 @@ function CommitmentItem({
         >
           Reassign
         </button>
+        {canMove ? (
+          <button
+            type="button"
+            onClick={() => setMoving((v) => !v)}
+            className="text-[10px] font-medium tracking-[0.06em] text-ink-3 uppercase hover:underline"
+          >
+            Move
+          </button>
+        ) : null}
         <form action={deleteCommitment}>
           <input type="hidden" name="id" value={item.id} />
           <input type="hidden" name="companyId" value={companyId} />
@@ -330,7 +355,75 @@ function CommitmentItem({
           onDone={() => setReassigning(false)}
         />
       ) : null}
+      {moving ? (
+        <MoveForm
+          companyId={companyId}
+          item={item}
+          moveTargets={moveTargets}
+          onDone={() => setMoving(false)}
+        />
+      ) : null}
     </li>
+  );
+}
+
+// Inline "move to another company" picker for a we-owe item — re-homes it to
+// the chosen company (staff owner rides along). The list is this tenant's other
+// companies (moveTargets); the server re-validates the destination is in-org.
+function MoveForm({
+  companyId,
+  item,
+  moveTargets,
+  onDone,
+}: {
+  companyId: string;
+  item: CommitmentRow;
+  moveTargets: MoveTarget[];
+  onDone: () => void;
+}) {
+  const [targetCompanyId, setTargetCompanyId] = useState("");
+
+  return (
+    <form
+      action={async (fd) => {
+        await moveCommitment(fd);
+        onDone();
+      }}
+      className="mt-1.5 flex flex-wrap items-center gap-1.5"
+    >
+      <input type="hidden" name="id" value={item.id} />
+      <input type="hidden" name="companyId" value={companyId} />
+      <select
+        name="targetCompanyId"
+        value={targetCompanyId}
+        onChange={(e) => setTargetCompanyId(e.target.value)}
+        required
+        className="rounded border border-line bg-surface px-2 py-1 text-[11px] text-ink-2"
+      >
+        <option value="" disabled>
+          Move to…
+        </option>
+        {moveTargets.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="submit"
+        disabled={targetCompanyId === ""}
+        className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline disabled:opacity-40"
+      >
+        Move
+      </button>
+      <button
+        type="button"
+        onClick={onDone}
+        className="text-[10px] font-medium tracking-[0.06em] text-ink-3 uppercase hover:underline"
+      >
+        Cancel
+      </button>
+    </form>
   );
 }
 
@@ -400,7 +493,7 @@ function ReassignForm({
         disabled={value === ""}
         className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline disabled:opacity-40"
       >
-        Move
+        Reassign
       </button>
       <button
         type="button"

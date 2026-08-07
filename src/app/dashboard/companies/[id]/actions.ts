@@ -2562,6 +2562,46 @@ export async function reassignCommitment(formData: FormData): Promise<void> {
   revalidateActionItemSurfaces();
 }
 
+// Move an open commitment to a different company (parity: prototype "Move to
+// member", Coterie.html:6133). Only a "we owe" item moves: its staff owner
+// isn't company-bound, so the item simply re-anchors to the target firm. A
+// "they owe" item is owed by a specific contact of THIS company and can't move
+// without orphaning that owner — reassign it to staff first (reassignCommitment).
+// The write is scoped to {id, companyId, ownerUserId not null}, so a they-owe
+// item, a foreign id, or a cross-company id matches nothing and the move is
+// refused. revalidateActionItemSurfaces busts every company profile (page
+// variant), so both the source and destination profiles refresh.
+export async function moveCommitment(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const targetCompanyId = String(formData.get("targetCompanyId") ?? "").trim();
+
+  if (!id || !companyId) throw new Error("commitment and company are required");
+  if (!targetCompanyId) throw new Error("a destination company is required");
+  if (targetCompanyId === companyId) throw new Error("pick a different company");
+
+  const moved = await withOrg(orgId, async (tx) => {
+    // RLS scopes the lookup to the org — a foreign target id resolves null.
+    const target = await tx.company.findFirst({
+      where: { id: targetCompanyId },
+      select: { id: true },
+    });
+    if (!target)
+      throw new Error("destination company not found in this organization");
+
+    const res = await tx.actionItem.updateMany({
+      where: { id, companyId, ownerUserId: { not: null } },
+      data: { companyId: targetCompanyId },
+    });
+    return res.count > 0;
+  });
+
+  if (!moved) throw new Error("commitment not found on this company");
+  revalidateActionItemSurfaces();
+}
+
 // ── Meetings (manual logging on the company profile) ────────────────────────
 // Ports the prototype's "Log Meeting" — a staff-recorded meeting the profile
 // otherwise couldn't create (production meetings come from the org-level

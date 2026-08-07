@@ -27,6 +27,7 @@ const {
   editCommitment,
   deleteCommitment,
   reassignCommitment,
+  moveCommitment,
 } = await import("@/app/dashboard/companies/[id]/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
@@ -49,6 +50,8 @@ const outsiderUser = {
 const companyAId = randomUUID();
 const contactAId = randomUUID();
 const projectAId = randomUUID();
+// A second orgA company — the in-tenant destination for a "move" reassign.
+const companyA2Id = randomUUID();
 
 const companyBId = randomUUID();
 const contactBId = randomUUID();
@@ -87,6 +90,16 @@ beforeAll(async () => {
     });
     await tx.project.create({
       data: { id: projectAId, orgId: orgA.id, name: "Mill Redevelopment", stage: "concept" },
+    });
+    await tx.company.create({
+      data: {
+        id: companyA2Id,
+        orgId: orgA.id,
+        name: "Second Acme",
+        status: "member",
+        industry: "Logistics",
+        annualValue: 1000,
+      },
     });
   });
 
@@ -458,5 +471,107 @@ describe("reassignCommitment", () => {
       }),
     );
     expect(row).toMatchObject({ ownerUserId: null, ownerContactId: contactBId });
+  });
+});
+
+describe("moveCommitment", () => {
+  // A fresh we-owe item on companyA to re-home without disturbing the others.
+  async function seedWeOwe(): Promise<string> {
+    const id = randomUUID();
+    await withOrg(orgA.id, (tx) =>
+      tx.actionItem.create({
+        data: {
+          id,
+          orgId: orgA.id,
+          companyId: companyAId,
+          text: "Movable",
+          status: "open",
+          ownerUserId: staffUser.id,
+        },
+      }),
+    );
+    return id;
+  }
+
+  test("re-homes a we-owe item to another company in the tenant, staff owner intact", async () => {
+    const id = await seedWeOwe();
+
+    await moveCommitment(fd({ id, companyId: companyAId, targetCompanyId: companyA2Id }));
+
+    const row = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({
+        where: { id },
+        select: { companyId: true, ownerUserId: true, ownerContactId: true },
+      }),
+    );
+    expect(row).toMatchObject({
+      companyId: companyA2Id,
+      ownerUserId: staffUser.id,
+      ownerContactId: null,
+    });
+    await withOrg(orgA.id, (tx) => tx.actionItem.delete({ where: { id } }));
+  });
+
+  test("refuses to move a they-owe item — it stays on its company", async () => {
+    const id = randomUUID();
+    await withOrg(orgA.id, (tx) =>
+      tx.actionItem.create({
+        data: {
+          id,
+          orgId: orgA.id,
+          companyId: companyAId,
+          text: "Their obligation",
+          status: "open",
+          ownerContactId: contactAId,
+        },
+      }),
+    );
+
+    await expect(
+      moveCommitment(fd({ id, companyId: companyAId, targetCompanyId: companyA2Id })),
+    ).rejects.toThrow("commitment not found on this company");
+
+    const row = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({ where: { id }, select: { companyId: true } }),
+    );
+    expect(row!.companyId).toBe(companyAId);
+    await withOrg(orgA.id, (tx) => tx.actionItem.delete({ where: { id } }));
+  });
+
+  test("requires a destination and rejects the same company", async () => {
+    const id = await seedWeOwe();
+    await expect(
+      moveCommitment(fd({ id, companyId: companyAId, targetCompanyId: "" })),
+    ).rejects.toThrow("a destination company is required");
+    await expect(
+      moveCommitment(fd({ id, companyId: companyAId, targetCompanyId: companyAId })),
+    ).rejects.toThrow("pick a different company");
+    await withOrg(orgA.id, (tx) => tx.actionItem.delete({ where: { id } }));
+  });
+
+  test("refuses a destination company from another tenant", async () => {
+    const id = await seedWeOwe();
+    await expect(
+      moveCommitment(fd({ id, companyId: companyAId, targetCompanyId: companyBId })),
+    ).rejects.toThrow("destination company not found in this organization");
+
+    const row = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({ where: { id }, select: { companyId: true } }),
+    );
+    expect(row!.companyId).toBe(companyAId);
+    await withOrg(orgA.id, (tx) => tx.actionItem.delete({ where: { id } }));
+  });
+
+  test("a foreign item id is refused and leaves the other tenant untouched", async () => {
+    await expect(
+      moveCommitment(
+        fd({ id: commitmentBId, companyId: companyAId, targetCompanyId: companyA2Id }),
+      ),
+    ).rejects.toThrow("commitment not found on this company");
+
+    const row = await withOrg(orgB.id, (tx) =>
+      tx.actionItem.findUnique({ where: { id: commitmentBId }, select: { companyId: true } }),
+    );
+    expect(row!.companyId).toBe(companyBId);
   });
 });

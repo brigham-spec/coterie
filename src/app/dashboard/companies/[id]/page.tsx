@@ -762,6 +762,7 @@ export default async function CompanyDetailPage({
         staff={staff}
         contacts={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
         projects={projects}
+        moveTargets={referralOptions.map((c) => ({ id: c.id, name: c.name }))}
       />
 
       <RelationshipTimeline companyId={company.id} entries={timeline} />
