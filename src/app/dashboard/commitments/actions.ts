@@ -27,6 +27,34 @@ export async function updateCommitment(formData: FormData): Promise<void> {
   revalidateActionItemSurfaces();
 }
 
+// Batch-resolve the selected commitments in one write (parity: select mode +
+// batch done/delete, Coterie.html:5726). The checked ids arrive as repeated
+// "ids" fields; "done" advances their status, "delete" removes them outright
+// (mirroring the single-row Done and the per-profile deleteCommitment). RLS
+// scopes every id to the org, so a foreign id in the set matches no row.
+export async function batchUpdateCommitments(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const ids = formData
+    .getAll("ids")
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+  const op = String(formData.get("op") ?? "").trim();
+  if (ids.length === 0) throw new Error("no commitments selected");
+  if (op !== "done" && op !== "delete")
+    throw new Error("invalid batch operation");
+
+  await withOrg(orgId, (tx) =>
+    op === "delete"
+      ? tx.actionItem.deleteMany({ where: { id: { in: ids } } })
+      : tx.actionItem.updateMany({
+          where: { id: { in: ids } },
+          data: { status: "done" },
+        }),
+  );
+  revalidateActionItemSurfaces();
+}
+
 // Inline text/due-date edit of an open commitment (parity: inline edit 13099).
 export async function editCommitment(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();

@@ -30,9 +30,13 @@ export interface CommitmentRowData {
 export function CommitmentRow({
   c,
   completed = false,
+  selection,
 }: {
   c: CommitmentRowData;
   completed?: boolean;
+  // When set, the row is in bulk-select mode: it shows a checkbox and hides the
+  // inline edit + per-row actions (the batch bar drives the mutation instead).
+  selection?: { checked: boolean; onToggle: () => void };
 }) {
   const [editing, setEditing] = useState(false);
 
@@ -75,12 +79,21 @@ export function CommitmentRow({
 
   return (
     <li className="flex items-start gap-3 border-b border-line px-4 py-3 last:border-b-0">
+      {selection ? (
+        <input
+          type="checkbox"
+          checked={selection.checked}
+          onChange={selection.onToggle}
+          aria-label={`Select "${c.text}"`}
+          className="mt-0.5 accent-gold"
+        />
+      ) : null}
       <div className="min-w-0 flex-1">
         <div className={`text-[13px] ${completed ? "text-ink-3 line-through" : "text-ink"}`}>
           {c.text}
         </div>
         <div className="mt-0.5 text-[10px] text-ink-3">{c.meta}</div>
-        {!completed ? (
+        {!completed && !selection ? (
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
             <CrossLink href={c.searchHref}>Search network</CrossLink>
             {c.connectHref ? (
@@ -100,33 +113,35 @@ export function CommitmentRow({
       >
         {c.dueLabel}
       </span>
-      <div className="flex flex-shrink-0 gap-1.5">
-        {completed ? (
-          <form action={updateCommitment}>
-            <input type="hidden" name="id" value={c.id} />
-            <input type="hidden" name="status" value="open" />
-            <Button type="submit">Reopen</Button>
-          </form>
-        ) : (
-          <>
+      {selection ? null : (
+        <div className="flex flex-shrink-0 gap-1.5">
+          {completed ? (
             <form action={updateCommitment}>
               <input type="hidden" name="id" value={c.id} />
-              <input type="hidden" name="status" value="done" />
-              <Button type="submit" variant="primary">
-                Done
+              <input type="hidden" name="status" value="open" />
+              <Button type="submit">Reopen</Button>
+            </form>
+          ) : (
+            <>
+              <form action={updateCommitment}>
+                <input type="hidden" name="id" value={c.id} />
+                <input type="hidden" name="status" value="done" />
+                <Button type="submit" variant="primary">
+                  Done
+                </Button>
+              </form>
+              <form action={updateCommitment}>
+                <input type="hidden" name="id" value={c.id} />
+                <input type="hidden" name="status" value="dropped" />
+                <Button type="submit">Dismiss</Button>
+              </form>
+              <Button type="button" onClick={() => setEditing(true)}>
+                Edit
               </Button>
-            </form>
-            <form action={updateCommitment}>
-              <input type="hidden" name="id" value={c.id} />
-              <input type="hidden" name="status" value="dropped" />
-              <Button type="submit">Dismiss</Button>
-            </form>
-            <Button type="button" onClick={() => setEditing(true)}>
-              Edit
-            </Button>
-          </>
-        )}
-      </div>
+            </>
+          )}
+        </div>
+      )}
     </li>
   );
 }

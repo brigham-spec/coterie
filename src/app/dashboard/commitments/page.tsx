@@ -18,7 +18,8 @@ import { Card, CardHeader, PageTitle } from "@/components/ui";
 
 import { CommitmentFilters as FilterBar } from "./_filters";
 import { LogCommitment, type ContactOption, type StaffOption } from "./_log";
-import { CommitmentRow, type CommitmentRowData } from "./_commitment-row";
+import { type CommitmentRowData } from "./_commitment-row";
+import { CommitmentList } from "./_commitment-list";
 
 // Commitments (parity: commitmentsView 12617) — the follow-through workspace.
 // Every action item, split by who owes it (our staff vs. a network contact) and
@@ -195,16 +196,27 @@ export default async function CommitmentsPage({
       ) : null}
 
       {view === "completed" ? (
-        <CompletedView completed={filterCommitments(completed, { q: filters.q, urgency: "", owner: "" })} />
+        <CommitmentList
+          title="Completed"
+          rows={filterCommitments(completed, { q: filters.q, urgency: "", owner: "" }).map(toRow)}
+          emptyLabel="Nothing resolved yet. Done and dismissed commitments land here."
+          completed
+        />
       ) : view === "board" ? (
         <BoardView weOwe={weOwe} theyOwe={theyOwe} />
       ) : (
         <>
-          <Section title="We owe" items={weOwe} emptyLabel="Nothing outstanding on our side." />
-          <Section
+          <CommitmentList
+            title="We owe"
+            rows={weOwe.map(toRow)}
+            emptyLabel="Nothing outstanding on our side."
+            selectable
+          />
+          <CommitmentList
             title="They owe"
-            items={theyOwe}
+            rows={theyOwe.map(toRow)}
             emptyLabel="No open commitments from the network."
+            selectable
           />
         </>
       )}
@@ -257,50 +269,6 @@ function toRow(c: Commitment): CommitmentRowData {
     connectHref,
     logIntroHref,
   };
-}
-
-function Section({
-  title,
-  items,
-  emptyLabel,
-}: {
-  title: string;
-  items: Commitment[];
-  emptyLabel: string;
-}) {
-  return (
-    <Card>
-      <CardHeader title={`${title} (${items.length})`} />
-      {items.length === 0 ? (
-        <p className="px-4 py-6 text-xs text-ink-3">{emptyLabel}</p>
-      ) : (
-        <ul>
-          {items.map((c) => (
-            <CommitmentRow key={c.id} c={toRow(c)} />
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
-function CompletedView({ completed }: { completed: Commitment[] }) {
-  return (
-    <Card>
-      <CardHeader title={`Completed (${completed.length})`} />
-      {completed.length === 0 ? (
-        <p className="px-4 py-6 text-xs text-ink-3">
-          Nothing resolved yet. Done and dismissed commitments land here.
-        </p>
-      ) : (
-        <ul>
-          {completed.map((c) => (
-            <CommitmentRow key={c.id} c={toRow(c)} completed />
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
 }
 
 function BoardView({

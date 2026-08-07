@@ -20,9 +20,8 @@ vi.mock("@/lib/auth", () => ({
   requireOrgContext: vi.fn(async () => mockCtx),
 }));
 
-const { logCommitment, editCommitment, updateCommitment } = await import(
-  "@/app/dashboard/commitments/actions"
-);
+const { logCommitment, editCommitment, updateCommitment, batchUpdateCommitments } =
+  await import("@/app/dashboard/commitments/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
 const orgB = { id: randomUUID(), name: `TENANT_B_${randomUUID()}` };
@@ -225,5 +224,87 @@ describe("editCommitment / updateCommitment", () => {
       tx.actionItem.findUnique({ where: { id: commitmentBId }, select: { text: true, status: true } }),
     );
     expect(row).toMatchObject({ text: "Beta's own commitment", status: "open" });
+  });
+});
+
+describe("batchUpdateCommitments", () => {
+  // Selected ids ride as repeated "ids" fields, plus the op.
+  function batchFd(ids: string[], op: string): FormData {
+    const f = new FormData();
+    for (const id of ids) f.append("ids", id);
+    f.set("op", op);
+    return f;
+  }
+
+  async function seedOpen(): Promise<[string, string, string]> {
+    const ids: [string, string, string] = [randomUUID(), randomUUID(), randomUUID()];
+    await withOrg(orgA.id, (tx) =>
+      tx.actionItem.createMany({
+        data: ids.map((id, i) => ({
+          id,
+          orgId: orgA.id,
+          text: `Batch item ${i}`,
+          status: "open",
+          ownerUserId: staffUser.id,
+        })),
+      }),
+    );
+    return ids;
+  }
+
+  test("marks the selected items done and leaves the rest untouched", async () => {
+    const [a, b, c] = await seedOpen();
+
+    await batchUpdateCommitments(batchFd([a, b], "done"));
+
+    const rows = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findMany({
+        where: { id: { in: [a, b, c] } },
+        select: { id: true, status: true },
+      }),
+    );
+    const byId = new Map(rows.map((r) => [r.id, r.status]));
+    expect(byId.get(a)).toBe("done");
+    expect(byId.get(b)).toBe("done");
+    expect(byId.get(c)).toBe("open");
+  });
+
+  test("deletes the selected items", async () => {
+    const [a, b, c] = await seedOpen();
+
+    await batchUpdateCommitments(batchFd([a, c], "delete"));
+
+    const remaining = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findMany({
+        where: { id: { in: [a, b, c] } },
+        select: { id: true },
+      }),
+    );
+    expect(remaining.map((r) => r.id)).toEqual([b]);
+  });
+
+  test("requires a non-empty selection and a valid op", async () => {
+    const [a] = await seedOpen();
+    await expect(batchUpdateCommitments(batchFd([], "done"))).rejects.toThrow(
+      "no commitments selected",
+    );
+    await expect(batchUpdateCommitments(batchFd([a], "dropped"))).rejects.toThrow(
+      "invalid batch operation",
+    );
+  });
+
+  test("scopes the batch to the tenant — a foreign id in the set is left untouched", async () => {
+    const [a] = await seedOpen();
+
+    await batchUpdateCommitments(batchFd([a, commitmentBId], "delete"));
+
+    const foreign = await withOrg(orgB.id, (tx) =>
+      tx.actionItem.findUnique({ where: { id: commitmentBId }, select: { status: true } }),
+    );
+    expect(foreign).not.toBeNull();
+    const own = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({ where: { id: a }, select: { id: true } }),
+    );
+    expect(own).toBeNull();
   });
 });
