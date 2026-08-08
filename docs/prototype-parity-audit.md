@@ -203,8 +203,8 @@ sentiment badge.
 
 | # | Feature | Prototype behavior | Prod status | Persistence | Size |
 |---|---------|--------------------|-------------|-------------|------|
-| 12 | Result quick-actions: ⇄ Intro / + Commitment | Buttons open intro-picker / add-obligation modal pre-filled. (~L15185) | MISSING (only profile link) | No | M |
-| 13 | Result tier badge + ⌘↵ shortcut + intro hint | Director/Advisory badge; ⌘↵ submit; "≥2 results → open Intro Engine" hint. (~L15107, 15178, 15209) | MISSING | No | S |
+| 12 | Result quick-actions: ⇄ Intro / + Commitment | Buttons open intro-picker / add-obligation modal pre-filled. (~L15185) | DONE — S11e (2c73512): per-match ⇄ Intro Link seeds Intro Engine Party A via `?draftA=<primaryContactId>` + "+ Commitment" reuses addCommitment (we_owe, owner=current user); _search.tsx:171-228 | No | M |
+| 13 | Result tier badge + ⌘↵ shortcut + intro hint | Director/Advisory badge; ⌘↵ submit; "≥2 results → open Intro Engine" hint. (~L15107, 15178, 15209) | DONE — S11d (b73b43f): tier TagBadge(slate) _search.tsx:185; ⌘↵/Ctrl+↵ onKeyDown→requestSubmit + kbd hint :59-77; ≥2-match "open the Intro Engine" hint :130-141 | No | S |
 
 **Prod has that prototype lacks (search):** opus (was sonnet), separate grounding system
 prompt, companyId hallucination guard, AI rate limiting.
