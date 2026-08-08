@@ -6,18 +6,21 @@ import { Button, Card, cn, TagBadge } from "@/components/ui";
 
 import {
   addProspect,
+  dismissProspect,
   findProspects,
   type AddProspectResult,
   type ProspectFinderState,
 } from "./actions";
 import type { ProspectMode, ProspectTarget } from "@/lib/prospect-finder";
 import { buildOutreachDraft, type OutreachSender } from "@/lib/prospect-outreach";
+import { PROSPECT_DISMISS_REASONS } from "@/lib/prospect-dismissal";
 
 // Prospect Finder UI (slice 11.6). A client shell over the findProspects server
 // action (web-search discovery stays server-side) with two modes: network-gap
 // Recommendations and a filtered Targeted search. Each result can be added to the
-// pipeline as a prospect (addProspect), dismissed locally, or opened on the web.
-// Results are ephemeral; only an explicit "Add" persists anything.
+// pipeline as a prospect (addProspect), dismissed with a reason (dismissProspect —
+// persisted so it never re-surfaces), or opened on the web. Search results are
+// otherwise ephemeral.
 
 type ContextSummary = {
   memberCount: number;
@@ -281,9 +284,12 @@ function Results({
 
 function ProspectCard({ t, sender }: { t: ProspectTarget; sender: OutreachSender }) {
   const [dismissed, setDismissed] = useState(false);
+  const [choosingReason, setChoosingReason] = useState(false);
+  const [dismissError, setDismissError] = useState(false);
   const [result, setResult] = useState<AddProspectResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [isAdding, startAdd] = useTransition();
+  const [isDismissing, startDismiss] = useTransition();
 
   if (dismissed) return null;
 
@@ -360,8 +366,12 @@ function ProspectCard({ t, sender }: { t: ProspectTarget; sender: OutreachSender
         <Button type="button" onClick={copyDraft}>
           {copied ? "Copied" : "Draft outreach"}
         </Button>
-        <Button type="button" onClick={() => setDismissed(true)}>
-          Dismiss
+        <Button
+          type="button"
+          disabled={isDismissing}
+          onClick={() => setChoosingReason((v) => !v)}
+        >
+          {isDismissing ? "Dismissing…" : "Dismiss"}
         </Button>
         {t.website ? (
           <a
@@ -377,6 +387,37 @@ function ProspectCard({ t, sender }: { t: ProspectTarget; sender: OutreachSender
           <span className="text-[11px] text-red-ink">{result.message}</span>
         ) : null}
       </div>
+
+      {choosingReason ? (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
+          <span className="text-[10px] text-ink-3">Dismiss because:</span>
+          {PROSPECT_DISMISS_REASONS.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              disabled={isDismissing}
+              onClick={() =>
+                startDismiss(async () => {
+                  try {
+                    await dismissProspect(t.org, r.value);
+                    setDismissed(true);
+                  } catch {
+                    // Persist failed — keep the card visible so the user can retry
+                    // rather than silently hiding an un-saved dismissal.
+                    setDismissError(true);
+                  }
+                })
+              }
+              className="rounded-full border border-line bg-surface px-2.5 py-1 text-[10.5px] text-ink-2 transition-colors hover:border-gold-line hover:text-gold disabled:opacity-50"
+            >
+              {r.label}
+            </button>
+          ))}
+          {dismissError ? (
+            <span className="text-[10px] text-red-ink">Couldn’t dismiss</span>
+          ) : null}
+        </div>
+      ) : null}
     </li>
   );
 }

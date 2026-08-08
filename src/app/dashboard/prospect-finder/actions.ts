@@ -10,6 +10,10 @@ import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import {
+  isDismissReason,
+  prospectDismissalKey,
+} from "@/lib/prospect-dismissal";
+import {
   generateProspectTargets,
   type ProspectFilters,
   type ProspectMode,
@@ -51,7 +55,7 @@ export async function findProspects(
   const focusArea = String(formData.get("focusArea") ?? "").trim();
   const filters = readFilters(formData);
 
-  const { companies, projects } = await withOrg(orgId, async (tx) => {
+  const { companies, projects, dismissals } = await withOrg(orgId, async (tx) => {
     const companies = await tx.company.findMany({
       where: { status: { not: "former" } },
       select: { name: true, industry: true, status: true, lookingFor: true, canOffer: true },
@@ -60,7 +64,10 @@ export async function findProspects(
       where: { stage: { notIn: [...TERMINAL_STAGES] } },
       select: { name: true, stage: true, type: true, county: true },
     });
-    return { companies, projects };
+    const dismissals = await tx.prospectDismissal.findMany({
+      select: { targetName: true },
+    });
+    return { companies, projects, dismissals };
   });
 
   const members = companies
@@ -73,9 +80,13 @@ export async function findProspects(
       lookingFor: c.lookingFor ?? "",
       canOffer: c.canOffer ?? "",
     }));
-  // Exclude EVERY current org (members, partners, and existing prospects) from
-  // results so we never re-surface someone already tracked.
-  const excludeOrgs = companies.map((c) => c.name);
+  // Exclude EVERY current org (members, partners, and existing prospects) plus
+  // any previously-dismissed target so we never re-surface someone already tracked
+  // or explicitly rejected. parseProspectTargets drops these by lowercased name.
+  const excludeOrgs = [
+    ...companies.map((c) => c.name),
+    ...dismissals.map((d) => d.targetName),
+  ];
 
   try {
     await enforceAiRateLimit(orgId);
@@ -169,4 +180,27 @@ export async function addProspect(
   } finally {
     revalidatePath("/dashboard/companies");
   }
+}
+
+// Persist a "don't surface this again" dismissal (Finder 16). Keyed by the
+// normalized org name so the next findProspects excludes it (results are ephemeral,
+// so no revalidate — the exclusion applies on the next search). Idempotent upsert:
+// re-dismissing just updates the reason. An out-of-vocabulary reason falls back to
+// "not_relevant" at this write boundary.
+export async function dismissProspect(
+  targetName: string,
+  reason: string,
+): Promise<void> {
+  const name = targetName.trim();
+  if (!name) return;
+  const { orgId } = await requireOrgContext();
+  const targetKey = prospectDismissalKey(name);
+  const r = isDismissReason(reason) ? reason : "not_relevant";
+  await withOrg(orgId, (tx) =>
+    tx.prospectDismissal.upsert({
+      where: { orgId_targetKey: { orgId, targetKey } },
+      create: { orgId, targetKey, targetName: name, reason: r },
+      update: { reason: r },
+    }),
+  );
 }

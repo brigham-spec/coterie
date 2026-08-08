@@ -215,7 +215,7 @@ prompt, companyId hallucination guard, AI rate limiting.
 |---|---------|--------------------|-------------|-------------|------|
 | 14 | "Draft Outreach ↗" copy-to-clipboard | Generates outreach email template from target + why, copies. (~L15342) | DONE — S11c (0e6eff1): copyDraft() writes buildOutreachDraft(t, sender) (@/lib/prospect-outreach) to clipboard w/ 2s "Copied" feedback; _finder.tsx:293-362 | No | M |
 | 15 | Industry/county tag badges on cards | Visual tag chips. (~L15316) | DONE — S11c: TagBadge industry(teal) + county(slate) chips on each card; _finder.tsx:311-316 | No | S |
-| 16 | Persistent Dismiss + reason taxonomy | Dismiss saves to store (org never re-surfaces) w/ 4 reasons (not_relevant/already_connected/competitor/wrong_timing). (~L15292) | Partial (local useState(dismissed)→return null only, _finder.tsx:283/288/363; re-surfaces next search, no reason taxonomy) — GENUINE OPEN GAP, MIGRATION (needs a dismissal store table) | **Yes** (dismissal store) | M |
+| 16 | Persistent Dismiss + reason taxonomy | Dismiss saves to store (org never re-surfaces) w/ 4 reasons (not_relevant/already_connected/competitor/wrong_timing). (~L15292) | DONE (S11Z1) — ProspectDismissal store (migration 20260808000000) + dismissProspect upsert keyed by normalized org name; Dismiss button reveals a 4-reason picker (PROSPECT_DISMISS_REASONS, src/lib/prospect-dismissal.ts); findProspects merges dismissed names into excludeOrgs so parseProspectTargets drops them on the next scan | Yes (dismissal store — migrated) | M |
 
 **Prod has that prototype lacks (finder):** opus recommendations model, relational Contact
 row on Add-to-pipeline, score→temperature mapping, exclude-set hallucination backstop,

@@ -25,7 +25,7 @@ vi.mock("@/lib/prospect-finder", async (importOriginal) => {
   return { ...actual, generateProspectTargets: genSpy };
 });
 
-const { findProspects, addProspect } = await import(
+const { findProspects, addProspect, dismissProspect } = await import(
   "@/app/dashboard/prospect-finder/actions"
 );
 
@@ -176,6 +176,60 @@ describe("addProspect action", () => {
   test("the persisted prospect is invisible to another tenant (RLS)", async () => {
     const seenByB = await withOrg(orgB.id, (tx) =>
       tx.company.findMany({ where: { name: "Hudson Timber Co" } }),
+    );
+    expect(seenByB).toEqual([]);
+  });
+});
+
+describe("dismissProspect action", () => {
+  test("persists a dismissal and excludes it from the next search", async () => {
+    await dismissProspect("Ridgeline Ventures", "competitor");
+
+    const rows = await withOrg(orgA.id, (tx) =>
+      tx.prospectDismissal.findMany({ where: { targetKey: "ridgeline ventures" } }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      targetName: "Ridgeline Ventures",
+      targetKey: "ridgeline ventures",
+      reason: "competitor",
+    });
+
+    // The next findProspects merges the dismissed name into excludeOrgs.
+    genSpy.mockResolvedValue([]);
+    await findProspects({ status: "idle" }, fd({ mode: "recommendations" }));
+    const input = genSpy.mock.calls[0][0] as ProspectSearchInput;
+    expect(input.excludeOrgs).toContain("Ridgeline Ventures");
+  });
+
+  test("re-dismissing the same org is an idempotent upsert that updates the reason", async () => {
+    await dismissProspect("Ridgeline Ventures", "wrong_timing");
+
+    const rows = await withOrg(orgA.id, (tx) =>
+      tx.prospectDismissal.findMany({ where: { targetKey: "ridgeline ventures" } }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].reason).toBe("wrong_timing");
+  });
+
+  test("an out-of-vocabulary reason falls back to not_relevant", async () => {
+    await dismissProspect("Junk Reason Co", "totally-made-up");
+
+    const rows = await withOrg(orgA.id, (tx) =>
+      tx.prospectDismissal.findMany({ where: { targetKey: "junk reason co" } }),
+    );
+    expect(rows[0].reason).toBe("not_relevant");
+  });
+
+  test("a blank target name is a no-op", async () => {
+    await dismissProspect("   ", "competitor");
+    const rows = await withOrg(orgA.id, (tx) => tx.prospectDismissal.findMany());
+    expect(rows.every((r) => r.targetName.trim() !== "")).toBe(true);
+  });
+
+  test("one tenant's dismissal is invisible to another (RLS)", async () => {
+    const seenByB = await withOrg(orgB.id, (tx) =>
+      tx.prospectDismissal.findMany({ where: { targetKey: "ridgeline ventures" } }),
     );
     expect(seenByB).toEqual([]);
   });

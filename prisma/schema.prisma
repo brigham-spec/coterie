@@ -69,6 +69,7 @@ model Organization {
   projectTeamMembers     ProjectTeamMember[]
   fundingSources         FundingSource[]
   introDismissals        IntroDismissal[]
+  prospectDismissals     ProspectDismissal[]
   unmatchedAttendees     UnmatchedAttendee[]
   aiRateLimit            AiRateLimit?
   proactiveScanCaches    ProactiveScanCache[]
@@ -1068,6 +1069,32 @@ model IntroDismissal {
   @@index([orgId])
   @@index([orgId, focusCompanyId])
   @@map("intro_dismissals")
+}
+
+/// Durable "don't surface this prospect again" ledger for the Prospect Finder
+/// (slice 11.6, Finder 16). External discovery surfaces NEW organisations (no CRM
+/// row yet), so — unlike IntroDismissal — a dismissal references nothing but a name.
+/// We store the normalized org name (target_key) plus a reason; the finder merges
+/// these keys into excludeOrgs so parseProspectTargets drops them on the next scan.
+model ProspectDismissal {
+  id         String @id @default(uuid()) @db.Uuid
+  orgId      String @map("org_id") @db.Uuid
+  /// Normalized (trim + lowercase) org name — the dedupe key matching parseProspectTargets.
+  targetKey  String @map("target_key")
+  /// The org name as displayed to the user (verbatim from the dismissed target).
+  targetName String @map("target_name")
+  /// not_relevant, already_connected, competitor, wrong_timing (see prospect-dismissal.ts).
+  reason     String @default("not_relevant")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  // One dismissal per org per target name — re-dismissing is an idempotent upsert.
+  @@unique([orgId, targetKey])
+  @@index([orgId])
+  @@map("prospect_dismissals")
 }
 
 /// New Connections Detected — durable triage queue for Fireflies meeting attendees
