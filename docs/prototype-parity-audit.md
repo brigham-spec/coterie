@@ -59,10 +59,10 @@ gaps are list-view intelligence, a few missing profile fields, and Fireflies-on-
 | 3 | "Referred By" referral tracking | Dropdown links referrer member (or External); header badge → their profile. (~L4486) | DONE (S7: referredById/referredByExternal cols + CompanyReferral self-FK; edit-form in-network select + external text in `_details-card.tsx`; `updateCompany` persists w/ in-org + self-referral guards; header badge `↗ Referred by` links to referrer profile, `page.tsx`) | **Yes** (shipped) | M |
 | 4 | Contact "Additional Emails" array | Chip multi-email per contact; used for Fireflies matching. (~L4931) | DONE (Slice 11.0: `Contact.additionalEmails String[]` col; `readAdditionalEmails()` in `contacts/actions.ts` splits comma/newline, lowercases, requires `@`, drops the primary + de-dupes, on both create + update; `_contact-form.tsx` field; displayed as "Also: …" on `contacts/[id]/_details.tsx` + `companies/[id]/_contacts-card.tsx`) | **Yes** (shipped) | M |
 | 5 | Standalone contact detail page editable | Contacts editable inline. | DONE (S11f: `contacts/[id]/_details.tsx` `ContactDetails` toggles the read view into the shared `ContactForm` driven by `updateContact` — same editor as the company-profile Contacts card, no drift; wired `page.tsx:149`) | — (reuses `updateContact`) | M |
-| 6 | Saved Articles & Links per member | Inline saved URLs/docs w/ add form, tag-to-project, remove. (~L6664) | MISSING | **Yes** (articles store) | M |
-| 7 | Paste Fireflies URL/ID on profile | Fetch a specific transcript by ID, attach to member. (~L5148) | MISSING (org-level sync only) | Yes (writes meetings) | M |
-| 8 | "Load from Fireflies" on profile | Pull all Fireflies meetings mentioning member's contacts/domains. (~L5244) | MISSING | Yes (writes meetings) | M |
-| 9 | AI "Extract action items" per meeting on profile | Per-meeting button extracts items → deliverables. (~L5317) | MISSING (exists on global meeting, not profile) | Yes | M |
+| 6 | Saved Articles & Links per member | Inline saved URLs/docs w/ add form, tag-to-project, remove. (~L6664) | DONE — `SavedArticlesCard` on the profile (companies/[id]/_saved-articles.tsx; page.tsx:756) w/ "Add link" → `AddLinkForm` (URL+title → saveNewsItem), per-row Remove (deleteNewsItem), + "Scan the web" shortcut | **Yes** (shipped, NewsItem) | M |
+| 7 | Paste Fireflies URL/ID on profile | Fetch a specific transcript by ID, attach to member. (~L5148) | DONE — `FirefliesImport` (_meetings-card.tsx:133) "Paste a transcript ID/link" input → `importFirefliesTranscript` (actions.ts:2742; `parseFirefliesId` accepts bare id or share URL) | **Yes** (shipped) | M |
+| 8 | "Load from Fireflies" on profile | Pull all Fireflies meetings mentioning member's contacts/domains. (~L5244) | DONE — `FirefliesImport` "Load recent" → `loadFirefliesForCompany` (actions.ts:2807) fetches recent transcripts, filters to this company's contact emails + domain | **Yes** (shipped) | M |
+| 9 | AI "Extract action items" per meeting on profile | Per-meeting button extracts items → deliverables. (~L5317) | DONE — profile MeetingItem renders shared `<MeetingActionItems>` (_meetings-card.tsx:243, from meetings/_action-items) incl. the "Extract action items" button, same as the global page | **Yes** (shipped) | M |
 | 10 | Second-degree contacts from meeting transcripts | Names in action items not in CRM surface as "+ Add to CRM" chips. (~L5528) | MISSING | Yes (creates contacts) | L |
 | 11 | Action-item extra statuses: Waiting / Skipped | ⏳ waiting + ⊘ skipped, distinct from open/done. (~L5856) | DONE (`COMMITMENT_STATUSES = open/waiting/done/dropped` in `lib/commitments.ts`; `waiting` = blocked-but-active with gold badge + left-border in `_commitments-card.tsx:256,280`; `dropped` = the prototype's "skipped" (dismissed); `updateCommitmentStatus` validates the vocab `actions.ts:2475`; tested `commitments.test.ts:117`, `commitment-action.test.ts:277`) | **Yes** (`status` text, no enum/migration) | S |
 | 12 | Action-item bulk select + batch done/delete | ☑ select mode, multi-select, select-all. (~L5726) | DONE (S11S: open commitment lists get a "Select" toggle → per-row checkboxes + select-all + batch bar; `batchUpdateCommitments` marks the checked set done or deletes it (two-step confirm) in one RLS-scoped write; `_commitment-list.tsx` + `_commitment-row.tsx` selection prop; tested `commitments-global-action.test.ts`) | No (transient UI selection) | M |
@@ -74,8 +74,8 @@ gaps are list-view intelligence, a few missing profile fields, and Fireflies-on-
 | 18 | Consulting/IDA field | `cons` field on profile, exported CSV. (~L5114) | DONE (company.consulting field editable on profile details card + "Consulting"/"IDA" list badge; prod has no member-CSV export) | **Yes** (col) | S |
 | 19 | Partnership "Synthesize" AI button | Web-search + AI fills category/summary/collab. (~L4653) | DONE (P6a: synthesizePartner action + draft fold-in) | No | M |
 | 20 | Their-Network: link-to-CRM / Add-to-CRM | Inline search to link relationship to a member or create prospect. (~L4781) | DONE (P6b: linkKeyRelationship + addRelationshipAsProspect; linkedCompanyId shipped) | Yes (crmLink) | M |
-| 21 | Invoice/billing management UI | Add member to invoice schedule, payment schedule. (~L6761) | MISSING (Invoice model exists, no UI) | Yes (UI only) | L |
-| 22 | Permanent delete company | Destructive delete from profile. (~L6821) | MISSING (archive only) | No | M |
+| 21 | Invoice/billing management UI | Add member to invoice schedule, payment schedule. (~L6761) | DONE — full `/dashboard/invoices` route: ledger + KPI tiles (Billed/Collected/Outstanding) + create form (company/number/amount/status/dates/notes → createInvoice), and `[id]` detail w/ payment history (recordPayment/voidInvoice) | **Yes** (shipped) | L |
+| 22 | Permanent delete company | Destructive delete from profile. (~L6821) | DONE — `deleteCompany` (companies/[id]/actions.ts:2347) hard-deletes (clears RESTRICT introductions + contact-owned action items, then company.delete under RLS) via the two-step-confirm DangerZone in _details-card.tsx | No | M |
 | 23 | News-scan shortcut from profile | Footer icon opens news pre-filtered to member. (~L6754) | DONE (S8a: "Scan the web" link → /dashboard/news?company= on the Saved Articles card) | No | S |
 | 24 | Relationship Timeline: Add-Note + broader sources | Add/edit/delete manual notes; timeline pulls value-delivered, events-attended, news touchpoints too. (~L6217) | DONE (Note model schema.prisma:944 already migrated; addNote/editNote/deleteNote actions companies/[id]/actions.ts:2910/2940/2971; _timeline.tsx renders the "Add note" toggle + per-note inline Edit/Delete; buildRelationshipTimeline merges meetings, intros, done-commitments, status changes, notes, value-delivered, events-attended AND news — all "broader sources" present; tested note-action.test.ts) | Yes — Note model shipped, no new migration | M |
 | 25 | Inline Log-Intro + stage/edit/delete on profile intros | + Log Introduction (member pre-filled Party A); per-intro inline stage cycle / edit outcome / delete. (~L6457) | DONE (S8d IntroductionsCard: inline Log-intro form + per-row advance/edit-outcome/delete + Fireflies-detected advance confirms) | Derived | M |
@@ -228,6 +228,25 @@ row on Add-to-pipeline, score→temperature mapping, exclude-set hallucination b
 ---
 
 ## Consolidated build backlog
+
+> **STATUS — sweep complete (verified 2026-08-08).** All Tier 1–3 slices below (S1–S11)
+> have shipped; this backlog is retained as the historical execution plan. Each section's
+> table rows above have been re-verified against code and corrected. The only feature debt
+> that genuinely remains open (all either low-value or migration-gated — build only on
+> request):
+> - **Members 10** — second-degree contacts from meeting transcripts surfaced as "+ Add to
+>   CRM" chips (MISSING; migration — creates contacts; L).
+> - **Dashboard 8** — Daily Focus per-item done/snooze/waiting states (Partial; briefing is
+>   read-only/ephemeral today; migration — needs an agenda-item-state store).
+> - **Dashboard 9** — enrichment/status badge on the kanban `ProjectCard` (Partial; stage
+>   badge is list-view only, kanban cards show type/value/units/county chips; Derived).
+> - **Dashboard 10** — Referral Leaderboard ranking members by referrals made (MISSING;
+>   `referredById` FK exists, no aggregation surface; Derived).
+> - **News 5** — article → project cross-link (MISSING; migration — no `newsItem.projectId`).
+> - **News 1** — Google-News RSS pre-fetch layer (MISSING; DEFERRED — low value vs AI web search).
+> - **News 7** — 429 retry w/ backoff (MISSING; minor — prod surfaces "AI is busy" gracefully).
+>
+> Everything else previously flagged MISSING/Partial was found already shipped (stale audit rows).
 
 Ordered by value ÷ effort, grouped into shippable slices (one gate + commit each). "Sch"
 = needs a migration. Slices are roughly independent; the top four are the highest-leverage.
