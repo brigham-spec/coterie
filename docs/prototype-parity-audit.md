@@ -88,23 +88,27 @@ DB-built relationship timeline; Zapier email sync; URL-state list filters; auto
 ## Projects / Value Created / Revenue / Dashboard
 
 Prod has solid project CRUD + stage history + team roster + funding sources, plus
-prod-only surfaces (value-report page, per-invoice detail, `lastFollowUpAt`). The debt
-is concentrated in the economic-impact / revenue data model and three prototype modals.
+prod-only surfaces (value-report page, per-invoice detail, `lastFollowUpAt`). Verified
+2026-08-08 against projects/[id], value-created, revenue, invoices, and the dashboard:
+the economic-impact + service-fee data model and intro-to-deal link are ALL shipped
+(the audit's "MISSING" flags were stale). Remaining debt = a few dashboard-analytics
+modals (Daily Digest, Referral Leaderboard, agenda per-item states) + project/link
+housekeeping deletes.
 
 | # | Feature | Prototype behavior | Prod status | Persistence | Size |
 |---|---------|--------------------|-------------|-------------|------|
-| 1 | Economic-impact data on projects | `economicImpact` JSON: construction cost, jobs created, tax abatement, state grants — feeds Value Created tiles. | MISSING | **Yes** (project.economicImpact JSON) | M |
-| 2 | HV service fees on projects | `hvServices` JSON: 5 service types each w/ a fee — drives Revenue service-fee section. | MISSING | **Yes** (project.hvServices JSON) | M |
-| 3 | Project `industry` field | Separate from project `type`. | MISSING | **Yes** (project.industry) | S |
-| 4 | Developer/lead member FK | `developerMemberId` links a project to the member developing it. | MISSING | **Yes** (project.developerMemberId) | S |
-| 5 | Daily Digest modal | AI-composed daily rollup across the network. | MISSING | No (ephemeral AI) | L |
-| 6 | Proposal Tracker modal | Dedicated proposal pipeline w/ urgency + Log-Follow-up. | Partial (proposals exist on company) | Derived + urgency field | L |
-| 7 | Invoice Schedule spreadsheet | Full invoice schedule grid. | Partial (invoices exist) | Derived | L |
-| 8 | Daily Focus / My Agenda | AI-Prep, per-item done/snooze/waiting states. | MISSING | **Yes** (agenda item state) | M |
-| 9 | Kanban card enrichment badges | Cards show enrichment/status badges. | MISSING | Derived | M |
-| 10 | Referral Leaderboard | Ranks members by referrals made. | MISSING | Derived | M |
-| 11 | Intro-to-Deal conversions | Tracks which intros became deals. | MISSING | **Yes** (link intro→deal) | M |
-| 12 | Delete project / unlink company | Housekeeping actions. | MISSING | No | S |
+| 1 | Economic-impact data on projects | `economicImpact` JSON: construction cost, jobs created, tax abatement, state grants — feeds Value Created tiles. | DONE (S11Z3 verify) — schema `economic_impact` col schema.prisma:304 (already migrated); `EconomicImpactCard` edit form projects/[id]/_economic-impact.tsx (permanent/construction jobs, cost, tax abatement, add/remove grants via updateEconomicImpact/addProjectGrant/removeProjectGrant); Value Created reads it — value-created/page.tsx:107 parseEconomicImpact + :166 "Economic impact" 5-tile card | **Yes** (already migrated) | M |
+| 2 | HV service fees on projects | `hvServices` JSON: 5 service types each w/ a fee — drives Revenue service-fee section. | DONE (S11Z3 verify) — schema `hv_services` col schema.prisma:306 (already migrated); `HvServicesCard` projects/[id]/_hv-services.tsx (5 service lines, active/fee/status via updateHvServices); Revenue renders it — revenue/page.tsx:90 sumActiveServiceFees(parseHvServices) + :184 "Project service fees" card | **Yes** (already migrated) | M |
+| 3 | Project `industry` field | Separate from project `type`. | DONE (S11Z3 verify) — schema `industry String?` schema.prisma:288 (distinct from `type`); create form field projects/page.tsx:169 (right after the type field :168) | **Yes** (already migrated) | S |
+| 4 | Developer/lead member FK | `developerMemberId` links a project to the member developing it. | DONE (S11Z3 verify) — schema `developer_member_id` + `developer Company?` relation schema.prisma:302/314 (already migrated); SelectField picker projects/page.tsx:191; createProject/updateProject persist via resolveLinkedCompany projects/actions.ts:56/72/714; detail reads developer projects/[id]/page.tsx:84 | **Yes** (already migrated) | S |
+| 5 | Daily Digest modal | AI-composed daily rollup across the network. | MISSING as named — but the analogous "Daily Focus" AI card ships (dashboard/_daily-focus.tsx, daily-focus-actions.ts, lib/daily-focus*, rendered dashboard/page.tsx:330; Today/This Week/This Month horizons + on-demand Anthropic synthesis). No separate Digest modal. | No (ephemeral AI) | L |
+| 6 | Proposal Tracker modal | Dedicated proposal pipeline w/ urgency + Log-Follow-up. | Partial — per-company ProposalsCard ships (companies/[id]/_proposals-card.tsx: create/updateStatus/delete; schema `lastFollowUpAt` col ALREADY exists schema.prisma:884; revenue/page.tsx:58-66 reads it for Won/Open/Stale metrics). MISSING: dedicated /dashboard/proposals list page, urgency badge UI, and a Log-Follow-up write action (col exists, no write path). | Derived + `lastFollowUpAt` col already exists | L |
+| 7 | Invoice Schedule spreadsheet | Full invoice schedule grid. | Mostly DONE — Invoice model schema.prisma:586 (parentInvoiceId self-FK for installment schedules); full list invoices/page.tsx (create + derived status/balance + collection-rate metrics) + detail invoices/[id]/page.tsx (payment history, recordPayment/voidInvoice). Ships as a ledger; a dedicated spreadsheet-grid view is the only unbuilt slice. | Derived | L |
+| 8 | Daily Focus / My Agenda | AI-Prep, per-item done/snooze/waiting states. | Partial — Daily Focus AI briefing + Today/Week/Month horizons ship (dashboard/_daily-focus.tsx); MISSING the per-item done/snooze/waiting states (FocusRow _daily-focus.tsx:113 is read-only, ephemeral; no AgendaItem model) | **Yes** (agenda item state) | M |
+| 9 | Kanban card enrichment badges | Cards show enrichment/status badges. | Partial — ProjectCard shows type/value/units/county chips + up to 3 company pills (projects/page.tsx:361-403); MISSING an enrichment/status badge on the card (StatusBadge is list-view only :308, not on kanban cards) | Derived | M |
+| 10 | Referral Leaderboard | Ranks members by referrals made. | MISSING — `referredById` FK ships on Company but no leaderboard/ranking/aggregation surface anywhere | Derived | M |
+| 11 | Intro-to-Deal conversions | Tracks which intros became deals. | DONE (S11Z3 verify) — schema `Introduction.project_id` FK + relation schema.prisma:444/460 (already migrated) + `outcome` :441; log-intro Project SelectField introductions/page.tsx:397; conversionRate metric feeds the PipelineBar funnel introductions/page.tsx:186 | **Yes** (already migrated) | M |
+| 12 | Delete project / unlink company | Housekeeping actions. | MISSING — no deleteProject action (only deleteProjectDeliverable) and no unlink-company action in projects/actions.ts; the model supports it (Project cascade, ProjectLink.deleteMany) but no server-action/UI plumbing | No | S |
 | 13 | Sync-status pills | Meeting count + member pills on sync status. | DONE (S11V — summarizeRecentSync lib/sync-status.ts derives meeting count + companies-touched from meetings synced in the recency window, reusing dedupeMembers/MeetingMember/RawMeetingForView from meetings-view; dashboard SyncStatusBar page.tsx renders "N meetings this week ·" + clickable company pills → /dashboard/companies/{id}; tested sync-status.test.ts) | Derived | S |
 
 **Prod has that prototype lacks:** value-report page, per-invoice detail page,
