@@ -20,6 +20,7 @@ import {
   buildEnrichmentNudges,
   type EnrichmentNudge as EnrichmentNudgeItem,
 } from "@/lib/enrichment-nudge";
+import { buildReferralLeaderboard } from "@/lib/referral-leaderboard";
 import { cn, StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
@@ -102,6 +103,8 @@ export default async function DashboardPage() {
         website: true,
         lookingFor: true,
         canOffer: true,
+        // Who referred this company — drives the referral leaderboard tally.
+        referredById: true,
         // Presence of a primary contact drives the enrichment nudge — take 1 is
         // enough to know whether the profile has one.
         contacts: {
@@ -244,6 +247,9 @@ export default async function DashboardPage() {
   // New Connections Detected — cluster unmatched meeting attendees by domain.
   const connectionGroups = groupConnections(unmatched);
   const companyOptions = companies.map((c) => ({ id: c.id, name: c.name }));
+
+  // Referral Leaderboard — rank in-network referrers by referrals made.
+  const referralLeaderboard = buildReferralLeaderboard(companies);
 
   // ── KPI pill counts ────────────────────────────────────────────────────────
   const memberCount = companies.filter((c) => c.status === "member").length;
@@ -540,6 +546,29 @@ export default async function DashboardPage() {
           </div>
         </DashCard>
       </div>
+
+      {/* Referral Leaderboard — who has sent the most referrals into the network */}
+      {referralLeaderboard.length > 0 ? (
+        <div className="mb-4">
+          <DashCard title="Referral Leaderboard" viewHref="/dashboard/companies">
+            {referralLeaderboard.slice(0, 6).map((r, i) => (
+              <RowLink key={r.id} href={`/dashboard/companies/${r.id}`}>
+                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-gold-bg text-[10px] font-bold text-gold-ink">
+                  {i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[11.5px] font-semibold text-ink">
+                    {r.name}
+                  </div>
+                </div>
+                <div className="text-[10px] font-semibold whitespace-nowrap text-gold-ink">
+                  {r.count} referral{r.count === 1 ? "" : "s"}
+                </div>
+              </RowLink>
+            ))}
+          </DashCard>
+        </div>
+      ) : null}
 
       {/* ROW 5 — Revenue snapshot */}
       {showRevenue ? (

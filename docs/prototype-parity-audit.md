@@ -106,7 +106,7 @@ housekeeping deletes.
 | 7 | Invoice Schedule spreadsheet | Full invoice schedule grid. | Mostly DONE — Invoice model schema.prisma:586 (parentInvoiceId self-FK for installment schedules); full list invoices/page.tsx (create + derived status/balance + collection-rate metrics) + detail invoices/[id]/page.tsx (payment history, recordPayment/voidInvoice). Ships as a ledger; a dedicated spreadsheet-grid view is the only unbuilt slice. | Derived | L |
 | 8 | Daily Focus / My Agenda | AI-Prep, per-item done/snooze/waiting states. | Partial — Daily Focus AI briefing + Today/Week/Month horizons ship (dashboard/_daily-focus.tsx); MISSING the per-item done/snooze/waiting states (FocusRow _daily-focus.tsx:113 is read-only, ephemeral; no AgendaItem model) | **Yes** (agenda item state) | M |
 | 9 | Kanban card enrichment badges | Cards show enrichment/status badges. | Partial — ProjectCard shows type/value/units/county chips + up to 3 company pills (projects/page.tsx:361-403); MISSING an enrichment/status badge on the card (StatusBadge is list-view only :308, not on kanban cards) | Derived | M |
-| 10 | Referral Leaderboard | Ranks members by referrals made. | MISSING — `referredById` FK ships on Company but no leaderboard/ranking/aggregation surface anywhere | Derived | M |
+| 10 | Referral Leaderboard | Ranks members by referrals made. | DONE (S11Z6) — `buildReferralLeaderboard` (lib/referral-leaderboard.ts) tallies each in-network referrer by `referredById` back-count, ranked most-first w/ alpha tiebreak; rendered as a ranked "Referral Leaderboard" DashCard on the dashboard (page.tsx, derived from the already-loaded companies read — no new query) | Derived | M |
 | 11 | Intro-to-Deal conversions | Tracks which intros became deals. | DONE (S11Z3 verify) — schema `Introduction.project_id` FK + relation schema.prisma:444/460 (already migrated) + `outcome` :441; log-intro Project SelectField introductions/page.tsx:397; conversionRate metric feeds the PipelineBar funnel introductions/page.tsx:186 | **Yes** (already migrated) | M |
 | 12 | Delete project / unlink company | Housekeeping actions. | DONE (S11Z4) — unlinkCompany (projectLink.deleteMany by projectId+companyId) + deleteProject (project.deleteMany by id → redirect /dashboard/projects; child links/team/funding/deliverables cascade at DB) in projects/actions.ts; per-row "Unlink" in the Participants table + two-step-confirm "Delete project" DangerZone (_delete-project.tsx) on the project detail page | No | S |
 | 13 | Sync-status pills | Meeting count + member pills on sync status. | DONE (S11V — summarizeRecentSync lib/sync-status.ts derives meeting count + companies-touched from meetings synced in the recency window, reusing dedupeMembers/MeetingMember/RawMeetingForView from meetings-view; dashboard SyncStatusBar page.tsx renders "N meetings this week ·" + clickable company pills → /dashboard/companies/{id}; tested sync-status.test.ts) | Derived | S |
@@ -240,8 +240,7 @@ row on Add-to-pipeline, score→temperature mapping, exclude-set hallucination b
 >   read-only/ephemeral today; migration — needs an agenda-item-state store).
 > - **Dashboard 9** — enrichment/status badge on the kanban `ProjectCard` (Partial; stage
 >   badge is list-view only, kanban cards show type/value/units/county chips; Derived).
-> - **Dashboard 10** — Referral Leaderboard ranking members by referrals made (MISSING;
->   `referredById` FK exists, no aggregation surface; Derived).
+> - ~~**Dashboard 10** — Referral Leaderboard~~ — DONE (S11Z6; dashboard card + lib/referral-leaderboard.ts).
 > - **News 5** — article → project cross-link (MISSING; migration — no `newsItem.projectId`).
 > - **News 1** — Google-News RSS pre-fetch layer (MISSING; DEFERRED — low value vs AI web search).
 > - **News 7** — 429 retry w/ backoff (MISSING; minor — prod surfaces "AI is busy" gracefully).
@@ -307,7 +306,7 @@ editable contact detail page, prospect-finder Draft-Outreach + tag badges, netwo
 actions. *Members 5,13,14,15,16,17,19,20,22; Finder 14,15; Search 12,13.* Sch: minimal.
 
 **Deferred (low value / prod-only-superset):** Daily Digest modal, Proposal Tracker / Invoice
-Schedule spreadsheets, kanban badges, Referral Leaderboard, Google-News RSS layer, action-item
+Schedule spreadsheets, kanban badges, Google-News RSS layer, action-item
 bulk-select, second-degree-contact detection, invoice-management UI, Zapier full-body guide text.
 
 ### Suggested execution order
