@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 
 import { Button, Card, cn } from "@/components/ui";
+import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
 
 import {
   saveNewsItem,
@@ -25,7 +26,7 @@ import type { NewsArticle } from "@/lib/news-scan";
 type ScanCompany = {
   id: string;
   name: string;
-  inNetwork: boolean;
+  status: string;
   industry: string;
 };
 
@@ -90,6 +91,25 @@ export function NewsScanner({
       return next;
     });
   }
+
+  function selectByStatus(status: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const c of companies) if (c.status === status) next.add(c.id);
+      return next;
+    });
+  }
+
+  // Tier quick-selects — one per company status actually present (former is
+  // already excluded upstream). Ports the prototype's "All Director / All
+  // Advisory / Hot Prospects" batch shortcuts onto production's status vocabulary.
+  const tiers = useMemo(
+    () =>
+      COMPANY_STATUS_DEFS.filter(
+        (d) => d.value !== "former" && companies.some((c) => c.status === d.value),
+      ),
+    [companies],
+  );
 
   async function runBatch() {
     const targets = companies.filter((c) => selected.has(c.id));
@@ -161,6 +181,17 @@ export function NewsScanner({
                 >
                   Select all shown
                 </button>
+                {tiers.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => selectByStatus(t.value)}
+                    disabled={scanning}
+                    className="font-medium tracking-[0.06em] text-gold uppercase hover:underline disabled:opacity-40"
+                  >
+                    All {t.label}s
+                  </button>
+                ))}
                 {count > 0 ? (
                   <button
                     type="button"

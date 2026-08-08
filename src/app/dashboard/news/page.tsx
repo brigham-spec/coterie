@@ -1,7 +1,6 @@
 import { PageTitle } from "@/components/ui";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
-import { NETWORK_STATUSES } from "@/lib/company-statuses";
 
 import { NewsScanner } from "./_news";
 import { SavedArticlesList } from "./_saved-articles";
@@ -46,10 +45,11 @@ export default async function NewsPage({
 
   // Scanning is most useful for in-network relationships; prospects included too
   // (they're the pipeline you're actively tracking), formers already excluded.
+  // status rides along so the scanner can offer per-tier batch quick-selects.
   const scannable = companies.map((c) => ({
     id: c.id,
     name: c.name,
-    inNetwork: NETWORK_STATUSES.includes(c.status),
+    status: c.status,
     industry: c.industry,
   }));
 
