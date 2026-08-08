@@ -24,7 +24,13 @@ import {
   Tr,
 } from "@/components/ui";
 
-import { linkCompany, updateProjectDetails, updateStage } from "../actions";
+import {
+  linkCompany,
+  unlinkCompany,
+  updateProjectDetails,
+  updateStage,
+} from "../actions";
+import { DeleteProject } from "./_delete-project";
 import { OpenRoles } from "./_open-roles";
 import {
   DeliverablesCard,
@@ -382,6 +388,9 @@ export default async function ProjectDetailPage({
                 <Th>Company</Th>
                 <Th>Role</Th>
                 <Th>Status</Th>
+                <Th>
+                  <span className="sr-only">Actions</span>
+                </Th>
               </>
             }
           >
@@ -391,6 +400,18 @@ export default async function ProjectDetailPage({
                 <Td className="capitalize">{l.role.replace(/_/g, " ")}</Td>
                 <Td>
                   <StatusBadge status={l.company.status} />
+                </Td>
+                <Td className="text-right">
+                  <form action={unlinkCompany}>
+                    <input type="hidden" name="projectId" value={project.id} />
+                    <input type="hidden" name="companyId" value={l.companyId} />
+                    <button
+                      type="submit"
+                      className="text-[10px] font-medium tracking-[0.06em] text-red uppercase hover:underline"
+                    >
+                      Unlink
+                    </button>
+                  </form>
                 </Td>
               </Tr>
             ))}
@@ -506,6 +527,8 @@ export default async function ProjectDetailPage({
           </form>
         )}
       </Card>
+
+      <DeleteProject projectId={project.id} projectName={project.name} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -161,6 +162,43 @@ export async function linkCompany(formData: FormData): Promise<void> {
   );
 
   revalidatePath(`/dashboard/projects/${projectId}`);
+}
+
+// Detach a company from a project. The project_links row keys on
+// (projectId, companyId); deleteMany (not delete) so an RLS-excluded row is a
+// silent no-op instead of a "record not found" throw.
+export async function unlinkCompany(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+
+  if (!projectId || !companyId)
+    throw new Error("project and company are required");
+
+  await withOrg(orgId, (tx) =>
+    tx.projectLink.deleteMany({ where: { projectId, companyId } }),
+  );
+
+  revalidatePath(`/dashboard/projects/${projectId}`);
+}
+
+// Permanently delete a project. All child rows cascade at the DB (project_links,
+// team_members, funding_sources, action_items) or SetNull (introductions,
+// events), so the single deleteMany is enough. deleteMany keeps it a no-op when
+// RLS excludes the row; then redirect back to the directory.
+export async function deleteProject(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!projectId) throw new Error("project is required");
+
+  await withOrg(orgId, (tx) =>
+    tx.project.deleteMany({ where: { id: projectId } }),
+  );
+
+  revalidatePath("/dashboard/projects");
+  redirect("/dashboard/projects");
 }
 
 // ── Project deliverables ────────────────────────────────────────────────────
