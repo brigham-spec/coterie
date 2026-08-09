@@ -39,6 +39,7 @@ import { ProposalsCard } from "./_proposals-card";
 import { ValueDeliveredCard } from "./_value-delivered-card";
 import { CommitmentsCard } from "./_commitments-card";
 import { MeetingsCard } from "./_meetings-card";
+import { SecondDegreeCard } from "./_second-degree-card";
 import { EmailCorrespondence } from "./_email-correspondence";
 import { SavedArticlesCard } from "./_saved-articles";
 import { RelationshipTimeline } from "./_timeline";
@@ -87,6 +88,7 @@ export default async function CompanyDetailPage({
     introductions,
     pendingIntros,
     meetings,
+    secondDegree,
     emailMessages,
     newsItems,
     actionItems,
@@ -125,6 +127,7 @@ export default async function CompanyDetailPage({
           introductions: [],
           pendingIntros: [],
           meetings: [],
+          secondDegree: [],
           emailMessages: [],
           newsItems: [],
           actionItems: [],
@@ -207,6 +210,25 @@ export default async function CompanyDetailPage({
                   ownerContact: { select: { name: true } },
                 },
               },
+            },
+          })
+        : [];
+      // Second-degree contacts (Members item 10): Fireflies attendees who sat in
+      // one of THIS company's meetings but match no CRM contact. meetingIds on the
+      // unmatched row intersecting this company's meeting ids scopes them to people
+      // actually seen alongside this member — the profile offers "+ Add to CRM".
+      // Dismissed strangers are filtered here just as the dashboard panel does.
+      const meetingIds = meetings.map((m) => m.id);
+      const secondDegree = meetingIds.length
+        ? await tx.unmatchedAttendee.findMany({
+            where: { dismissedAt: null, meetingIds: { hasSome: meetingIds } },
+            orderBy: { seenCount: "desc" },
+            select: {
+              id: true,
+              email: true,
+              inferredName: true,
+              seenCount: true,
+              lastMeetingTitle: true,
             },
           })
         : [];
@@ -359,6 +381,7 @@ export default async function CompanyDetailPage({
         introductions,
         pendingIntros,
         meetings,
+        secondDegree,
         emailMessages,
         newsItems,
         actionItems,
@@ -751,6 +774,17 @@ export default async function CompanyDetailPage({
         staff={staff}
         networkContacts={networkOptions}
         firefliesConnected={firefliesConnected}
+      />
+
+      <SecondDegreeCard
+        companyId={company.id}
+        people={secondDegree.map((p) => ({
+          id: p.id,
+          name: p.inferredName?.trim() || p.email,
+          email: p.email,
+          seenCount: p.seenCount,
+          lastMeetingTitle: p.lastMeetingTitle,
+        }))}
       />
 
       <EmailCorrespondence companyId={company.id} messages={emailRows} />
