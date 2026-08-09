@@ -40,6 +40,41 @@ function lastContactAt(p: NudgeProposal): Date {
   return p.lastFollowUpAt ?? p.sentOn ?? p.createdAt;
 }
 
+// Follow-up urgency taxonomy for the proposals tracker list. "settled" = a
+// terminal win/lost (no chasing); the rest grade an open proposal by how long it
+// has gone without contact, keyed off the same FOLLOW_UP_STALE_DAYS threshold the
+// dashboard nudge uses so both surfaces agree on what "overdue" means.
+export type ProposalUrgencyLevel =
+  | "settled"
+  | "overdue"
+  | "due-soon"
+  | "on-track";
+
+export interface ProposalUrgency {
+  level: ProposalUrgencyLevel;
+  daysSinceContact: number;
+}
+
+// A proposal within two days of the stale threshold is "due-soon" — a gentle
+// nudge before it tips into overdue.
+const DUE_SOON_DAYS = FOLLOW_UP_STALE_DAYS - 2;
+
+export function proposalUrgency(
+  p: NudgeProposal,
+  now: Date,
+): ProposalUrgency {
+  const daysSinceContact = Math.round(
+    (now.getTime() - lastContactAt(p).getTime()) / DAY,
+  );
+  if (CLOSED_STATUSES.has(p.status))
+    return { level: "settled", daysSinceContact };
+  if (daysSinceContact > FOLLOW_UP_STALE_DAYS)
+    return { level: "overdue", daysSinceContact };
+  if (daysSinceContact > DUE_SOON_DAYS)
+    return { level: "due-soon", daysSinceContact };
+  return { level: "on-track", daysSinceContact };
+}
+
 export function buildProposalNudge(
   proposals: NudgeProposal[],
   now: Date,

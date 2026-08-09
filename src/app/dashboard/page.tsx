@@ -350,12 +350,12 @@ export default async function DashboardPage() {
             {proposalNudge.stale.length === 1 ? "" : "s"} need follow-up — oldest
             is {proposalNudge.oldestDays}d without contact
           </p>
-          <a
-            href="#membership-proposals"
+          <Link
+            href="/dashboard/proposals"
             className="flex-shrink-0 rounded-md border border-gold-line px-2.5 py-1 text-[10px] font-semibold whitespace-nowrap text-gold-ink transition-colors hover:bg-gold-line/20"
           >
             Review Proposals
-          </a>
+          </Link>
         </div>
       ) : null}
 

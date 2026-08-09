@@ -1622,6 +1622,7 @@ export async function updateCompany(formData: FormData): Promise<void> {
 function revalidateProposal(companyId: string): void {
   revalidatePath(`/dashboard/companies/${companyId}`);
   revalidatePath("/dashboard/revenue");
+  revalidatePath("/dashboard/proposals");
   revalidatePath("/dashboard");
 }
 
@@ -1748,6 +1749,33 @@ export async function deleteProposal(formData: FormData): Promise<void> {
     });
     if (proposal == null) return null;
     await tx.membershipProposal.delete({ where: { id: proposalId } });
+    return proposal.companyId;
+  });
+
+  if (companyId == null)
+    throw new Error("proposal not found in this organization");
+  revalidateProposal(companyId);
+}
+
+// Record a follow-up touch WITHOUT advancing the status — the proposals tracker's
+// standalone "Log follow-up" button. Stamps lastFollowUpAt to now so the nudge and
+// the tracker's urgency clock reset. RLS scopes the load; a foreign id is refused.
+export async function logProposalFollowUp(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const proposalId = String(formData.get("proposalId") ?? "").trim();
+  if (!proposalId) throw new Error("missing proposal");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const proposal = await tx.membershipProposal.findUnique({
+      where: { id: proposalId },
+      select: { companyId: true },
+    });
+    if (proposal == null) return null;
+    await tx.membershipProposal.update({
+      where: { id: proposalId },
+      data: { lastFollowUpAt: new Date() },
+    });
     return proposal.companyId;
   });
 

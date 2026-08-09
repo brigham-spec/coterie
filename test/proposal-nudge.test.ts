@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { buildProposalNudge, type NudgeProposal } from "@/lib/proposal-nudge";
+import {
+  buildProposalNudge,
+  proposalUrgency,
+  type NudgeProposal,
+} from "@/lib/proposal-nudge";
 
 // Pure-logic tests for the proposal follow-up nudge: the >7-day staleness edge,
 // the lastFollowUpAt → sentOn → createdAt contact fallback, terminal-status
@@ -83,5 +87,43 @@ describe("buildProposalNudge", () => {
     expect(
       buildProposalNudge([proposal({ sentOn: on(19) })], now),
     ).toBeNull();
+  });
+});
+
+describe("proposalUrgency", () => {
+  test("grades open proposals by days since contact", () => {
+    // 12d since sent — past the 7-day threshold.
+    expect(proposalUrgency(proposal({ sentOn: on(8) }), now)).toEqual({
+      level: "overdue",
+      daysSinceContact: 12,
+    });
+    // 6d — within two days of the threshold → due-soon.
+    expect(proposalUrgency(proposal({ sentOn: on(14) }), now)).toEqual({
+      level: "due-soon",
+      daysSinceContact: 6,
+    });
+    // 3d — comfortably fresh.
+    expect(proposalUrgency(proposal({ sentOn: on(17) }), now)).toEqual({
+      level: "on-track",
+      daysSinceContact: 3,
+    });
+  });
+
+  test("won/lost are settled regardless of age", () => {
+    expect(proposalUrgency(proposal({ status: "won", sentOn: on(1) }), now).level).toBe(
+      "settled",
+    );
+    expect(
+      proposalUrgency(proposal({ status: "lost", sentOn: on(1) }), now).level,
+    ).toBe("settled");
+  });
+
+  test("a recent follow-up resets the clock over an old send date", () => {
+    expect(
+      proposalUrgency(
+        proposal({ sentOn: on(1), lastFollowUpAt: on(18) }),
+        now,
+      ),
+    ).toEqual({ level: "on-track", daysSinceContact: 2 });
   });
 });

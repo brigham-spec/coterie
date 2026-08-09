@@ -19,9 +19,12 @@ vi.mock("@/lib/auth", () => ({
   requireOrgContext: vi.fn(async () => mockCtx),
 }));
 
-const { createProposal, updateProposalStatus, deleteProposal } = await import(
-  "@/app/dashboard/companies/[id]/actions"
-);
+const {
+  createProposal,
+  updateProposalStatus,
+  deleteProposal,
+  logProposalFollowUp,
+} = await import("@/app/dashboard/companies/[id]/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
 const orgB = { id: randomUUID(), name: `TENANT_B_${randomUUID()}` };
@@ -326,6 +329,53 @@ describe("updateProposalStatus", () => {
       }),
     );
     expect(proposalB!.status).toBe("sent");
+  });
+});
+
+describe("logProposalFollowUp", () => {
+  test("stamps lastFollowUpAt without moving the status", async () => {
+    const proposalId = randomUUID();
+    await withOrg(orgA.id, (tx) =>
+      tx.membershipProposal.create({
+        data: {
+          id: proposalId,
+          orgId: orgA.id,
+          companyId: companyAId,
+          tier: "Director",
+          status: "sent",
+        },
+      }),
+    );
+
+    await logProposalFollowUp(fd({ proposalId }));
+
+    const proposal = await withOrg(orgA.id, (tx) =>
+      tx.membershipProposal.findUnique({
+        where: { id: proposalId },
+        select: { status: true, lastFollowUpAt: true },
+      }),
+    );
+    // The status is left where it was — only the follow-up clock is reset.
+    expect(proposal!.status).toBe("sent");
+    expect(proposal!.lastFollowUpAt).not.toBeNull();
+
+    await withOrg(orgA.id, (tx) =>
+      tx.membershipProposal.delete({ where: { id: proposalId } }),
+    );
+  });
+
+  test("refuses a proposal id from another tenant and leaves it untouched", async () => {
+    await expect(
+      logProposalFollowUp(fd({ proposalId: proposalBId })),
+    ).rejects.toThrow("proposal not found in this organization");
+
+    const proposalB = await withOrg(orgB.id, (tx) =>
+      tx.membershipProposal.findUnique({
+        where: { id: proposalBId },
+        select: { lastFollowUpAt: true },
+      }),
+    );
+    expect(proposalB!.lastFollowUpAt).toBeNull();
   });
 });
 
