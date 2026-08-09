@@ -102,7 +102,7 @@ housekeeping deletes.
 | 3 | Project `industry` field | Separate from project `type`. | DONE (S11Z3 verify) — schema `industry String?` schema.prisma:288 (distinct from `type`); create form field projects/page.tsx:169 (right after the type field :168) | **Yes** (already migrated) | S |
 | 4 | Developer/lead member FK | `developerMemberId` links a project to the member developing it. | DONE (S11Z3 verify) — schema `developer_member_id` + `developer Company?` relation schema.prisma:302/314 (already migrated); SelectField picker projects/page.tsx:191; createProject/updateProject persist via resolveLinkedCompany projects/actions.ts:56/72/714; detail reads developer projects/[id]/page.tsx:84 | **Yes** (already migrated) | S |
 | 5 | Daily Digest modal | AI-composed daily rollup across the network. | MISSING as named — but the analogous "Daily Focus" AI card ships (dashboard/_daily-focus.tsx, daily-focus-actions.ts, lib/daily-focus*, rendered dashboard/page.tsx:330; Today/This Week/This Month horizons + on-demand Anthropic synthesis). No separate Digest modal. | No (ephemeral AI) | L |
-| 6 | Proposal Tracker modal | Dedicated proposal pipeline w/ urgency + Log-Follow-up. | Partial — per-company ProposalsCard ships (companies/[id]/_proposals-card.tsx: create/updateStatus/delete; schema `lastFollowUpAt` col ALREADY exists schema.prisma:884; revenue/page.tsx:58-66 reads it for Won/Open/Stale metrics). MISSING: dedicated /dashboard/proposals list page, urgency badge UI, and a Log-Follow-up write action (col exists, no write path). | Derived + `lastFollowUpAt` col already exists | L |
+| 6 | Proposal Tracker modal | Dedicated proposal pipeline w/ urgency + Log-Follow-up. | Partial — per-company ProposalsCard ships (companies/[id]/_proposals-card.tsx: create/updateStatus/delete; schema `lastFollowUpAt` col ALREADY exists schema.prisma:884; revenue/page.tsx:58-66 reads it for Won/Open/Stale metrics). `lastFollowUpAt` IS stamped on every `updateProposalStatus` (actions.ts:1694), so a status change already acts as a follow-up touch. MISSING: a dedicated /dashboard/proposals list page, urgency badge UI, and a standalone Log-Follow-up button (bump the date without a status change). | Derived + `lastFollowUpAt` col already exists | L |
 | 7 | Invoice Schedule spreadsheet | Full invoice schedule grid. | Mostly DONE — Invoice model schema.prisma:586 (parentInvoiceId self-FK for installment schedules); full list invoices/page.tsx (create + derived status/balance + collection-rate metrics) + detail invoices/[id]/page.tsx (payment history, recordPayment/voidInvoice). Ships as a ledger; a dedicated spreadsheet-grid view is the only unbuilt slice. | Derived | L |
 | 8 | Daily Focus / My Agenda | AI-Prep, per-item done/snooze/waiting states. | Partial — Daily Focus AI briefing + Today/Week/Month horizons ship (dashboard/_daily-focus.tsx); MISSING the per-item done/snooze/waiting states (FocusRow _daily-focus.tsx:113 is read-only, ephemeral; no AgendaItem model) | **Yes** (agenda item state) | M |
 | 9 | Kanban card enrichment badges | Cards show enrichment/status badges. | DONE (S11Z7) — ProjectCard renders an enrichment-badge row (projects/page.tsx): active HVEDC service shorts (parseHvServices, teal), econ-impact `{n} FT jobs` / `$Xk abatement` / `$Xk grants` (parseEconomicImpact rollup, teal/amber/purple), plus `{n} funding` (gold) and `{n} team` (slate) from `_count`. Board query extended with economic_impact/hv_services JSON + `_count:{teamMembers,fundingSources}` (still one withOrg read). No stage badge — each column IS a stage. Prototype's 💰 dropped per no-emoji rule. | Derived | M |
@@ -243,6 +243,11 @@ row on Add-to-pipeline, score→temperature mapping, exclude-set hallucination b
 >   intersect this company's, with "Add to CRM"/dismiss reusing the New Connections actions). Still
 >   not ported: mining meeting titles/action-items for *brand-new* intros (≥2 externals). No
 >   migration; L.
+> - **Dashboard 6** — Proposal Tracker (Partial; per-company ProposalsCard ships and
+>   `updateProposalStatus` already stamps `lastFollowUpAt`; MISSING a dedicated /dashboard/proposals
+>   list page, urgency badge UI, and a standalone Log-Follow-up button; no-migration).
+> - **Dashboard 7** — Invoice Schedule spreadsheet-grid (Mostly DONE; full invoice ledger + detail
+>   ship — only the dedicated spreadsheet-grid view is unbuilt; no-migration).
 > - **Dashboard 8** — Daily Focus per-item done/snooze/waiting states (Partial; briefing is
 >   read-only/ephemeral today; migration — needs an agenda-item-state store).
 > - **Dashboard 5** — a separate "Daily Digest" modal (MISSING as-named; deliberate non-port —
@@ -250,9 +255,10 @@ row on Add-to-pipeline, score→temperature mapping, exclude-set hallucination b
 > - **News 1** — Google-News RSS pre-fetch layer (MISSING; DEFERRED — low value vs AI web search).
 > - **News 7** — 429 retry w/ backoff (MISSING; minor — prod surfaces "AI is busy" gracefully).
 >
-> Recently closed: ~~Dashboard 9~~ (S11Z7, kanban enrichment badges), ~~Dashboard 10~~ (S11Z6,
-> Referral Leaderboard), ~~News 5~~ (S11Z8, article→project cross-link). Everything else
-> previously flagged MISSING/Partial was found already shipped (stale audit rows).
+> Recently closed: ~~Members 10~~ (S11Z10, second-degree-contact profile chips), ~~Dashboard 9~~
+> (S11Z7, kanban enrichment badges), ~~Dashboard 10~~ (S11Z6, Referral Leaderboard), ~~News 5~~
+> (S11Z8, article→project cross-link). Everything else previously flagged MISSING/Partial was
+> found already shipped (stale audit rows).
 
 Ordered by value ÷ effort, grouped into shippable slices (one gate + commit each). "Sch"
 = needs a migration. Slices are roughly independent; the top four are the highest-leverage.
