@@ -242,6 +242,8 @@ export default async function CompanyDetailPage({
           url: true,
           summary: true,
           capturedAt: true,
+          projectId: true,
+          project: { select: { name: true } },
         },
       });
       // Commitments touching this company: manual ones logged on the profile
@@ -753,7 +755,23 @@ export default async function CompanyDetailPage({
 
       <EmailCorrespondence companyId={company.id} messages={emailRows} />
 
-      <SavedArticlesCard companyId={company.id} articles={newsItems} />
+      <SavedArticlesCard
+        companyId={company.id}
+        articles={newsItems.map((n) => ({
+          id: n.id,
+          headline: n.headline,
+          url: n.url,
+          summary: n.summary,
+          capturedAt: n.capturedAt,
+          projectId: n.projectId,
+          projectName: n.project?.name ?? null,
+        }))}
+        // The article can be pinned to any project this company participates in.
+        projectOptions={company.projectLinks.map((l) => ({
+          id: l.project.id,
+          name: l.project.name,
+        }))}
+      />
 
       <CommitmentsCard
         companyId={company.id}

@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { Button, Card, CardHeader } from "@/components/ui";
 
-import { saveNewsItem, deleteNewsItem } from "../../news/actions";
+import { saveNewsItem, deleteNewsItem, linkNewsToProject } from "../../news/actions";
 
 // Saved Articles & News (slice S8a, Members items 6 + 23) — the profile-parity
 // port of the prototype's "Saved Articles & Links" section. Lists the coverage
@@ -28,14 +28,20 @@ export type SavedArticle = {
   url: string;
   summary: string | null;
   capturedAt: Date;
+  projectId: string | null;
+  projectName: string | null;
 };
+
+export type ProjectOption = { id: string; name: string };
 
 export function SavedArticlesCard({
   companyId,
   articles,
+  projectOptions,
 }: {
   companyId: string;
   articles: SavedArticle[];
+  projectOptions: ProjectOption[];
 }) {
   const [adding, setAdding] = useState(false);
 
@@ -75,7 +81,12 @@ export function SavedArticlesCard({
       ) : (
         <ul className="divide-y divide-line">
           {articles.map((a) => (
-            <ArticleItem key={a.id} companyId={companyId} article={a} />
+            <ArticleItem
+              key={a.id}
+              companyId={companyId}
+              article={a}
+              projectOptions={projectOptions}
+            />
           ))}
         </ul>
       )}
@@ -86,9 +97,11 @@ export function SavedArticlesCard({
 function ArticleItem({
   companyId,
   article,
+  projectOptions,
 }: {
   companyId: string;
   article: SavedArticle;
+  projectOptions: ProjectOption[];
 }) {
   return (
     <li className="flex items-start justify-between gap-3 px-4 py-3">
@@ -109,6 +122,11 @@ function ArticleItem({
         <div className="mt-1 text-[10px] text-ink-3">
           {dateFmt.format(article.capturedAt)}
         </div>
+        <ProjectLink
+          companyId={companyId}
+          article={article}
+          projectOptions={projectOptions}
+        />
       </div>
       <form action={deleteNewsItem} className="shrink-0">
         <input type="hidden" name="id" value={article.id} />
@@ -121,6 +139,76 @@ function ArticleItem({
         </button>
       </form>
     </li>
+  );
+}
+
+// Cross-link this article to one of the org's projects (News audit item 5).
+// Linked → a chip to the project + Unlink; unlinked → a project picker + Link.
+// Both post linkNewsToProject, which re-verifies the project is in-org.
+function ProjectLink({
+  companyId,
+  article,
+  projectOptions,
+}: {
+  companyId: string;
+  article: SavedArticle;
+  projectOptions: ProjectOption[];
+}) {
+  if (article.projectId) {
+    return (
+      <div className="mt-1.5 flex items-center gap-2">
+        <a
+          href={`/dashboard/projects/${article.projectId}`}
+          className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-2 hover:text-gold"
+        >
+          → {article.projectName ?? "Linked project"}
+        </a>
+        <form action={linkNewsToProject}>
+          <input type="hidden" name="id" value={article.id} />
+          <input type="hidden" name="companyId" value={companyId} />
+          <input type="hidden" name="projectId" value="" />
+          <button
+            type="submit"
+            className="text-[10px] font-medium tracking-[0.06em] text-ink-3 uppercase hover:underline"
+          >
+            Unlink
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (projectOptions.length === 0) return null;
+
+  return (
+    <form
+      action={linkNewsToProject}
+      className="mt-1.5 flex items-center gap-1"
+    >
+      <input type="hidden" name="id" value={article.id} />
+      <input type="hidden" name="companyId" value={companyId} />
+      <select
+        name="projectId"
+        defaultValue=""
+        required
+        className="rounded border border-line bg-surface px-2 py-1 text-[11px] text-ink-2"
+      >
+        <option value="" disabled>
+          Link to project…
+        </option>
+        {projectOptions.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="submit"
+        className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+      >
+        Link
+      </button>
+    </form>
   );
 }
 

@@ -131,24 +131,29 @@ export default async function ProjectDetailPage({
             select: { id: true, name: true, company: { select: { name: true } } },
             orderBy: { name: "asc" },
           });
-    // Press & News = saved news items across the participant companies (read-only
-    // here; capture/removal live on /dashboard/news). RLS-scoped like the rest.
-    const newsItems =
-      companyIds.length === 0
-        ? []
-        : await tx.newsItem.findMany({
-            where: { companyId: { in: companyIds } },
-            orderBy: { capturedAt: "desc" },
-            take: 15,
-            select: {
-              id: true,
-              headline: true,
-              url: true,
-              summary: true,
-              capturedAt: true,
-              company: { select: { name: true } },
-            },
-          });
+    // Press & News = saved news items explicitly cross-linked to this project
+    // (News audit item 5) plus coverage saved across the participant companies
+    // (read-only here; capture/link/removal live on /dashboard/news and company
+    // profiles). RLS-scoped like the rest.
+    const newsItems = await tx.newsItem.findMany({
+      where: {
+        OR: [
+          { projectId: id },
+          ...(companyIds.length === 0 ? [] : [{ companyId: { in: companyIds } }]),
+        ],
+      },
+      orderBy: { capturedAt: "desc" },
+      take: 15,
+      select: {
+        id: true,
+        headline: true,
+        url: true,
+        summary: true,
+        capturedAt: true,
+        projectId: true,
+        company: { select: { name: true } },
+      },
+    });
     return {
       project,
       companies,
@@ -438,7 +443,7 @@ export default async function ProjectDetailPage({
 
       <HvServicesCard projectId={project.id} services={services} />
 
-      {project.projectLinks.length > 0 ? (
+      {project.projectLinks.length > 0 || newsItems.length > 0 ? (
         <Card>
           <CardHeader title="Press & News" />
           {newsItems.length === 0 ? (
@@ -451,28 +456,42 @@ export default async function ProjectDetailPage({
             </p>
           ) : (
             <ul className="divide-y divide-line">
-              {newsItems.map((n) => (
-                <li key={n.id} className="flex flex-col gap-1 px-4 py-3">
-                  <a
-                    href={n.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[12.5px] font-medium text-ink hover:text-gold hover:underline"
-                  >
-                    {n.headline}
-                  </a>
-                  {n.summary ? (
-                    <p className="line-clamp-2 text-[10.5px] text-ink-3">
-                      {n.summary}
-                    </p>
-                  ) : null}
-                  <div className="flex items-center gap-2 text-[10px] text-ink-3">
-                    <span>{n.company.name}</span>
-                    <span>·</span>
-                    <span>{dateFmt.format(n.capturedAt)}</span>
-                  </div>
-                </li>
-              ))}
+              {/* Articles cross-linked to THIS project (item 5) lead, then the
+                  company-derived coverage — a stable sort keeps capturedAt-desc
+                  within each group. */}
+              {[...newsItems]
+                .sort(
+                  (a, b) =>
+                    Number(b.projectId === project.id) -
+                    Number(a.projectId === project.id),
+                )
+                .map((n) => (
+                  <li key={n.id} className="flex flex-col gap-1 px-4 py-3">
+                    <a
+                      href={n.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[12.5px] font-medium text-ink hover:text-gold hover:underline"
+                    >
+                      {n.headline}
+                    </a>
+                    {n.summary ? (
+                      <p className="line-clamp-2 text-[10.5px] text-ink-3">
+                        {n.summary}
+                      </p>
+                    ) : null}
+                    <div className="flex items-center gap-2 text-[10px] text-ink-3">
+                      {n.projectId === project.id ? (
+                        <span className="rounded-sm bg-gold-bg px-1.5 py-0.5 font-medium text-gold-ink">
+                          Linked
+                        </span>
+                      ) : null}
+                      <span>{n.company.name}</span>
+                      <span>·</span>
+                      <span>{dateFmt.format(n.capturedAt)}</span>
+                    </div>
+                  </li>
+                ))}
             </ul>
           )}
         </Card>

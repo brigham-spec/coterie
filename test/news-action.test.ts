@@ -26,9 +26,8 @@ vi.mock("@/lib/news-scan", async (importOriginal) => {
   return { ...actual, scanCompanyNews: scanSpy };
 });
 
-const { scanNews, saveNewsItem, deleteNewsItem, updateNewsNote } = await import(
-  "@/app/dashboard/news/actions"
-);
+const { scanNews, saveNewsItem, deleteNewsItem, updateNewsNote, linkNewsToProject } =
+  await import("@/app/dashboard/news/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
 const orgB = { id: randomUUID(), name: `TENANT_B_${randomUUID()}` };
@@ -237,5 +236,85 @@ describe("saveNewsItem / deleteNewsItem actions", () => {
       status: "error",
       message: "Article not found in this organization.",
     });
+  });
+});
+
+describe("linkNewsToProject action", () => {
+  let articleId = "";
+  let projectId = "";
+
+  beforeAll(async () => {
+    await withOrg(orgA.id, async (tx) => {
+      const project = await tx.project.create({
+        data: { orgId: orgA.id, name: "Link Target", stage: "concept" },
+      });
+      projectId = project.id;
+      const article = await tx.newsItem.create({
+        data: {
+          orgId: orgA.id,
+          companyId: companyAId,
+          headline: "Linkable coverage",
+          url: "https://x.example/linkable",
+          capturedAt: new Date(),
+        },
+      });
+      articleId = article.id;
+    });
+  });
+
+  afterAll(async () => {
+    mockCtx.orgId = orgA.id;
+    await withOrg(orgA.id, async (tx) => {
+      await tx.newsItem.deleteMany({ where: { id: articleId } });
+      await tx.project.deleteMany({ where: { id: projectId } });
+    });
+  });
+
+  test("pins an article to an in-org project, then unlinks it", async () => {
+    await linkNewsToProject(fd({ id: articleId, companyId: companyAId, projectId }));
+    const linked = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.findUnique({ where: { id: articleId } }),
+    );
+    expect(linked?.projectId).toBe(projectId);
+
+    // A blank projectId unlinks.
+    await linkNewsToProject(fd({ id: articleId, companyId: companyAId, projectId: "" }));
+    const unlinked = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.findUnique({ where: { id: articleId } }),
+    );
+    expect(unlinked?.projectId).toBeNull();
+  });
+
+  test("refuses a foreign/unknown project id", async () => {
+    await expect(
+      linkNewsToProject(
+        fd({ id: articleId, companyId: companyAId, projectId: randomUUID() }),
+      ),
+    ).rejects.toThrow("Project not found in this organization.");
+  });
+
+  test("another tenant cannot link this article (RLS)", async () => {
+    const projectB = await withOrg(orgB.id, (tx) =>
+      tx.project.create({
+        data: { orgId: orgB.id, name: "Org B Project", stage: "concept" },
+      }),
+    );
+
+    mockCtx.orgId = orgB.id;
+    // orgB's own project resolves, but the article belongs to orgA — RLS scopes
+    // the update to no rows, so orgA's article is untouched.
+    await linkNewsToProject(
+      fd({ id: articleId, companyId: "", projectId: projectB.id }),
+    );
+    mockCtx.orgId = orgA.id;
+
+    const stillNull = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.findUnique({ where: { id: articleId } }),
+    );
+    expect(stillNull?.projectId).toBeNull();
+
+    await withOrg(orgB.id, (tx) =>
+      tx.project.deleteMany({ where: { id: projectB.id } }),
+    );
   });
 });

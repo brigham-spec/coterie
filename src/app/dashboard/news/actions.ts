@@ -229,3 +229,39 @@ export async function updateNewsNote(
   if (companyId !== "") revalidatePath(`/dashboard/companies/${companyId}`);
   return { status: "saved" };
 }
+
+// Cross-link (or clear the link of) a saved article to a project (News audit
+// item 5). A blank projectId unlinks. news_items.project_id is a plain SetNull
+// FK — RLS WITH CHECK only guards our own org_id — so re-verify the target
+// project belongs to THIS org inside the tx before pinning it (mirrors
+// saveNewsItem's company re-verification). RLS scopes the update, so a foreign
+// article id matches no row and affects nothing.
+export async function linkNewsToProject(
+  formData: FormData,
+): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (id === "") throw new Error("article required");
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+
+  await withOrg(orgId, async (tx) => {
+    if (projectId !== "") {
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { id: true },
+      });
+      if (project === null)
+        throw new Error("Project not found in this organization.");
+    }
+    await tx.newsItem.updateMany({
+      where: { id },
+      data: { projectId: projectId === "" ? null : projectId },
+    });
+  });
+
+  revalidatePath("/dashboard/news");
+  if (companyId !== "") revalidatePath(`/dashboard/companies/${companyId}`);
+  if (projectId !== "") revalidatePath(`/dashboard/projects/${projectId}`);
+}

@@ -318,6 +318,7 @@ model Project {
   actionItems    ActionItem[]
   teamMembers    ProjectTeamMember[]
   fundingSources FundingSource[]
+  newsItems      NewsItem[]
 
   // Composite-FK target for project_links (id, org_id).
   @@unique([id, orgId])
@@ -653,6 +654,10 @@ model NewsItem {
   // default empty) so the column add is safe against existing rows.
   note       String?
   keyFacts   String[] @default([]) @map("key_facts")
+  /// Optional cross-link to a project this article is about (News audit item 5).
+  /// PLAIN nullable FK (SetNull); same-org enforced in the action inside withOrg,
+  /// since a composite SetNull would fight org_id's NOT NULL (mirrors developerMemberId).
+  projectId  String?  @map("project_id") @db.Uuid
   capturedAt DateTime @map("captured_at") @db.Timestamptz(6)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -660,9 +665,11 @@ model NewsItem {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([orgId])
   @@index([companyId])
+  @@index([projectId])
   @@map("news_items")
 }
 

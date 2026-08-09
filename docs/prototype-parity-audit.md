@@ -240,7 +240,7 @@ row on Add-to-pipeline, score→temperature mapping, exclude-set hallucination b
 >   read-only/ephemeral today; migration — needs an agenda-item-state store).
 > - ~~**Dashboard 9** — enrichment badges on the kanban `ProjectCard`~~ — DONE (S11Z7; HV-service / econ-impact / team+funding-count badges on the card).
 > - ~~**Dashboard 10** — Referral Leaderboard~~ — DONE (S11Z6; dashboard card + lib/referral-leaderboard.ts).
-> - **News 5** — article → project cross-link (MISSING; migration — no `newsItem.projectId`).
+> - ~~**News 5** — article → project cross-link~~ — DONE (S11Z8; `newsItem.projectId` SetNull FK + migration; `linkNewsToProject` action; link/unlink control on the company Saved Articles card; project detail Press & News surfaces linked coverage with a "Linked" marker).
 > - **News 1** — Google-News RSS pre-fetch layer (MISSING; DEFERRED — low value vs AI web search).
 > - **News 7** — 429 retry w/ backoff (MISSING; minor — prod surfaces "AI is busy" gracefully).
 >
