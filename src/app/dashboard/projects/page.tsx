@@ -7,6 +7,8 @@ import {
   PROJECT_STAGES,
   stageRank,
 } from "@/lib/project-stages";
+import { impactIsEmpty, parseEconomicImpact } from "@/lib/value-created";
+import { parseHvServices } from "@/lib/hv-services";
 import {
   AddDisclosure,
   Button,
@@ -44,6 +46,14 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
 });
 
+// Compact money for the card's econ-impact badges ("$1.2M abatement").
+const compactMoney = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
 // Column-header accent per stage tone → literal classes (Tailwind JIT).
 const stageHeadTone: Record<string, string> = {
   slate: "text-slate-ink",
@@ -60,8 +70,8 @@ function loadProjects(orgId: string) {
   return withOrg(orgId, async (tx) => {
     const projects = await tx.project.findMany({
       orderBy: { name: "asc" },
-      // Only the columns the board/list render — not the economic_impact /
-      // hv_services JSON blobs (those are read on the detail page).
+      // The board/list columns, plus the enrichment the kanban card derives:
+      // economic_impact / hv_services JSON and the team / funding-source counts.
       select: {
         id: true,
         name: true,
@@ -72,9 +82,12 @@ function loadProjects(orgId: string) {
         value: true,
         targetDate: true,
         prospectLead: true,
+        economicImpact: true,
+        hvServices: true,
         projectLinks: {
           include: { company: { select: { name: true } } },
         },
+        _count: { select: { teamMembers: true, fundingSources: true } },
       },
     });
     // The roster for the developer/lead picker on the create form.
@@ -358,10 +371,38 @@ function ViewTab({
   );
 }
 
+function EnrichBadge({
+  tone,
+  children,
+}: {
+  tone: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className={cn("rounded-sm px-1.5 py-0.5 text-[9px]", tone)}>
+      {children}
+    </span>
+  );
+}
+
 function ProjectCard({ project }: { project: ProjectRow }) {
   const companies = project.projectLinks.map((l) => l.company.name);
   const value =
     project.value == null ? null : currency.format(Number(project.value));
+  // Enrichment the card surfaces beyond the pipeline facts: active HVEDC service
+  // lines, regional econ-impact (jobs / abatement / grants), and the team /
+  // funding-source counts — the signals the prototype's proj-card carried.
+  const impact = parseEconomicImpact(project.economicImpact);
+  const services = parseHvServices(project.hvServices).filter(
+    (s) => s.line.active,
+  );
+  const teamCount = project._count.teamMembers;
+  const fundingCount = project._count.fundingSources;
+  const hasEnrichment =
+    services.length > 0 ||
+    !impactIsEmpty(impact) ||
+    teamCount > 0 ||
+    fundingCount > 0;
   return (
     <Link
       href={`/dashboard/projects/${project.id}`}
@@ -395,6 +436,40 @@ function ProjectCard({ project }: { project: ProjectRow }) {
           ))}
           {companies.length > 3 ? (
             <span className="text-[9px] text-ink-3">+{companies.length - 3}</span>
+          ) : null}
+        </div>
+      ) : null}
+      {hasEnrichment ? (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {services.map((s) => (
+            <EnrichBadge key={s.key} tone="bg-teal-bg text-teal-ink">
+              {s.short}
+            </EnrichBadge>
+          ))}
+          {impact.permanentJobs > 0 ? (
+            <EnrichBadge tone="bg-teal-bg text-teal-ink">
+              {impact.permanentJobs} FT jobs
+            </EnrichBadge>
+          ) : null}
+          {impact.taxAbatementValue > 0 ? (
+            <EnrichBadge tone="bg-amber-bg text-amber-ink">
+              {compactMoney.format(impact.taxAbatementValue)} abatement
+            </EnrichBadge>
+          ) : null}
+          {impact.grantsSecured > 0 ? (
+            <EnrichBadge tone="bg-purple-bg text-purple-ink">
+              {compactMoney.format(impact.grantsSecured)} grants
+            </EnrichBadge>
+          ) : null}
+          {fundingCount > 0 ? (
+            <EnrichBadge tone="bg-gold-bg text-gold-ink">
+              {fundingCount} funding
+            </EnrichBadge>
+          ) : null}
+          {teamCount > 0 ? (
+            <EnrichBadge tone="bg-slate-bg text-slate-ink">
+              {teamCount} team
+            </EnrichBadge>
           ) : null}
         </div>
       ) : null}
