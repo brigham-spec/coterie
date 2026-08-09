@@ -63,7 +63,7 @@ gaps are list-view intelligence, a few missing profile fields, and Fireflies-on-
 | 7 | Paste Fireflies URL/ID on profile | Fetch a specific transcript by ID, attach to member. (~L5148) | DONE — `FirefliesImport` (_meetings-card.tsx:133) "Paste a transcript ID/link" input → `importFirefliesTranscript` (actions.ts:2742; `parseFirefliesId` accepts bare id or share URL) | **Yes** (shipped) | M |
 | 8 | "Load from Fireflies" on profile | Pull all Fireflies meetings mentioning member's contacts/domains. (~L5244) | DONE — `FirefliesImport` "Load recent" → `loadFirefliesForCompany` (actions.ts:2807) fetches recent transcripts, filters to this company's contact emails + domain | **Yes** (shipped) | M |
 | 9 | AI "Extract action items" per meeting on profile | Per-meeting button extracts items → deliverables. (~L5317) | DONE — profile MeetingItem renders shared `<MeetingActionItems>` (_meetings-card.tsx:243, from meetings/_action-items) incl. the "Extract action items" button, same as the global page | **Yes** (shipped) | M |
-| 10 | Second-degree contacts from meeting transcripts | Names in action items not in CRM surface as "+ Add to CRM" chips. (~L5528) | MISSING | Yes (creates contacts) | L |
+| 10 | Second-degree contacts from meeting transcripts | Names in action items not in CRM surface as "+ Add to CRM" chips. (~L5528) | Partial — the capability SHIPS as the dashboard **New Connections** panel (unmatched Fireflies attendees → promote/attach/dismiss; dashboard/_new-connections.tsx, new-connections-actions.ts, UnmatchedAttendee model). Not yet ported is the prototype's specific placement: per-member-profile "+ Add to CRM" chips beside action-item names. | Yes (creates contacts) | L |
 | 11 | Action-item extra statuses: Waiting / Skipped | ⏳ waiting + ⊘ skipped, distinct from open/done. (~L5856) | DONE (`COMMITMENT_STATUSES = open/waiting/done/dropped` in `lib/commitments.ts`; `waiting` = blocked-but-active with gold badge + left-border in `_commitments-card.tsx:256,280`; `dropped` = the prototype's "skipped" (dismissed); `updateCommitmentStatus` validates the vocab `actions.ts:2475`; tested `commitments.test.ts:117`, `commitment-action.test.ts:277`) | **Yes** (`status` text, no enum/migration) | S |
 | 12 | Action-item bulk select + batch done/delete | ☑ select mode, multi-select, select-all. (~L5726) | DONE (S11S: open commitment lists get a "Select" toggle → per-row checkboxes + select-all + batch bar; `batchUpdateCommitments` marks the checked set done or deletes it (two-step confirm) in one RLS-scoped write; `_commitment-list.tsx` + `_commitment-row.tsx` selection prop; tested `commitments-global-action.test.ts`) | No (transient UI selection) | M |
 | 13 | Move/reassign action item to different member | Owner chip → reassign across companies. (~L5684) | DONE (S11T: within-company owner swap shipped earlier as reassignCommitment; cross-company MOVE now ships as moveCommitment — a we-owe/staff-owned item re-homes to another tenant company (staff owner rides along), scoped {id,companyId,ownerUserId not null} so a they-owe item, foreign id, or cross-company id is refused; a they-owe item stays put (reassign to staff first). Inline MoveForm on we-owe items reusing referralOptions; tested commitment-action.test.ts) | Yes (companyId re-anchor) | M |
@@ -158,13 +158,17 @@ global pages — filters, scans, cross-link buttons, and proactive-intro intelli
 | 20 | Members-only vs Full-network scope toggle | Sub-mode buttons on network scan. (~L14853) | DONE (SCOPES toggle _engine.tsx:673-716; introScopeStatuses members vs +prospect intro-engine.ts:73-94; scanNetworkIntros filters by scope) | No | S |
 | 21 | Pipeline "Clear all" + per-row draft-email prefill + expose notes field | Bulk clear; email button prefills parties; notes textarea on create. (~L14956, 11914) | DONE — prefill DONE (draftA/draftB "Draft email" link page.tsx:499-587→_intro-email prefill), notes DONE (Textarea page.tsx:430-437); "Clear all" ADAPTED — prototype's `localStorage.removeItem(INTRO_LOG_KEY)` was a destructive demo-reset; prod ships granular deleteIntroduction (actions.ts:113) + updateIntroduction instead (a delete-every-intro button is unsafe against staged/FK'd pipeline rows) | No | S |
 
-**Also surfaced (both L, MISSING):** (a) **Unmatched-participant panel** on the meetings
-page — after Fireflies sync, external attendee emails not matched to any contact are grouped
-by domain w/ per-person Add-as-Prospect / Dismiss / Dismiss-org (auto-grows the CRM). (b)
-**New-intro discovery from Fireflies** — prod only detects *advancement* of already-existing
-intros (both parties attended); the prototype also mines meeting titles + action-items for
-*brand-new* intros (≥2 external participants). Both fold into S5/S6. Smaller: manual-log
-should bump `lastContact` (S).
+**Also surfaced:** (a) **Unmatched-participant panel** — DONE (stale flag). After Fireflies
+sync, external attendee emails not matched to any contact ARE grouped by domain with
+per-person Add-as-Prospect / attach-to-company / Dismiss / Dismiss-org (auto-grows the CRM):
+ships as the dashboard **New Connections** panel (dashboard/_new-connections.tsx +
+new-connections-actions.ts promoteConnection/attachConnection/dismissConnection/
+dismissConnectionDomain, backed by the UnmatchedAttendee model + lib/fireflies-reconcile.ts).
+Surfaced on the dashboard rather than the meetings page. (b) **New-intro discovery from
+Fireflies** — still MISSING (L): prod only detects *advancement* of already-existing intros
+(both parties attended); the prototype also mines meeting titles + action-items for
+*brand-new* intros (≥2 external participants). Folds into S5/S6. Smaller: manual-log should
+bump `lastContact` (S).
 
 **Prod has that prototype lacks:** structured Introduction stages w/ meeting
 auto-detection (`loadPendingIntroDetections`) + `source` (manual/detected/ai_suggested);
@@ -186,7 +190,7 @@ sonnet→opus and added hallucination guards). News and Email carry the real deb
 | 2 | Multi-member batch scan + progress | Chip-select N members; "Scan N Members" runs sequential AI scans w/ 2s delay + "Scanning N of N". Quick-select All-Director/All-Advisory/Hot-Prospects. (~L10966, 11045) | DONE (S11Z2) — batch chip-select + sequential scan + live "Scanning N of N" (_news.tsx runBatch); tier quick-selects ported onto production status vocabulary (All Prospects / All Members / All Strategic Partners, one per present status; prototype's Director/Advisory tiers don't exist in prod) via selectByStatus + COMPANY_STATUS_DEFS-driven `tiers` list | No | M |
 | 3 | Manual "Paste article URL" save row | Per-member inline URL+title row to save a link directly. (~L11140) | DONE (AddLinkForm company-picker + URL + optional title → saveNewsItem; _saved-articles.tsx:212-282) | No | S |
 | 4 | Saved articles grouped per member + Touchpoint/Action-Item buttons | Per-member card w/ +Touchpoint (→ timeline) + +Action Item (→ obligation modal). (~L11083) | DONE (per-article +Timeline addNote + +Action item addCommitment via shared ArticleQuickActions _article-quick-actions.tsx, on both scan cards + saved list _saved-articles.tsx:144). Per-company grouping intentionally NOT ported — org ledger is a flat reverse-chron list w/ per-row company link | No | M |
-| 5 | Article → project cross-link | Articles link `memberIds[]` AND `projectIds[]`. (~L9722) | MISSING — MIGRATION (NewsItem has companyId only; no projectId col in schema.prisma:642-666) | **Yes** (newsItem.projectId) | M |
+| 5 | Article → project cross-link | Articles link `memberIds[]` AND `projectIds[]`. (~L9722) | DONE (S11Z8) — `newsItem.projectId` SetNull FK + migration 20260809000000_slice_news_project_link (applied); `linkNewsToProject` re-verifies the project in-org; link/unlink control on the company Saved Articles card (_saved-articles.tsx ProjectLink); project detail Press & News surfaces linked coverage across company boundaries with a "Linked" marker (projects/[id]/page.tsx). Company link is the existing companyId (one company per article, not memberIds[]) | **Yes** (newsItem.projectId) | M |
 | 6 | Article `note` + `keyFacts` fields | Free-text note + merged keyFacts on articles. | DONE — cols ALREADY shipped (schema.prisma:653 note + :654 key_facts); NoteEditor inline edit _saved-articles.tsx + keyFacts chips + scan populates them (actions.ts). NOT a pending migration | **Yes** (2 cols) | S |
 | 7 | 429 retry w/ backoff | callWithRetry 2×. (~L9644) | MISSING (no-migration; prod surfaces "AI is busy, try again" gracefully via catch, no auto-retry — news-scan.ts) | No | S |
 
@@ -229,22 +233,26 @@ row on Add-to-pipeline, score→temperature mapping, exclude-set hallucination b
 
 ## Consolidated build backlog
 
-> **STATUS — sweep complete (verified 2026-08-08).** All Tier 1–3 slices below (S1–S11)
-> have shipped; this backlog is retained as the historical execution plan. Each section's
-> table rows above have been re-verified against code and corrected. The only feature debt
-> that genuinely remains open (all either low-value or migration-gated — build only on
-> request):
-> - **Members 10** — second-degree contacts from meeting transcripts surfaced as "+ Add to
->   CRM" chips (MISSING; migration — creates contacts; L).
+> **STATUS — sweep complete (re-verified 2026-08-09).** All Tier 1–3 slices below (S1–S11)
+> have shipped; this backlog is retained as the historical execution plan. Every section's
+> table rows above have been re-verified against code and corrected. The feature debt that
+> genuinely remains open (all either low-value, a deliberate non-port, or migration-gated —
+> build only on request):
+> - **Members 10 / New-intro discovery** — Partial. The transcript-derived second-degree-contact
+>   capability SHIPS as the dashboard **New Connections** panel (promote/attach/dismiss unmatched
+>   Fireflies attendees). Not ported: (i) the prototype's per-member-profile "+ Add to CRM" chip
+>   placement, and (ii) mining meeting titles/action-items for *brand-new* intros (≥2 externals).
+>   Migration only if new persistence is added; L.
 > - **Dashboard 8** — Daily Focus per-item done/snooze/waiting states (Partial; briefing is
 >   read-only/ephemeral today; migration — needs an agenda-item-state store).
-> - ~~**Dashboard 9** — enrichment badges on the kanban `ProjectCard`~~ — DONE (S11Z7; HV-service / econ-impact / team+funding-count badges on the card).
-> - ~~**Dashboard 10** — Referral Leaderboard~~ — DONE (S11Z6; dashboard card + lib/referral-leaderboard.ts).
-> - ~~**News 5** — article → project cross-link~~ — DONE (S11Z8; `newsItem.projectId` SetNull FK + migration; `linkNewsToProject` action; link/unlink control on the company Saved Articles card; project detail Press & News surfaces linked coverage with a "Linked" marker).
+> - **Dashboard 5** — a separate "Daily Digest" modal (MISSING as-named; deliberate non-port —
+>   the analogous Daily Focus AI card already ships).
 > - **News 1** — Google-News RSS pre-fetch layer (MISSING; DEFERRED — low value vs AI web search).
 > - **News 7** — 429 retry w/ backoff (MISSING; minor — prod surfaces "AI is busy" gracefully).
 >
-> Everything else previously flagged MISSING/Partial was found already shipped (stale audit rows).
+> Recently closed: ~~Dashboard 9~~ (S11Z7, kanban enrichment badges), ~~Dashboard 10~~ (S11Z6,
+> Referral Leaderboard), ~~News 5~~ (S11Z8, article→project cross-link). Everything else
+> previously flagged MISSING/Partial was found already shipped (stale audit rows).
 
 Ordered by value ÷ effort, grouped into shippable slices (one gate + commit each). "Sch"
 = needs a migration. Slices are roughly independent; the top four are the highest-leverage.
