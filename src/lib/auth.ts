@@ -42,6 +42,9 @@ export type OrgContext = {
   userId: string;
   /// The signed-in user's display name (for greetings).
   userName: string;
+  /// The signed-in user's primary email — used to recognize the platform
+  /// operator (see @/lib/platform-admin), never shown in tenant data.
+  userEmail: string;
   clerkOrgId: string;
   clerkUserId: string;
   /// admin | staff (our vocabulary, mapped from Clerk's org role).
@@ -77,6 +80,7 @@ export const requireOrgContext = cache(
       orgName: org.name,
       userId: user.id,
       userName: user.name,
+      userEmail: user.email,
       clerkOrgId,
       clerkUserId,
       role,

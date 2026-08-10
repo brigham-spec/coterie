@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import {
   proposalUrgency,
@@ -46,6 +47,7 @@ const URGENCY: Record<
 };
 
 export default async function ProposalsPage() {
+  await requireModule("proposals");
   const ctx = await requireOrgContext();
   const now = new Date();
 

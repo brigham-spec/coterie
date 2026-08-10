@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import {
   EVENT_STAGES,
@@ -71,6 +72,7 @@ type EventRow = Awaited<
 >["events"][number];
 
 export default async function EventsPage() {
+  await requireModule("events");
   const ctx = await requireOrgContext();
   const { events, projects, members, invited } = await loadEventsData(ctx.orgId);
 

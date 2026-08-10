@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import {
@@ -65,6 +66,7 @@ export default async function EventDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireModule("events");
   const { id } = await params;
   const ctx = await requireOrgContext();
 

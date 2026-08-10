@@ -1,4 +1,5 @@
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 
 import { PageTitle } from "@/components/ui";
 
@@ -14,6 +15,7 @@ export default async function NetworkSearchPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireModule("network_search");
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q : "";
   const { userId } = await requireOrgContext();

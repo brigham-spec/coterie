@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 
 import { NoActiveOrgError, requireOrgContext } from "@/lib/auth";
+import { enabledNavHrefs } from "@/lib/org-modules";
 
 import { Nav } from "./_nav";
 import { CommandPalette } from "./_command-palette";
@@ -26,6 +27,8 @@ export default async function DashboardLayout({
     throw err;
   }
 
+  const navHrefs = await enabledNavHrefs();
+
   return (
     <div className="flex min-h-screen">
       <aside className="fixed inset-y-0 left-0 flex w-56 flex-col bg-ink px-3 py-5 text-white print:hidden">
@@ -38,12 +41,12 @@ export default async function DashboardLayout({
           </div>
         </div>
         <div className="mx-3 my-4 h-px bg-gold/30" />
-        <Nav />
+        <Nav enabledHrefs={navHrefs} />
       </aside>
 
       <div className="flex min-h-screen flex-1 flex-col pl-56 print:pl-0">
         <header className="flex h-14 items-center justify-end gap-3 border-b border-line bg-surface px-6 print:hidden">
-          <CommandPalette />
+          <CommandPalette enabledHrefs={navHrefs} />
           <div className="flex-1" />
           <OrganizationSwitcher
             afterCreateOrganizationUrl="/dashboard"

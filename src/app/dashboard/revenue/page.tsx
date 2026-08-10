@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import { sumPayments } from "@/lib/invoice-status";
 import {
@@ -75,6 +76,7 @@ function loadRevenueData(orgId: string) {
 }
 
 export default async function RevenuePage() {
+  await requireModule("revenue");
   const ctx = await requireOrgContext();
   const { invoices, companies, proposals, projects } = await loadRevenueData(
     ctx.orgId,

@@ -1,5 +1,6 @@
 import { PageTitle } from "@/components/ui";
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 
 import { NewsScanner } from "./_news";
@@ -17,6 +18,7 @@ export default async function NewsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireModule("news");
   const { orgId, userId } = await requireOrgContext();
   const sp = await searchParams;
   const rawCompany = typeof sp.company === "string" ? sp.company : "";

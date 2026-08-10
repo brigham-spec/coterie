@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
 import { PROJECT_STAGES, TERMINAL_STAGES } from "@/lib/project-stages";
@@ -80,6 +81,7 @@ export default async function ProjectDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireModule("projects");
   const { id } = await params;
   const ctx = await requireOrgContext();
 

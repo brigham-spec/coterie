@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import {
@@ -54,6 +55,7 @@ export default async function CommitmentsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireModule("commitments");
   const ctx = await requireOrgContext();
   const sp = await searchParams;
   const rawView = one(sp.view);

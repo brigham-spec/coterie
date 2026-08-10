@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import { getStageDef } from "@/lib/project-stages";
 import {
@@ -91,6 +92,7 @@ function stageHistoryStages(raw: unknown): string[] {
 }
 
 export default async function ValueCreatedPage() {
+  await requireModule("value_created");
   const ctx = await requireOrgContext();
   const { projects, companies } = await loadValueData(ctx.orgId);
 

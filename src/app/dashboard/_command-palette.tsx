@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { cn } from "@/components/ui";
@@ -16,7 +16,7 @@ import { searchNetwork, type SearchResult } from "./actions";
 
 type NavCommand = { label: string; group: string; href: string };
 
-const NAV_COMMANDS: NavCommand[] = NAV_GROUPS.flatMap((g) =>
+const ALL_NAV_COMMANDS: NavCommand[] = NAV_GROUPS.flatMap((g) =>
   g.items.map((item) => ({ label: item.label, group: g.label, href: item.href })),
 );
 
@@ -36,8 +36,14 @@ type Row = {
   section: string;
 };
 
-export function CommandPalette() {
+export function CommandPalette({ enabledHrefs }: { enabledHrefs: string[] }) {
   const router = useRouter();
+  // Only offer navigation to modules this tenant has enabled — the palette can't
+  // jump to a route the sidebar hides (and the route itself is guarded).
+  const navCommands = useMemo(
+    () => ALL_NAV_COMMANDS.filter((c) => enabledHrefs.includes(c.href)),
+    [enabledHrefs],
+  );
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -97,8 +103,8 @@ export function CommandPalette() {
   const q = query.trim().toLowerCase();
   const navMatches =
     q === ""
-      ? NAV_COMMANDS
-      : NAV_COMMANDS.filter((c) => c.label.toLowerCase().includes(q));
+      ? navCommands
+      : navCommands.filter((c) => c.label.toLowerCase().includes(q));
   // Only surface entity results once the query is long enough to have triggered
   // a search; below that the effect never runs, so `results`/`loading` may be
   // stale from a prior longer query.

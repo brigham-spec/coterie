@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
+import { isPlatformAdmin } from "@/lib/platform-admin";
 import { prisma } from "@/lib/prisma";
 import { type MemberTier, normalizeMemberTierDefs } from "@/lib/member-tiers";
+import { normalizeModuleSelection } from "@/lib/modules";
 
 // Org settings mutations. organizations carries NO RLS (it's platform data, not
 // tenant data — see @/lib/auth), so these write as the plain app_user
@@ -72,4 +74,50 @@ export async function updateMemberTiers(
   revalidatePath("/dashboard/companies");
   revalidatePath("/dashboard/companies/[id]", "page");
   return { status: "saved", tiers };
+}
+
+// useActionState result for the module toggle form.
+export type SetModulesState =
+  | { status: "idle" }
+  | { status: "saved"; count: number }
+  | { status: "error"; message: string };
+
+// Persist which OPTIONAL modules this org sees. This is PLATFORM-OPERATOR only —
+// product packaging is our decision, not the tenant admin's — so the gate is
+// isPlatformAdmin (an env email allowlist), NOT the org's own admin role. The
+// form submits the checked optional keys as "module"; we normalize (valid
+// optional keys only, de-duped, canonical order) and merge into settings.modules,
+// preserving other settings keys. Storing the explicit list flips the org off the
+// "all-on" default, so unchecking every box genuinely hides every optional module.
+export async function setOrgModules(
+  _prev: SetModulesState,
+  formData: FormData,
+): Promise<SetModulesState> {
+  const ctx = await requireOrgContext();
+  if (!isPlatformAdmin(ctx))
+    return {
+      status: "error",
+      message: "Only the platform operator can change modules.",
+    };
+
+  const modules = normalizeModuleSelection(formData.getAll("module").map(String));
+
+  const org = await prisma.organization.findUnique({
+    where: { id: ctx.orgId },
+    select: { settings: true },
+  });
+  const settings =
+    org?.settings != null && typeof org.settings === "object"
+      ? (org.settings as Record<string, unknown>)
+      : {};
+
+  await prisma.organization.update({
+    where: { id: ctx.orgId },
+    data: { settings: { ...settings, modules } },
+  });
+
+  // The enabled set drives the whole dashboard shell (sidebar + command palette)
+  // and every route guard, so bust the layout for the entire section.
+  revalidatePath("/dashboard", "layout");
+  return { status: "saved", count: modules.length };
 }

@@ -1,9 +1,12 @@
 import { requireOrgContext } from "@/lib/auth";
+import { isPlatformAdmin } from "@/lib/platform-admin";
 import { prisma } from "@/lib/prisma";
 import { readMemberTierDefs } from "@/lib/member-tiers";
+import { enabledModuleKeys } from "@/lib/modules";
 import { Card, CardHeader, PageTitle } from "@/components/ui";
 
 import { TiersForm } from "./_tiers-form";
+import { ModulesForm } from "./_modules-form";
 
 // Organization settings. The first surface here is the member-tier vocabulary —
 // each org's own labels for the standing it grants members (HVEDC: Chairman /
@@ -20,6 +23,8 @@ export default async function SettingsPage() {
   });
   const tiers = readMemberTierDefs(org?.settings);
   const isAdmin = ctx.role === "admin";
+  const isOperator = isPlatformAdmin(ctx);
+  const enabledModules = [...enabledModuleKeys(org?.settings)];
   const valueFmt = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -69,6 +74,20 @@ export default async function SettingsPage() {
           )}
         </div>
       </Card>
+
+      {isOperator && (
+        <Card className="mt-6">
+          <CardHeader title="Modules" />
+          <div className="p-4">
+            <p className="mb-4 text-xs text-ink-2">
+              Which optional sections this organization can see. Core sections
+              (Dashboard, Companies, Contacts, Introductions, Settings) are always
+              on. Only the platform operator sees this control.
+            </p>
+            <ModulesForm enabled={enabledModules} />
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

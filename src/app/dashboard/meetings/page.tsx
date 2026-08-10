@@ -1,4 +1,5 @@
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
 import { hasCredential } from "@/lib/integrations";
@@ -59,6 +60,7 @@ export default async function MeetingsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireModule("meetings");
   const ctx = await requireOrgContext();
   const sp = await searchParams;
   const rawSource = one(sp.source);

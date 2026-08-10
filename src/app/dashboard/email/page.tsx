@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { PageTitle, Card, CardHeader, TagBadge } from "@/components/ui";
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { actionItemCount, sentimentTone } from "@/lib/email-intel";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
@@ -19,6 +20,7 @@ import { deleteEmailMessage } from "./actions";
 const UNMATCHED = "__unmatched";
 
 export default async function EmailPage() {
+  await requireModule("email");
   const { orgId } = await requireOrgContext();
 
   const org = await prisma.organization.findUnique({

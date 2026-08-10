@@ -1,5 +1,6 @@
 import { PageTitle } from "@/components/ui";
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
 
@@ -13,6 +14,7 @@ import { ProspectFinder } from "./_finder";
 // Anthropic key never crosses to the browser).
 
 export default async function ProspectFinderPage() {
+  await requireModule("prospect_finder");
   const { orgId, orgName, userName } = await requireOrgContext();
 
   const context = await withOrg(orgId, async (tx) => {

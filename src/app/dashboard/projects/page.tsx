@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import {
   BOARD_STAGES,
@@ -104,6 +105,7 @@ export default async function ProjectsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireModule("projects");
   const ctx = await requireOrgContext();
   const sp = await searchParams;
   const view =

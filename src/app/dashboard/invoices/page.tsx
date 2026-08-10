@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import { Prisma } from "@/generated/prisma/client";
 import {
@@ -45,6 +46,7 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
 });
 
 export default async function InvoicesPage() {
+  await requireModule("invoices");
   const ctx = await requireOrgContext();
 
   // Sequential reads: one pooled connection per tx, so no concurrent queries.

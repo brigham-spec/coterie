@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
+import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import { deriveInvoiceBalance, sumPayments } from "@/lib/invoice-status";
 import {
@@ -45,6 +46,7 @@ export default async function InvoiceGridPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireModule("invoices");
   const ctx = await requireOrgContext();
   const sp = await searchParams;
 
