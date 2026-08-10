@@ -83,11 +83,14 @@ export default async function InvoicesPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <div className="mb-6">
+      <div className="mb-6 flex items-end justify-between">
         <PageTitle
           title="Invoices"
           subtitle={`${invoices.length} on ${ctx.orgName}'s ledger`}
         />
+        <Link href="/dashboard/invoices/grid">
+          <Button variant="default">Schedule grid</Button>
+        </Link>
       </div>
 
       <div className="mb-4 grid grid-cols-3 gap-4">
