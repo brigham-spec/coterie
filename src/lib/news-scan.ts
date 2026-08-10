@@ -3,6 +3,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 
 import { extractJsonArray } from "@/lib/json-extract";
+import { withAiRetry } from "@/lib/ai-retry";
 
 // News Intelligence engine (slice 11.9, ported from the prototype's
 // fetchMemberNews). Given ONE company (and its active projects), Claude's
@@ -150,12 +151,16 @@ export async function scanCompanyNews(
   input: NewsScanInput,
 ): Promise<NewsArticle[]> {
   const client = new Anthropic();
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1500,
-    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
-    messages: [{ role: "user", content: buildPrompt(input) }],
-  });
+  // A web_search scan is our busiest AI seam; retry a transient 429 with backoff
+  // before letting the caller surface "AI is busy right now" (News audit item 7).
+  const response = await withAiRetry(() =>
+    client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1500,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
+      messages: [{ role: "user", content: buildPrompt(input) }],
+    }),
+  );
 
   const text = response.content
     .filter((block) => block.type === "text")

@@ -192,7 +192,7 @@ sonnet→opus and added hallucination guards). News and Email carry the real deb
 | 4 | Saved articles grouped per member + Touchpoint/Action-Item buttons | Per-member card w/ +Touchpoint (→ timeline) + +Action Item (→ obligation modal). (~L11083) | DONE (per-article +Timeline addNote + +Action item addCommitment via shared ArticleQuickActions _article-quick-actions.tsx, on both scan cards + saved list _saved-articles.tsx:144). Per-company grouping intentionally NOT ported — org ledger is a flat reverse-chron list w/ per-row company link | No | M |
 | 5 | Article → project cross-link | Articles link `memberIds[]` AND `projectIds[]`. (~L9722) | DONE (S11Z8) — `newsItem.projectId` SetNull FK + migration 20260809000000_slice_news_project_link (applied); `linkNewsToProject` re-verifies the project in-org; link/unlink control on the company Saved Articles card (_saved-articles.tsx ProjectLink); project detail Press & News surfaces linked coverage across company boundaries with a "Linked" marker (projects/[id]/page.tsx). Company link is the existing companyId (one company per article, not memberIds[]) | **Yes** (newsItem.projectId) | M |
 | 6 | Article `note` + `keyFacts` fields | Free-text note + merged keyFacts on articles. | DONE — cols ALREADY shipped (schema.prisma:653 note + :654 key_facts); NoteEditor inline edit _saved-articles.tsx + keyFacts chips + scan populates them (actions.ts). NOT a pending migration | **Yes** (2 cols) | S |
-| 7 | 429 retry w/ backoff | callWithRetry 2×. (~L9644) | MISSING (no-migration; prod surfaces "AI is busy, try again" gracefully via catch, no auto-retry — news-scan.ts) | No | S |
+| 7 | 429 retry w/ backoff | callWithRetry 2×. (~L9644) | DONE (S11Z13) — `withAiRetry` (lib/ai-retry.ts) wraps the web_search scan in scanCompanyNews: retries ONLY a transient `Anthropic.RateLimitError` (429) with pure exponential backoff (`backoffDelayMs`, base 500ms ·2^n capped 8s, 4 attempts), non-429 throws immediately, final 429 rethrows so the existing "AI is busy" catch is unchanged; tested ai-retry.test.ts | No | S |
 
 ### Email
 
@@ -248,9 +248,9 @@ row on Add-to-pipeline, score→temperature mapping, exclude-set hallucination b
 > - **Dashboard 5** — a separate "Daily Digest" modal (MISSING as-named; deliberate non-port —
 >   the analogous Daily Focus AI card already ships).
 > - **News 1** — Google-News RSS pre-fetch layer (MISSING; DEFERRED — low value vs AI web search).
-> - **News 7** — 429 retry w/ backoff (MISSING; minor — prod surfaces "AI is busy" gracefully).
 >
-> Recently closed: ~~Dashboard 8~~ (S11Z12, Daily Focus per-item done/snooze/waiting triage store),
+> Recently closed: ~~News 7~~ (S11Z13, 429 retry-with-backoff around the news web_search scan),
+> ~~Dashboard 8~~ (S11Z12, Daily Focus per-item done/snooze/waiting triage store),
 > ~~Dashboard 6~~ (S11Z11, Proposal Tracker list page + urgency badges +
 > Log-Follow-up button), ~~Members 10~~ (S11Z10, second-degree-contact profile chips), ~~Dashboard 9~~
 > (S11Z7, kanban enrichment badges), ~~Dashboard 10~~ (S11Z6, Referral Leaderboard), ~~News 5~~
