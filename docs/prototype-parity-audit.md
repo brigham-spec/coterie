@@ -233,7 +233,7 @@ row on Add-to-pipeline, score→temperature mapping, exclude-set hallucination b
 
 ## Consolidated build backlog
 
-> **STATUS — sweep complete (re-verified 2026-08-09).** All Tier 1–3 slices below (S1–S11)
+> **STATUS — sweep complete (re-verified 2026-08-10).** All Tier 1–3 slices below (S1–S11)
 > have shipped; this backlog is retained as the historical execution plan. Every section's
 > table rows above have been re-verified against code and corrected. The feature debt that
 > genuinely remains open (all either low-value, a deliberate non-port, or migration-gated —
