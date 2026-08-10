@@ -10,8 +10,16 @@ import {
   type FocusCommitment,
   type FocusEvent,
   type FocusHorizon,
-  type FocusItem,
 } from "@/lib/daily-focus";
+import {
+  applyAgendaStates,
+  isAgendaItemKind,
+  isAgendaState,
+  snoozeUntil,
+  type AgendaFocusItem,
+  type AgendaState,
+  type StoredAgendaState,
+} from "@/lib/agenda-state";
 import { generateFocusSynthesis } from "@/lib/daily-focus-synthesis";
 
 // Daily Focus action (gap-audit cluster B). The client card holds only the active
@@ -34,7 +42,7 @@ export type DailyFocusState =
       status: "ok";
       horizon: FocusHorizon;
       synthesis: string;
-      items: FocusItem[];
+      items: AgendaFocusItem[];
     }
   | { status: "error"; message: string };
 
@@ -55,7 +63,7 @@ export async function generateDailyFocus(
   // The widest horizon reaches 30 days out, so bound the event query there.
   const monthEdge = new Date(startOfToday.getTime() + 31 * DAY);
 
-  const { commitments, events } = await withOrg(orgId, async (tx) => {
+  const { commitments, events, states } = await withOrg(orgId, async (tx) => {
     const rawCommitments = await tx.actionItem.findMany({
       where: { status: "open" },
       select: {
@@ -77,7 +85,11 @@ export async function generateDailyFocus(
       orderBy: { date: "asc" },
       select: { id: true, name: true, date: true, venue: true },
     });
-    return { commitments: rawCommitments, events: rawEvents };
+    // The triage overlay — done items and unexpired snoozes drop from the focus.
+    const rawStates = await tx.agendaItemState.findMany({
+      select: { kind: true, refId: true, state: true, snoozedUntil: true },
+    });
+    return { commitments: rawCommitments, events: rawEvents, states: rawStates };
   });
 
   // Shape to the pure engine's inputs, classifying each commitment by owner side.
@@ -115,11 +127,20 @@ export async function generateDailyFocus(
     venue: e.venue,
   }));
 
-  const items = buildFocusItems(
+  const built = buildFocusItems(
     { commitments: focusCommitments, events: focusEvents },
     horizon,
     now,
   );
+
+  // Fold the triage overlay on: drop done + still-snoozed items, tag the waiting
+  // ones. Only well-formed stored states are kept (defensive against hand edits).
+  const stored: StoredAgendaState[] = states.flatMap((s) =>
+    isAgendaItemKind(s.kind) && isAgendaState(s.state)
+      ? [{ kind: s.kind, refId: s.refId, state: s.state, snoozedUntil: s.snoozedUntil }]
+      : [],
+  );
+  const items = applyAgendaStates(built, stored, now);
 
   if (items.length === 0) return { status: "empty", horizon };
 
@@ -136,5 +157,44 @@ export async function generateDailyFocus(
     if (err instanceof Anthropic.RateLimitError)
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not write your briefing. Try again." };
+  }
+}
+
+export type AgendaStateResult = { status: "ok" } | { status: "error" };
+
+// Triage a single focus item: mark it done/snoozed/waiting, or "clear" to drop the
+// overlay (the item returns untouched). Keyed by (kind, refId) — the durable id of
+// the underlying commitment/event — so the mark survives regeneration. Cheap and
+// AI-free (the card re-synthesises lazily on the next Generate); returns a result
+// so a failure renders inline in the card instead of tripping the error boundary.
+export async function setAgendaItemState(
+  kind: string,
+  refId: string,
+  next: AgendaState | "clear",
+): Promise<AgendaStateResult> {
+  const { orgId } = await requireOrgContext();
+  const cleanKind = kind.trim();
+  const cleanRef = refId.trim();
+  if (!isAgendaItemKind(cleanKind) || !cleanRef) return { status: "error" };
+
+  try {
+    await withOrg(orgId, async (tx) => {
+      if (next === "clear") {
+        await tx.agendaItemState.deleteMany({
+          where: { kind: cleanKind, refId: cleanRef },
+        });
+        return;
+      }
+      const snoozedUntil = next === "snoozed" ? snoozeUntil(new Date()) : null;
+      await tx.agendaItemState.upsert({
+        where: { orgId_kind_refId: { orgId, kind: cleanKind, refId: cleanRef } },
+        create: { orgId, kind: cleanKind, refId: cleanRef, state: next, snoozedUntil },
+        update: { state: next, snoozedUntil },
+      });
+    });
+    return { status: "ok" };
+  } catch (err) {
+    console.error("agenda item state update failed", err);
+    return { status: "error" };
   }
 }

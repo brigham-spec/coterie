@@ -74,6 +74,7 @@ model Organization {
   aiRateLimit            AiRateLimit?
   proactiveScanCaches    ProactiveScanCache[]
   notes                  Note[]
+  agendaItemStates       AgendaItemState[]
 
   @@map("organizations")
 }
@@ -1102,6 +1103,36 @@ model ProspectDismissal {
   @@unique([orgId, targetKey])
   @@index([orgId])
   @@map("prospect_dismissals")
+}
+
+/// Daily Focus agenda-item triage overlay (Dashboard 8). A durable done/snooze/
+/// waiting mark for one focus item, identified polymorphically by (kind, refId):
+/// kind is "commitment" (an actionItem) or "event", refId the underlying row's id.
+/// No FK — refId points at one of two tables — so a deleted source row leaves a
+/// harmless orphan that simply never matches a live item. Org-scoped (a shared
+/// triage across the org's staff, matching how the focus draws every open
+/// commitment/event, not one owner's); tenant-isolated by org_id + RLS.
+model AgendaItemState {
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  /// "commitment" (an actionItem) or "event" — see agenda-state.ts.
+  kind         String
+  /// The underlying actionItem.id or event.id this overlay marks.
+  refId        String    @map("ref_id") @db.Uuid
+  /// done, snoozed, waiting (see agenda-state.ts AGENDA_STATES).
+  state        String
+  /// The instant a snooze lapses (start of the next day); null unless snoozed.
+  snoozedUntil DateTime? @map("snoozed_until") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  // One overlay per org per focus item — re-triaging is an idempotent upsert.
+  @@unique([orgId, kind, refId])
+  @@index([orgId])
+  @@map("agenda_item_states")
 }
 
 /// New Connections Detected — durable triage queue for Fireflies meeting attendees

@@ -1,11 +1,21 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import {
+  useActionState,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 
 import { Button, Card, CardHeader } from "@/components/ui";
-import type { FocusHorizon, FocusItem } from "@/lib/daily-focus";
+import type { FocusHorizon } from "@/lib/daily-focus";
+import type { AgendaFocusItem, AgendaState } from "@/lib/agenda-state";
 
-import { generateDailyFocus, type DailyFocusState } from "./daily-focus-actions";
+import {
+  generateDailyFocus,
+  setAgendaItemState,
+  type DailyFocusState,
+} from "./daily-focus-actions";
 
 // Client shell for Daily Focus (gap-audit cluster B). Holds only view state — the
 // active horizon tab — while the whole assembly + synthesis runs in the
@@ -31,6 +41,42 @@ export function DailyFocus() {
     generateDailyFocus,
     initialState,
   );
+
+  // Optimistic triage overrides keyed by `${kind}:${id}`, applied over each item's
+  // server-loaded state until the next Generate. "clear" undoes a mark.
+  const [overrides, setOverrides] = useState<
+    Record<string, AgendaState | "clear">
+  >({});
+  const [triageError, setTriageError] = useState(false);
+  const [triagePending, startTriage] = useTransition();
+
+  // A fresh briefing already reflects persisted state, so it supersedes the
+  // session's local overrides. Reset during render when a new action result
+  // arrives (the React "reset state when input changes" idiom) rather than in an
+  // effect.
+  const [seenState, setSeenState] = useState(state);
+  if (seenState !== state) {
+    setSeenState(state);
+    setOverrides({});
+    setTriageError(false);
+  }
+
+  function triage(item: AgendaFocusItem, next: AgendaState | "clear") {
+    const key = `${item.kind}:${item.id}`;
+    setTriageError(false);
+    setOverrides((o) => ({ ...o, [key]: next }));
+    startTriage(async () => {
+      const result = await setAgendaItemState(item.kind, item.id, next);
+      if (result.status === "error") {
+        setOverrides((o) => {
+          const nextOverrides = { ...o };
+          delete nextOverrides[key];
+          return nextOverrides;
+        });
+        setTriageError(true);
+      }
+    });
+  }
 
   // Only show a result under the tab it was generated for.
   const current =
@@ -93,10 +139,27 @@ export function DailyFocus() {
               {current.synthesis}
             </p>
             <ul className="flex flex-col gap-1">
-              {current.items.map((item) => (
-                <FocusRow key={`${item.kind}-${item.id}`} item={item} />
-              ))}
+              {current.items.map((item) => {
+                const key = `${item.kind}:${item.id}`;
+                const override = overrides[key];
+                const effective =
+                  override === "clear" ? null : (override ?? item.state);
+                return (
+                  <FocusRow
+                    key={key}
+                    item={item}
+                    state={effective}
+                    pending={triagePending}
+                    onTriage={triage}
+                  />
+                );
+              })}
             </ul>
+            {triageError ? (
+              <p className="mt-2 text-[10px] text-red-ink">
+                Couldn&apos;t update that item. Try again.
+              </p>
+            ) : null}
           </div>
         ) : (
           <p className="text-xs text-ink-3">
@@ -110,7 +173,35 @@ export function DailyFocus() {
   );
 }
 
-function FocusRow({ item }: { item: FocusItem }) {
+function FocusRow({
+  item,
+  state,
+  pending,
+  onTriage,
+}: {
+  item: AgendaFocusItem;
+  state: AgendaState | null;
+  pending: boolean;
+  onTriage: (item: AgendaFocusItem, next: AgendaState | "clear") => void;
+}) {
+  // A done or snoozed item collapses to a struck line with a session Undo — the
+  // next Generate drops it entirely.
+  if (state === "done" || state === "snoozed") {
+    return (
+      <li className="flex items-center gap-2 border-b border-line py-1.5 last:border-b-0">
+        <span className="min-w-0 flex-1 truncate text-[11px] text-ink-3 line-through">
+          {item.text}
+        </span>
+        <span className="flex-shrink-0 text-[10px] whitespace-nowrap text-ink-3">
+          {state === "done" ? "Done" : "Snoozed"}
+        </span>
+        <TriageButton pending={pending} onClick={() => onTriage(item, "clear")}>
+          Undo
+        </TriageButton>
+      </li>
+    );
+  }
+
   return (
     <li className="flex items-start gap-2 border-b border-line py-1.5 last:border-b-0">
       <span
@@ -124,16 +215,75 @@ function FocusRow({ item }: { item: FocusItem }) {
         <div className="truncate text-[11.5px] text-ink">{item.text}</div>
         <div className="truncate text-[10px] text-ink-3">{item.detail}</div>
       </div>
-      <span
-        className={
-          item.overdue
-            ? "flex-shrink-0 text-[10px] font-semibold whitespace-nowrap text-red-ink"
-            : "flex-shrink-0 text-[10px] whitespace-nowrap text-ink-3"
-        }
-      >
-        {item.timing}
-      </span>
+      <div className="flex flex-shrink-0 flex-col items-end gap-1">
+        <span
+          className={
+            item.overdue
+              ? "text-[10px] font-semibold whitespace-nowrap text-red-ink"
+              : "text-[10px] whitespace-nowrap text-ink-3"
+          }
+        >
+          {item.timing}
+        </span>
+        <div className="flex items-center gap-1.5">
+          {state === "waiting" ? (
+            <>
+              <span className="rounded-sm bg-amber-bg px-1.5 py-0.5 text-[9px] font-medium text-amber-ink">
+                Waiting
+              </span>
+              <TriageButton
+                pending={pending}
+                onClick={() => onTriage(item, "clear")}
+              >
+                Clear
+              </TriageButton>
+            </>
+          ) : (
+            <>
+              <TriageButton
+                pending={pending}
+                onClick={() => onTriage(item, "done")}
+              >
+                Done
+              </TriageButton>
+              <TriageButton
+                pending={pending}
+                onClick={() => onTriage(item, "snoozed")}
+              >
+                Snooze
+              </TriageButton>
+              <TriageButton
+                pending={pending}
+                onClick={() => onTriage(item, "waiting")}
+              >
+                Waiting
+              </TriageButton>
+            </>
+          )}
+        </div>
+      </div>
     </li>
+  );
+}
+
+function TriageButton({
+  pending,
+  onClick,
+  children,
+}: {
+  pending: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={onClick}
+      className="text-[9.5px] font-medium tracking-[0.04em] text-ink-3 uppercase transition-colors hover:text-gold disabled:opacity-50"
+    >
+      {children}
+    </button>
   );
 }
 
