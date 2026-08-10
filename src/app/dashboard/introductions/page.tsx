@@ -12,6 +12,7 @@ import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import { openRoles } from "@/lib/disciplines";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
+import { loadNewIntroCandidates } from "@/lib/intro-discovery-load";
 import { introProfileStrength } from "@/lib/intro-profile-strength";
 import { isProactiveCacheFresh } from "@/lib/proactive-cache";
 import type { ProactivePairing } from "@/lib/intro-engine";
@@ -106,6 +107,7 @@ export default async function IntroductionsPage({
     projects,
     introductions,
     pendingIntros,
+    newIntroCandidates,
     proactiveCache,
   } = await withOrg(ctx.orgId, async (tx) => {
       const contacts = await tx.contact.findMany({
@@ -149,6 +151,9 @@ export default async function IntroductionsPage({
         },
       });
       const pendingIntros = await loadPendingIntroDetections(tx);
+      // Brand-new intro opportunities: recent meetings where two member companies
+      // co-attended but no introduction has ever been logged between them.
+      const newIntroCandidates = await loadNewIntroCandidates(tx);
       // Last members-scope proactive scan (item 13) — feeds the Urgent Signals
       // panel instantly; the panel itself decides whether to re-scan once it's stale.
       const proactiveCache = await tx.proactiveScanCache.findUnique({
@@ -165,6 +170,7 @@ export default async function IntroductionsPage({
         projects,
         introductions,
         pendingIntros,
+        newIntroCandidates,
         proactiveCache,
       };
     });
@@ -256,6 +262,63 @@ export default async function IntroductionsPage({
           <Metric label="Total intros" value={String(introductions.length)} />
           <Metric label="In flight" value={String(inFlight)} />
           <Metric label="Value created" value={String(valueCreated)} />
+        </div>
+      ) : null}
+
+      {/* Brand-new intro discovery — recent meetings put two member companies in
+          the same room with no introduction on record. Log one in a click; the
+          pair then drops off (a logged intro suppresses it). */}
+      {newIntroCandidates.length > 0 ? (
+        <div className="mb-4 overflow-hidden rounded-md border border-gold-line bg-surface shadow-card">
+          <div className="border-b border-line bg-gold-bg/40 px-4 py-2.5">
+            <span className="text-[10px] font-medium tracking-[0.07em] text-gold-ink uppercase">
+              New intro opportunities
+            </span>
+            <span className="ml-2 text-[10px] text-gold-ink/70">
+              {newIntroCandidates.length} from recent meetings
+            </span>
+          </div>
+          <div className="divide-y divide-line">
+            {newIntroCandidates.map((c) => (
+              <div
+                key={`${c.companyAId}:${c.companyBId}`}
+                className="flex items-center justify-between gap-3 px-4 py-2.5"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-[11.5px] text-ink">
+                    {c.contactAName}{" "}
+                    <span className="text-ink-3">({c.companyAName})</span>{" "}
+                    <span className="text-ink-3">&#8596;</span> {c.contactBName}{" "}
+                    <span className="text-ink-3">({c.companyBName})</span>
+                  </div>
+                  <div className="truncate text-[10px] text-ink-3">
+                    Met at {c.meetingTitle} &middot; {relFmt.format(c.meetingDate)}
+                  </div>
+                </div>
+                <form action={createIntroduction} className="flex-shrink-0">
+                  <input
+                    type="hidden"
+                    name="partyAContactId"
+                    value={c.contactAId}
+                  />
+                  <input
+                    type="hidden"
+                    name="partyBContactId"
+                    value={c.contactBId}
+                  />
+                  <input type="hidden" name="status" value="suggested" />
+                  <input
+                    type="hidden"
+                    name="headline"
+                    value={`Met at ${c.meetingTitle}`}
+                  />
+                  <Button type="submit" variant="primary">
+                    Log intro
+                  </Button>
+                </form>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
 

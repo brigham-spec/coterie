@@ -165,10 +165,16 @@ ships as the dashboard **New Connections** panel (dashboard/_new-connections.tsx
 new-connections-actions.ts promoteConnection/attachConnection/dismissConnection/
 dismissConnectionDomain, backed by the UnmatchedAttendee model + lib/fireflies-reconcile.ts).
 Surfaced on the dashboard rather than the meetings page. (b) **New-intro discovery from
-Fireflies** — still MISSING (L): prod only detects *advancement* of already-existing intros
-(both parties attended); the prototype also mines meeting titles + action-items for
-*brand-new* intros (≥2 external participants). Folds into S5/S6. Smaller: manual-log should
-bump `lastContact` (S).
+Fireflies** — DONE (S11Z15): the introductions page now surfaces a "New intro opportunities"
+panel from recent meetings where two member companies co-attended but no introduction is on
+record between them (pure `detectNewIntroCandidates` @/lib/intro-discovery over structured
+attendee→company data, loaded via intro-discovery-load, folded into the page's withOrg pass;
+90-day window, deduped per company-pair by most-recent meeting, capped, newest-first). Each
+row carries the two people who represented each company so "Log intro" creates the intro in
+one click (reuses createIntroduction, status suggested); a logged intro suppresses the pair on
+the next load. No migration (derived). The prototype's title/action-item text-mining is ported
+as structured attendance, mirroring how advancement-detection was ported. Smaller remnant:
+manual-log bumping `lastContact` (S).
 
 **Prod has that prototype lacks:** structured Introduction stages w/ meeting
 auto-detection (`loadPendingIntroDetections`) + `source` (manual/detected/ai_suggested);
@@ -238,16 +244,13 @@ row on Add-to-pipeline, score→temperature mapping, exclude-set hallucination b
 > table rows above have been re-verified against code and corrected. The feature debt that
 > genuinely remains open (all either low-value, a deliberate non-port, or migration-gated —
 > build only on request):
-> - **New-intro discovery** — Partial. Members 10's second-degree-contact port is now DONE (S11Z10:
->   the profile "People from meetings" card surfaces unmatched Fireflies attendees whose meetings
->   intersect this company's, with "Add to CRM"/dismiss reusing the New Connections actions). Still
->   not ported: mining meeting titles/action-items for *brand-new* intros (≥2 externals). No
->   migration; L.
 > - **Dashboard 5** — a separate "Daily Digest" modal (MISSING as-named; deliberate non-port —
 >   the analogous Daily Focus AI card already ships).
 > - **News 1** — Google-News RSS pre-fetch layer (MISSING; DEFERRED — low value vs AI web search).
 >
-> Recently closed: ~~Dashboard 7~~ (S11Z14, Invoice Schedule spreadsheet-grid — month×company
+> Recently closed: ~~New-intro discovery~~ (S11Z15, "New intro opportunities" panel — recent
+> meetings where two member companies co-attended with no introduction on record → one-click
+> Log intro), ~~Dashboard 7~~ (S11Z14, Invoice Schedule spreadsheet-grid — month×company
 > billing calendar derived over the invoice ledger), ~~News 7~~ (S11Z13, 429 retry-with-backoff around the news web_search scan),
 > ~~Dashboard 8~~ (S11Z12, Daily Focus per-item done/snooze/waiting triage store),
 > ~~Dashboard 6~~ (S11Z11, Proposal Tracker list page + urgency badges +
