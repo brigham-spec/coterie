@@ -12,7 +12,22 @@ import { CommandPalette } from "./_command-palette";
 // topbar and the scrolling content area. requireOrgContext is React-cached, so
 // resolving the tenant here shares one provisioning pass with the page it wraps.
 // A signed-in user without an active org can't be given the shell (no tenant to
-// scope to) — we hand them the switcher instead so they can pick/create one.
+// scope to) — we hand them the switcher so they can pick one they belong to.
+//
+// Tenants are OPERATOR-provisioned (scripts/create-org.mjs), never self-served:
+// a client-created Clerk org would lazily provision a brand-new Postgres tenant
+// (default orgType, all modules on), bypassing our packaging control. So the
+// switcher is select-only — the "Create organization" affordance is hidden and
+// personal accounts are suppressed. (The authoritative lock is the Clerk
+// instance setting "Allow users to create organizations = off"; this hides the
+// UI so the two stay in agreement.)
+const switcherAppearance = {
+  elements: {
+    organizationSwitcherPopoverActionButton__createOrganization: {
+      display: "none",
+    },
+  },
+} as const;
 
 export default async function DashboardLayout({
   children,
@@ -49,8 +64,9 @@ export default async function DashboardLayout({
           <CommandPalette enabledHrefs={navHrefs} />
           <div className="flex-1" />
           <OrganizationSwitcher
-            afterCreateOrganizationUrl="/dashboard"
+            hidePersonal
             afterSelectOrganizationUrl="/dashboard"
+            appearance={switcherAppearance}
           />
           <UserButton />
         </header>
@@ -72,11 +88,13 @@ function NoActiveOrg() {
         Select an organization
       </h1>
       <p className="mb-6 text-sm text-ink-3">
-        Create or choose an organization to view its network.
+        Choose an organization to view its network. Access is by invitation —
+        if you don&rsquo;t see yours, contact your administrator.
       </p>
       <OrganizationSwitcher
-        afterCreateOrganizationUrl="/dashboard"
+        hidePersonal
         afterSelectOrganizationUrl="/dashboard"
+        appearance={switcherAppearance}
       />
     </div>
   );
