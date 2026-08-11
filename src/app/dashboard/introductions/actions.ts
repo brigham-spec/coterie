@@ -2,7 +2,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
-import { requireOrgContext } from "@/lib/auth";
+import { requireAdmin, requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { revalidateIntroSurfaces } from "@/lib/revalidate";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
@@ -111,7 +111,7 @@ export async function updateIntroduction(formData: FormData): Promise<void> {
 // resolves null → refused), never trusting client-passed ownership. Any linked
 // value_delivered row survives — its introduction FK is SetNull.
 export async function deleteIntroduction(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
+  const { orgId } = await requireAdmin();
 
   const introId = String(formData.get("introId") ?? "").trim();
   if (!introId) throw new Error("introduction is required");

@@ -6,7 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { requireOrgContext } from "@/lib/auth";
+import { requireAdmin, requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { getCredential } from "@/lib/integrations";
@@ -1737,7 +1737,7 @@ export async function updateProposalStatus(formData: FormData): Promise<void> {
 }
 
 export async function deleteProposal(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
+  const { orgId } = await requireAdmin();
 
   const proposalId = String(formData.get("proposalId") ?? "").trim();
   if (!proposalId) throw new Error("missing proposal");
@@ -2373,7 +2373,7 @@ export async function changeCompanyStatus(formData: FormData): Promise<void> {
 // The confirm gate lives in the UI; here we only re-check the company is ours
 // (RLS) before deleting.
 export async function deleteCompany(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
+  const { orgId } = await requireAdmin();
 
   const companyId = String(formData.get("companyId") ?? "").trim();
   if (!companyId) throw new Error("missing company");
@@ -2731,7 +2731,7 @@ export async function logMeeting(formData: FormData): Promise<LogMeetingState> {
 }
 
 export async function deleteMeeting(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
+  const { orgId } = await requireAdmin();
 
   const id = String(formData.get("id") ?? "").trim();
   const companyId = String(formData.get("companyId") ?? "").trim();

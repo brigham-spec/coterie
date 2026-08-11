@@ -18,6 +18,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const mockCtx = vi.hoisted(() => ({ orgId: "", orgName: "", userId: "", userName: "" }));
 vi.mock("@/lib/auth", () => ({
   requireOrgContext: vi.fn(async () => mockCtx),
+  requireAdmin: vi.fn(async () => mockCtx),
 }));
 
 const { createContact, updateContact, removeContact, setPrimaryContact } =

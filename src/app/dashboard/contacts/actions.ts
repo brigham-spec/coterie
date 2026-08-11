@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireOrgContext } from "@/lib/auth";
+import { requireAdmin, requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { optionalUrl } from "@/lib/form-fields";
 import { CONTACT_TAGS } from "@/lib/tags";
@@ -125,7 +125,7 @@ export async function updateContact(formData: FormData): Promise<void> {
 }
 
 export async function removeContact(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
+  const { orgId } = await requireAdmin();
 
   const contactId = String(formData.get("contactId") ?? "").trim();
   if (!contactId) throw new Error("missing contact");

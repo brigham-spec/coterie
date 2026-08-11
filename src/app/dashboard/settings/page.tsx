@@ -1,9 +1,11 @@
+import Link from "next/link";
+
 import { requireOrgContext } from "@/lib/auth";
 import { isPlatformAdmin } from "@/lib/platform-admin";
 import { prisma } from "@/lib/prisma";
 import { readMemberTierDefs } from "@/lib/member-tiers";
 import { enabledModuleKeys } from "@/lib/modules";
-import { Card, CardHeader, PageTitle } from "@/components/ui";
+import { Button, Card, CardHeader, PageTitle } from "@/components/ui";
 
 import { TiersForm } from "./_tiers-form";
 import { ModulesForm } from "./_modules-form";
@@ -74,6 +76,45 @@ export default async function SettingsPage() {
           )}
         </div>
       </Card>
+
+      {isAdmin && (
+        <Card className="mt-6">
+          <CardHeader
+            title="Activity log"
+            action={
+              <Link href="/dashboard/settings/activity">
+                <Button>View log</Button>
+              </Link>
+            }
+          />
+          <div className="p-4">
+            <p className="text-xs text-ink-2">
+              An org-wide record of lifecycle activity — who changed which
+              company&rsquo;s status, and when — newest first. Admin only.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card className="mt-6">
+          <CardHeader
+            title="Data export"
+            action={
+              <a href="/dashboard/settings/export">
+                <Button>Download JSON</Button>
+              </a>
+            }
+          />
+          <div className="p-4">
+            <p className="text-xs text-ink-2">
+              A full snapshot of your organization&rsquo;s data as one JSON file —
+              for backup and portability. Identity, integration secrets, and
+              caches are excluded. Admin only.
+            </p>
+          </div>
+        </Card>
+      )}
 
       {isOperator && (
         <Card className="mt-6">

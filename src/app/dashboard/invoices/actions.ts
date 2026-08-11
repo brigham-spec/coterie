@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireOrgContext } from "@/lib/auth";
+import { requireAdmin, requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { requiredDate } from "@/lib/form-fields";
 
@@ -90,7 +90,7 @@ export async function recordPayment(formData: FormData): Promise<void> {
 // foreign id simply matches no row. "void" then trumps any payment in the
 // derived status (see @/lib/invoice-status).
 export async function voidInvoice(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
+  const { orgId } = await requireAdmin();
 
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
   if (!invoiceId) throw new Error("an invoice is required");

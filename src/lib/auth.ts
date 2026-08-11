@@ -33,6 +33,15 @@ export class NoActiveOrgError extends Error {
   }
 }
 
+/// Thrown when a signed-in, org-scoped user lacks the role a write requires
+/// (e.g. a "staff" member attempting an admin-only destructive action).
+export class ForbiddenError extends Error {
+  constructor() {
+    super("FORBIDDEN");
+    this.name = "ForbiddenError";
+  }
+}
+
 export type OrgContext = {
   /// Our Organization.id (uuid) — the value fed to withOrg / app.org_id.
   orgId: string;
@@ -87,6 +96,23 @@ export const requireOrgContext = cache(
     };
   },
 );
+
+/// Throws ForbiddenError unless the role is our "admin" role. Split out from
+/// requireAdmin so the gate can be unit-tested without a Clerk session.
+export function assertAdminRole(role: string): void {
+  if (role !== "admin") throw new ForbiddenError();
+}
+
+/// Like requireOrgContext, but additionally requires the "admin" role — the
+/// guard for destructive, hard-to-reverse operations (deleting a whole company,
+/// contact, project, introduction or meeting; voiding a bill). Returns the same
+/// context so callers can destructure orgId without a second resolution (both
+/// share requireOrgContext's per-request cache).
+export async function requireAdmin(): Promise<OrgContext> {
+  const ctx = await requireOrgContext();
+  assertAdminRole(ctx.role);
+  return ctx;
+}
 
 async function provisionUser(clerkUserId: string) {
   const cu = await currentUser();

@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 
 import type { Prisma } from "@/generated/prisma/client";
 
-import { requireOrgContext } from "@/lib/auth";
+import { requireAdmin, requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
@@ -188,7 +188,7 @@ export async function unlinkCompany(formData: FormData): Promise<void> {
 // events), so the single deleteMany is enough. deleteMany keeps it a no-op when
 // RLS excludes the row; then redirect back to the directory.
 export async function deleteProject(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
+  const { orgId } = await requireAdmin();
 
   const projectId = String(formData.get("projectId") ?? "").trim();
   if (!projectId) throw new Error("project is required");

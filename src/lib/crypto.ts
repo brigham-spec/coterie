@@ -19,6 +19,18 @@ import {
 
 const IV_LEN = 12; // 96-bit nonce, the GCM standard
 const TAG_LEN = 16;
+const KEY_LEN = 32; // AES-256 → a 256-bit key
+
+// The base64 key must decode to exactly KEY_LEN bytes. Returns null when valid,
+// else a human-readable problem. Exported so boot-time env validation (@/lib/env)
+// checks the SAME contract this module enforces — one source of truth for the
+// key's wire format.
+export function encKeyProblem(value: string): string | null {
+  const len = Buffer.from(value, "base64").length;
+  return len === KEY_LEN
+    ? null
+    : `must decode to ${KEY_LEN} bytes (base64), got ${len}`;
+}
 
 let cachedKey: Buffer | null = null;
 
@@ -26,13 +38,10 @@ function key(): Buffer {
   if (cachedKey != null) return cachedKey;
   const raw = process.env.INTEGRATION_ENC_KEY;
   if (!raw) throw new Error("INTEGRATION_ENC_KEY is not set");
-  const buf = Buffer.from(raw, "base64");
-  if (buf.length !== 32)
-    throw new Error(
-      `INTEGRATION_ENC_KEY must decode to 32 bytes, got ${buf.length}`,
-    );
-  cachedKey = buf;
-  return buf;
+  const problem = encKeyProblem(raw);
+  if (problem) throw new Error(`INTEGRATION_ENC_KEY ${problem}`);
+  cachedKey = Buffer.from(raw, "base64");
+  return cachedKey;
 }
 
 // Returns a fresh Uint8Array (not a Node Buffer) so it drops straight into a
