@@ -17,12 +17,12 @@ export function cn(...parts: Array<string | false | null | undefined>): string {
 type ButtonVariant = "default" | "gold" | "primary" | "danger";
 
 const buttonBase =
-  "inline-flex items-center gap-1.5 rounded-sm border px-3.5 py-1.5 text-xs font-medium transition-colors";
+  "inline-flex items-center gap-1.5 rounded-sm border px-3.5 py-2 text-xs font-medium transition-all duration-150 active:translate-y-px";
 
 const buttonVariants: Record<ButtonVariant, string> = {
-  default: "border-line-2 bg-surface text-ink-2 hover:bg-surface-2",
+  default: "border-line-2 bg-surface text-ink-2 hover:border-ink-3 hover:bg-surface-2",
   gold: "border-gold-line bg-gold-bg text-gold-ink hover:brightness-[0.98]",
-  primary: "border-ink bg-ink text-white hover:bg-ink-hover",
+  primary: "border-ink bg-ink text-white shadow-card hover:bg-ink-hover hover:shadow-float",
   danger: "border-red-line bg-red-bg text-red-ink hover:brightness-[0.98]",
 };
 
@@ -99,8 +99,8 @@ export function CardHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-line bg-surface-2 px-[1.1rem] py-2.5">
-      <span className="text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
+    <div className="flex items-center justify-between border-b border-line bg-surface-2 px-4 py-3">
+      <span className="font-serif text-[14px] leading-none text-ink">
         {title}
       </span>
       {action}
@@ -118,8 +118,12 @@ export function PageTitle({
 }) {
   return (
     <div>
-      <h1 className="font-serif text-[15px] text-ink">{title}</h1>
-      {subtitle ? <p className="mt-0.5 text-[11px] text-ink-3">{subtitle}</p> : null}
+      <h1 className="font-serif text-[22px] leading-tight tracking-[-0.01em] text-ink">
+        {title}
+      </h1>
+      {subtitle ? (
+        <p className="mt-1 text-[12px] text-ink-3">{subtitle}</p>
+      ) : null}
     </div>
   );
 }
@@ -128,7 +132,7 @@ export function PageTitle({
 const fieldLabel =
   "mb-1 block text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase";
 const fieldControl =
-  "w-full rounded-sm border border-line-2 bg-surface px-3 py-1.5 text-xs text-ink outline-none focus:border-gold-line";
+  "w-full rounded-sm border border-line-2 bg-surface px-3 py-2 text-xs text-ink outline-none transition-colors focus:border-gold-line focus:ring-2 focus:ring-gold-line/20";
 
 export function Field({
   label,
@@ -192,7 +196,7 @@ export function Table({
 
 export function Th({ children }: { children: ReactNode }) {
   return (
-    <th className="border-b border-line px-[0.9rem] py-2 text-left text-[9.5px] font-medium tracking-[0.08em] text-ink-3 uppercase">
+    <th className="border-b border-line px-4 py-2.5 text-left text-[10px] font-medium tracking-[0.08em] text-ink-3 uppercase">
       {children}
     </th>
   );
@@ -200,7 +204,9 @@ export function Th({ children }: { children: ReactNode }) {
 
 export function Tr({ children }: { children: ReactNode }) {
   return (
-    <tr className="last:[&>td]:border-b-0 hover:bg-surface-2">{children}</tr>
+    <tr className="transition-colors last:[&>td]:border-b-0 hover:bg-surface-2">
+      {children}
+    </tr>
   );
 }
 
@@ -214,7 +220,7 @@ export function Td({
   return (
     <td
       className={cn(
-        "border-b border-line px-[0.9rem] py-2.5 align-middle text-ink",
+        "border-b border-line px-4 py-3 align-middle text-ink",
         className,
       )}
     >
@@ -311,7 +317,7 @@ export function TagBadge({
     <span
       title={title}
       className={cn(
-        "inline-flex rounded-full px-2 py-0.5 text-[9.5px] font-medium whitespace-nowrap",
+        "inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-medium whitespace-nowrap",
         tagToneStyles[tone] ?? tagToneStyles.slate,
       )}
     >

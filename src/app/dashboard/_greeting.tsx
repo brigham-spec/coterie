@@ -30,10 +30,10 @@ export function Greeting({ name }: { name: string }) {
 
   return (
     <div>
-      <div className="font-serif text-[18px] text-ink">
+      <h1 className="font-serif text-[28px] leading-tight tracking-[-0.01em] text-ink">
         {now ? `${timeOfDay(now.getHours())}, ${first}` : `Welcome, ${first}`}
-      </div>
-      <div className="mt-0.5 text-[11.5px] text-ink-3">
+      </h1>
+      <div className="mt-1 text-[12.5px] text-ink-3">
         {now ? dateFmt.format(now) : "\u00a0"}
       </div>
     </div>

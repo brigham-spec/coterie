@@ -310,22 +310,28 @@ export default async function DashboardPage() {
     buckets.nextMonth.total > 0;
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
-      {/* Greeting + KPI pills */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto w-full max-w-6xl">
+      {/* Hero greeting */}
+      <div className="mb-6">
         <Greeting name={ctx.userName || "there"} />
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Pill n={memberCount} label="Members" href="/dashboard/companies" />
-          <Pill n={prospectCount} label="Prospects" href="/dashboard/companies" />
-          <Pill n={projects.length} label="Projects" href="/dashboard/projects" />
-          <Pill
-            n={introsThisMonth}
-            label="Intros / mo"
-            href="/dashboard/introductions"
-          />
-          <Pill n={proposalCompanies.size} label="Proposals / mo" />
-          <Pill n={coldMembers.length} label="Need a call" href="/dashboard/companies" />
-        </div>
+      </div>
+
+      {/* Metric strip — the network at a glance */}
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <Metric n={memberCount} label="Members" href="/dashboard/companies" />
+        <Metric n={prospectCount} label="Prospects" href="/dashboard/companies" />
+        <Metric n={projects.length} label="Projects" href="/dashboard/projects" />
+        <Metric
+          n={introsThisMonth}
+          label="Intros / mo"
+          href="/dashboard/introductions"
+        />
+        <Metric n={proposalCompanies.size} label="Proposals / mo" />
+        <Metric
+          n={coldMembers.length}
+          label="Need a call"
+          href="/dashboard/companies"
+        />
       </div>
 
       {/* Fireflies sync status — connection health + last-sync freshness */}
@@ -635,7 +641,7 @@ function initials(name: string): string {
     .join("");
 }
 
-function Pill({
+function Metric({
   n,
   label,
   href,
@@ -646,16 +652,22 @@ function Pill({
 }) {
   const body = (
     <>
-      <div className="text-[15px] leading-tight font-bold text-ink">{n}</div>
-      <div className="text-[9px] font-semibold tracking-[0.04em] whitespace-nowrap text-ink-3">
+      <div className="font-serif text-[30px] leading-none text-ink">{n}</div>
+      <div className="mt-2 text-[10px] font-medium tracking-[0.06em] whitespace-nowrap text-ink-3 uppercase">
         {label}
       </div>
     </>
   );
   const base =
-    "flex min-w-[60px] flex-col items-center rounded-full border border-line bg-surface px-3 py-1";
+    "flex flex-col rounded-md border border-line bg-surface px-4 py-3.5 shadow-card";
   return href ? (
-    <Link href={href} className={cn(base, "transition-colors hover:bg-surface-2")}>
+    <Link
+      href={href}
+      className={cn(
+        base,
+        "transition-all hover:-translate-y-0.5 hover:border-line-2 hover:shadow-float",
+      )}
+    >
       {body}
     </Link>
   ) : (
@@ -679,14 +691,14 @@ function DashCard({
       id={anchorId}
       className="overflow-hidden rounded-md border border-line bg-surface shadow-card scroll-mt-4"
     >
-      <div className="flex items-center justify-between border-b border-line bg-surface-2 px-4 py-2.5">
-        <span className="text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
+      <div className="flex items-center justify-between border-b border-line bg-surface-2 px-4 py-3">
+        <span className="font-serif text-[14px] leading-none text-ink">
           {title}
         </span>
         {viewHref ? (
           <Link
             href={viewHref}
-            className="text-[10px] font-semibold text-teal-ink hover:underline"
+            className="text-[10px] font-semibold tracking-[0.04em] text-teal-ink uppercase hover:underline"
           >
             View all
           </Link>

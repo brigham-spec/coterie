@@ -46,21 +46,23 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen">
-      <aside className="fixed inset-y-0 left-0 flex w-56 flex-col bg-ink px-3 py-5 text-white print:hidden">
-        <div className="px-3">
-          <div className="text-[9.5px] font-medium tracking-[0.16em] text-gold uppercase">
+      <aside className="fixed inset-y-0 left-0 flex w-60 flex-col border-r border-black/20 bg-ink px-3.5 py-5 text-white print:hidden">
+        <div className="px-2.5">
+          <div className="text-[9.5px] font-medium tracking-[0.18em] text-gold uppercase">
             Coterie
           </div>
-          <div className="mt-1 font-serif text-[17px] leading-tight text-white">
+          <div className="mt-1.5 font-serif text-[18px] leading-tight text-white">
             {ctx.orgName}
           </div>
         </div>
-        <div className="mx-3 my-4 h-px bg-gold/30" />
-        <Nav enabledHrefs={navHrefs} />
+        <div className="mx-2.5 my-4 h-px bg-gradient-to-r from-gold/40 to-transparent" />
+        <div className="-mr-1.5 flex-1 overflow-y-auto pr-1.5">
+          <Nav enabledHrefs={navHrefs} />
+        </div>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col pl-56 print:pl-0">
-        <header className="flex h-14 items-center justify-end gap-3 border-b border-line bg-surface px-6 print:hidden">
+      <div className="flex min-h-screen flex-1 flex-col pl-60 print:pl-0">
+        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-line bg-surface/85 px-8 backdrop-blur-md print:hidden">
           <CommandPalette enabledHrefs={navHrefs} />
           <div className="flex-1" />
           <OrganizationSwitcher
@@ -70,7 +72,7 @@ export default async function DashboardLayout({
           />
           <UserButton />
         </header>
-        <main className="flex-1 bg-canvas px-6 py-8 print:bg-surface print:p-0">
+        <main className="flex-1 bg-canvas px-8 py-10 print:bg-surface print:p-0">
           {children}
         </main>
       </div>
