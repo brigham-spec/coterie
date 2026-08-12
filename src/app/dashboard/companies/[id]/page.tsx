@@ -11,6 +11,7 @@ import { readMemberTierDefs } from "@/lib/member-tiers";
 import { hasCredential } from "@/lib/integrations";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { RSVP_CONFIRMED, RSVP_ATTENDED } from "@/lib/event-stages";
+import { deriveValueEntries } from "@/lib/value-delivered";
 import {
   Card,
   CardHeader,
@@ -170,6 +171,7 @@ export default async function CompanyDetailPage({
         select: {
           id: true,
           status: true,
+          headline: true,
           outcome: true,
           madeOn: true,
           createdAt: true,
@@ -347,6 +349,7 @@ export default async function CompanyDetailPage({
           summary: true,
           outcome: true,
           occurredAt: true,
+          introductionId: true,
           introduction: {
             select: {
               partyA: { select: { name: true } },
@@ -368,16 +371,26 @@ export default async function CompanyDetailPage({
         },
       });
       // Events this company's people came to (confirmed/attended) — a timeline
-      // touchpoint. Deduped to one entry per event (a company may send several).
+      // touchpoint AND a derived value-delivered entry. Deduped to one timeline
+      // entry per event (a company may send several); rsvp/id feed the derived
+      // value layer, createdAt is the occurredAt fallback for a date-less event.
       const eventInvites = contactIds.length
         ? await tx.eventInvitee.findMany({
             where: {
               contactId: { in: contactIds },
               rsvp: { in: [RSVP_CONFIRMED, RSVP_ATTENDED] },
-              event: { date: { not: null } },
             },
             select: {
-              event: { select: { id: true, name: true, date: true } },
+              id: true,
+              rsvp: true,
+              event: {
+                select: {
+                  id: true,
+                  name: true,
+                  date: true,
+                  createdAt: true,
+                },
+              },
             },
           })
         : [];
@@ -509,6 +522,49 @@ export default async function CompanyDetailPage({
     })),
     events: attendedEvents,
     news: newsItems.map((n) => ({ headline: n.headline, date: n.capturedAt })),
+  });
+
+  // Derived network value (Phase 1, read-only) — the same enrichment the
+  // shareable Value Report shows, surfaced inline so the profile card reflects
+  // realized network activity (intros made, events attended, collaborations)
+  // even before any dollar-tagged win is logged. All derived entries are
+  // non-monetary (amount stays null); intros already in the manual ledger are
+  // suppressed so nothing is double-counted. Reuses data already loaded above.
+  const derivedValue = deriveValueEntries({
+    intros: introductions.map((i) => {
+      // The other party — the company this member was introduced TO. Null for a
+      // same-company intro so the summary never reads "Introduced to {own name}".
+      const other = i.partyA.company?.id === company.id ? i.partyB : i.partyA;
+      return {
+        introId: i.id,
+        status: i.status,
+        headline: i.headline,
+        outcome: i.outcome,
+        madeOn: i.madeOn,
+        createdAt: i.createdAt,
+        partyAName: i.partyA.name,
+        partyBName: i.partyB.name,
+        counterpartCompany:
+          other.company?.id === company.id ? null : (other.company?.name ?? null),
+      };
+    }),
+    events: eventsAttended.map((iv) => ({
+      inviteeId: iv.id,
+      eventName: iv.event.name,
+      rsvp: iv.rsvp,
+      occurredAt: iv.event.date ?? iv.event.createdAt,
+    })),
+    collaborations: company.projectLinks.map((l) => ({
+      projectId: l.projectId,
+      projectName: l.project.name,
+      role: l.role,
+      occurredAt: l.createdAt,
+    })),
+    ledgerIntroIds: new Set(
+      valueDelivered
+        .map((v) => v.introductionId)
+        .filter((x): x is string => x != null),
+    ),
   });
 
   return (
@@ -730,6 +786,7 @@ export default async function CompanyDetailPage({
             ? `${v.introduction.partyA.name} ↔ ${v.introduction.partyB.name}`
             : null,
         }))}
+        derived={derivedValue}
         intros={introductions.map((i) => ({
           id: i.id,
           label: `${i.partyA.name} ↔ ${i.partyB.name}`,

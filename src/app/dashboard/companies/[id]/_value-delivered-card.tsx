@@ -49,14 +49,24 @@ export type IntroOption = { id: string; label: string };
 export function ValueDeliveredCard({
   companyId,
   entries,
+  derived,
   intros,
 }: {
   companyId: string;
   entries: ValueDeliveredEntry[];
+  // Read-only network value (intros made, events attended, collaborations)
+  // derived from existing data — shown alongside the manual ledger so the card
+  // reflects realized value even with no dollar-tagged win logged.
+  derived: ValueDeliveredEntry[];
   intros: IntroOption[];
 }) {
   const [adding, setAdding] = useState(false);
-  const summary = summarizeValueDelivered(entries);
+  // Derived entries carry a `derived-` id and are not removable DB rows.
+  const derivedIds = new Set(derived.map((d) => d.id));
+  const all = [...entries, ...derived].sort(
+    (a, b) => b.occurredAt.getTime() - a.occurredAt.getTime(),
+  );
+  const summary = summarizeValueDelivered(all);
   // Normalize the per-kind bars against the richest kind (by dollars if any
   // carry a figure, else by count so non-monetary wins still chart).
   const useAmount = summary.totalAmount > 0;
@@ -70,7 +80,7 @@ export function ValueDeliveredCard({
         title="Value delivered"
         action={
           <div className="flex items-center gap-4">
-            {entries.length > 0 ? (
+            {all.length > 0 ? (
               <Link
                 href={`/dashboard/companies/${companyId}/value-report`}
                 className="text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase hover:text-ink"
@@ -89,15 +99,24 @@ export function ValueDeliveredCard({
         }
       />
 
-      {entries.length > 0 ? (
+      {all.length > 0 ? (
         <div className="flex flex-col gap-3 border-b border-line px-4 py-4">
           <div className="flex items-baseline gap-2">
             <span className="text-lg font-semibold text-ink">
-              {currency.format(summary.totalAmount)}
+              {useAmount ? currency.format(summary.totalAmount) : summary.entryCount}
             </span>
             <span className="text-[11px] text-ink-3">
-              delivered across {summary.entryCount}{" "}
-              {summary.entryCount === 1 ? "win" : "wins"}
+              {useAmount ? (
+                <>
+                  delivered across {summary.entryCount}{" "}
+                  {summary.entryCount === 1 ? "win" : "wins"}
+                </>
+              ) : (
+                <>
+                  {summary.entryCount === 1 ? "win" : "wins"} delivered through
+                  the network
+                </>
+              )}
             </span>
           </div>
           <div className="flex flex-col gap-1.5">
@@ -134,15 +153,19 @@ export function ValueDeliveredCard({
         </div>
       ) : null}
 
-      {entries.length === 0 ? (
+      {all.length === 0 ? (
         <p className="px-4 py-6 text-xs text-ink-3">
           No value logged yet. Use “Log value” to record an introduction outcome,
           grant, or service delivered to this member.
         </p>
       ) : (
         <ul className="divide-y divide-line">
-          {entries.map((e) => (
-            <ValueItem key={e.id} entry={e} />
+          {all.map((e) => (
+            <ValueItem
+              key={e.id}
+              entry={e}
+              removable={!derivedIds.has(e.id)}
+            />
           ))}
         </ul>
       )}
@@ -150,7 +173,13 @@ export function ValueDeliveredCard({
   );
 }
 
-function ValueItem({ entry }: { entry: ValueDeliveredEntry }) {
+function ValueItem({
+  entry,
+  removable,
+}: {
+  entry: ValueDeliveredEntry;
+  removable: boolean;
+}) {
   return (
     <li className="flex items-start justify-between gap-3 p-4">
       <div className="min-w-0">
@@ -177,15 +206,24 @@ function ValueItem({ entry }: { entry: ValueDeliveredEntry }) {
           </div>
         ) : null}
       </div>
-      <form action={deleteValueDelivered}>
-        <input type="hidden" name="valueId" value={entry.id} />
-        <button
-          type="submit"
-          className="shrink-0 text-[10px] font-medium tracking-[0.06em] text-red uppercase hover:underline"
+      {removable ? (
+        <form action={deleteValueDelivered}>
+          <input type="hidden" name="valueId" value={entry.id} />
+          <button
+            type="submit"
+            className="shrink-0 text-[10px] font-medium tracking-[0.06em] text-red uppercase hover:underline"
+          >
+            Remove
+          </button>
+        </form>
+      ) : (
+        <span
+          className="shrink-0 text-[10px] font-medium tracking-[0.06em] text-ink-3 uppercase"
+          title="Derived from network activity"
         >
-          Remove
-        </button>
-      </form>
+          Network
+        </span>
+      )}
     </li>
   );
 }
