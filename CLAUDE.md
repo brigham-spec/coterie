@@ -50,6 +50,23 @@ The authoritative schema and build order live in `coterie-v1-schema-spec.md` in 
 - Action items have polymorphic owners: `owner_user_id` XOR `owner_contact_id` (staff commitments vs. network commitments).
 - Meeting↔contact matches record `match_method` and `confidence`; low-confidence matches get surfaced for human confirmation, never silently merged.
 
+## Multi-tenant clients & the client registry
+
+Clients never get forks — there is **one codebase and one build**. Per-client
+difference is **data, not code**: which modules a tenant sees is
+`Organization.settings.modules` (a JSON array on the org row), toggled
+operator-only in Settings → Modules; `orgType` (`edc` / `wealth` / …) is the
+packaging default. So "change something for one client" is almost always a
+data/config change scoped to a single `org_id`, not a code edit. A real code
+change ships to everyone at once, gated per-org by the module flags.
+
+Per-client state (prod Clerk + PG org ids, orgType, enabled modules, admins,
+open maintenance items, provenance) is tracked in **`docs/clients/`** — one file
+per client, kept current (edit in place, not a log). **Before tweaking a
+specific tenant, read its `docs/clients/<name>.md` to get the correct org id and
+packaging.** When onboarding a client, add a file from the template in
+`docs/clients/README.md`.
+
 ## Conventions
 
 - Server components by default; client components only where interactivity requires them
