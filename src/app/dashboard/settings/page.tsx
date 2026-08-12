@@ -9,6 +9,7 @@ import { Button, Card, CardHeader, PageTitle } from "@/components/ui";
 
 import { TiersForm } from "./_tiers-form";
 import { ModulesForm } from "./_modules-form";
+import { RestoreForm } from "./_restore-form";
 
 // Organization settings. The first surface here is the member-tier vocabulary —
 // each org's own labels for the standing it grants members (HVEDC: Chairman /
@@ -27,6 +28,14 @@ export default async function SettingsPage() {
   const isAdmin = ctx.role === "admin";
   const isOperator = isPlatformAdmin(ctx);
   const enabledModules = [...enabledModuleKeys(org?.settings)];
+  // The operator restore picks a target org across the whole platform, so the
+  // org list is fetched only for the operator (organizations carries no RLS).
+  const orgs = isOperator
+    ? await prisma.organization.findMany({
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      })
+    : [];
   const valueFmt = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -126,6 +135,20 @@ export default async function SettingsPage() {
               on. Only the platform operator sees this control.
             </p>
             <ModulesForm enabled={enabledModules} />
+          </div>
+        </Card>
+      )}
+
+      {isOperator && (
+        <Card className="mt-6">
+          <CardHeader title="Data restore" />
+          <div className="p-4">
+            <p className="mb-4 text-xs text-ink-2">
+              Replay a backup JSON into an empty organization, remapping every id
+              so it shares nothing with the source. The target must be a freshly
+              created, empty org. Only the platform operator sees this control.
+            </p>
+            <RestoreForm orgs={orgs} />
           </div>
         </Card>
       )}
