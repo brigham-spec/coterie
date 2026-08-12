@@ -52,7 +52,25 @@ describe("extractJsonArray", () => {
     expect(extractJsonArray(raw)).toBe('[{"t":"a ] b"}]');
   });
 
-  test("returns null when the array never closes", () => {
+  test("returns null when the array never closes with no complete object", () => {
     expect(extractJsonArray("[1, 2, 3")).toBeNull();
+    expect(extractJsonArray('[{"id":"a"')).toBeNull();
+  });
+
+  // A model that hits max_tokens mid-array leaves it unbalanced; recover the
+  // objects it DID finish rather than dropping the whole response.
+  test("recovers completed objects from a truncated array", () => {
+    const raw = '[{"id":"a"},{"id":"b"},{"id":"c';
+    expect(extractJsonArray(raw)).toBe('[{"id":"a"},{"id":"b"}]');
+  });
+
+  test("recovery ignores braces inside string values", () => {
+    const raw = '[{"t":"a } b"},{"t":"c { d"},{"t":"e';
+    expect(extractJsonArray(raw)).toBe('[{"t":"a } b"},{"t":"c { d"}]');
+  });
+
+  test("recovery keeps nested objects whole", () => {
+    const raw = '[{"a":{"b":2}},{"c":3},{"d"';
+    expect(extractJsonArray(raw)).toBe('[{"a":{"b":2}},{"c":3}]');
   });
 });
