@@ -89,6 +89,26 @@ export default async function SettingsPage() {
       {isAdmin && (
         <Card className="mt-6">
           <CardHeader
+            title="Bulk import"
+            action={
+              <Link href="/dashboard/companies/import">
+                <Button>Open importer</Button>
+              </Link>
+            }
+          />
+          <div className="p-4">
+            <p className="text-xs text-ink-2">
+              Add many companies and contacts at once from a CSV — one row per
+              contact, with their company&rsquo;s columns alongside. Existing
+              records are left untouched, so re-importing is safe. Admin only.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card className="mt-6">
+          <CardHeader
             title="Activity log"
             action={
               <Link href="/dashboard/settings/activity">

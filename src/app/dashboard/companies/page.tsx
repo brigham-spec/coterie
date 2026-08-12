@@ -253,11 +253,16 @@ export default async function CompaniesPage({
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <div className="mb-6">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <PageTitle
           title="Companies"
           subtitle={`${companies.length} in ${ctx.orgName}'s network`}
         />
+        {ctx.role === "admin" ? (
+          <Link href="/dashboard/companies/import">
+            <Button>Import CSV</Button>
+          </Link>
+        ) : null}
       </div>
 
       <Card>
