@@ -38,7 +38,14 @@ export function IntroScan() {
         </form>
       </div>
       <div className="p-4">
-        {state.status === "error" ? (
+        {isPending ? (
+          <div className="flex items-center gap-2.5">
+            <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-line-2 border-t-gold" />
+            <span className="text-[11px] text-ink-2">
+              Scanning the network… this can take up to a minute.
+            </span>
+          </div>
+        ) : state.status === "error" ? (
           <p className="text-[11px] text-red-ink">{state.message}</p>
         ) : state.status === "ok" ? (
           state.pairings.length === 0 ? (

@@ -271,9 +271,12 @@ export function UrgentSignalsPanel({
             ))}
           </ul>
         ) : pending ? (
-          <p className="text-[11px] text-ink-3 italic">
-            Analyzing recent activity…
-          </p>
+          <div className="flex items-center gap-2.5">
+            <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-line-2 border-t-gold" />
+            <span className="text-[11px] text-ink-2">
+              Analyzing recent activity… this can take up to a minute.
+            </span>
+          </div>
         ) : snapshot ? (
           <p className="text-[11px] text-ink-3 italic">
             No urgent signals right now.
@@ -728,7 +731,12 @@ function NetworkMode({ hostName }: { hostName: string }) {
         </div>
       ) : null}
       {pending ? (
-        <p className="text-[11px] text-ink-3 italic">Reading the network…</p>
+        <div className="flex items-center gap-2.5">
+          <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-line-2 border-t-gold" />
+          <span className="text-[11px] text-ink-2">
+            Reading the network… this can take up to a minute.
+          </span>
+        </div>
       ) : result.status === "error" ? (
         <p className="text-[11px] text-red-ink">{result.message}</p>
       ) : result.status === "ok" ? (
