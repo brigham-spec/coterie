@@ -222,7 +222,7 @@ function TeamForm({
 
       <label className="block">
         <span className="mb-1 block text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase">
-          Link a CRM company (optional)
+          Link a company (optional)
         </span>
         <select
           name="companyId"
