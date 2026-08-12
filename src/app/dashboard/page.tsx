@@ -57,6 +57,11 @@ const COLD_DAYS: Record<string, number> = {
 };
 const COLD_DEFAULT = 45;
 
+// The proactive intro scan (scanNetworkIntros) runs an AI pass over the whole
+// network; give its server action headroom past Vercel's short default so it can
+// finish instead of timing out.
+export const maxDuration = 60;
+
 export default async function DashboardPage() {
   const ctx = await requireOrgContext();
   const now = new Date();

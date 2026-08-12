@@ -79,6 +79,11 @@ function one(value: string | string[] | undefined): string {
   return typeof value === "string" ? value : "";
 }
 
+// The proactive intro scan (scanNetworkIntros) runs an AI pass over the whole
+// network; give its server action headroom past Vercel's short default so it can
+// finish instead of timing out.
+export const maxDuration = 60;
+
 export default async function IntroductionsPage({
   searchParams,
 }: {

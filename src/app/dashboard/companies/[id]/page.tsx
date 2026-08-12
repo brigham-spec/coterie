@@ -53,6 +53,11 @@ import { StatusPill } from "./_status-pill";
 // participates in. Read withOrg-scoped; a lookup that returns null (not ours,
 // or absent) is a 404.
 
+// This page's AI server actions (company brief, meeting prep, intro suggestions)
+// run an opus pass; give them headroom past Vercel's short default so they can
+// finish instead of timing out.
+export const maxDuration = 60;
+
 export default async function CompanyDetailPage({
   params,
 }: {

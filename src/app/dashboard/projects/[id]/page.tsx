@@ -76,6 +76,10 @@ const roleOptions = [
   { value: "advisor", label: "Advisor" },
 ];
 
+// The open-role scan (scanOpenRole) runs an opus pass; give its server action
+// headroom past Vercel's short default so it can finish instead of timing out.
+export const maxDuration = 60;
+
 export default async function ProjectDetailPage({
   params,
 }: {

@@ -55,6 +55,11 @@ function one(value: string | string[] | undefined): string {
   return typeof value === "string" ? value : "";
 }
 
+// The action-item extraction (extractActionItems) runs an opus pass; give its
+// server action headroom past Vercel's short default so it can finish instead of
+// timing out.
+export const maxDuration = 60;
+
 export default async function MeetingsPage({
   searchParams,
 }: {
