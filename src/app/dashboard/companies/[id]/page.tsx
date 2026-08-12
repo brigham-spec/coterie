@@ -102,6 +102,7 @@ export default async function CompanyDetailPage({
     valueDelivered,
     notes,
     eventsAttended,
+    teamMemberships,
     linkOptions,
     referralOptions,
     projects,
@@ -141,6 +142,7 @@ export default async function CompanyDetailPage({
           valueDelivered: [],
           notes: [],
           eventsAttended: [],
+          teamMemberships: [],
           linkOptions: [],
           referralOptions: [],
           projects: [],
@@ -394,6 +396,19 @@ export default async function CompanyDetailPage({
             },
           })
         : [];
+      // Projects this company is staffed on as a professional-team firm (the
+      // team member's optional CRM company link points here). Being on the team
+      // is realized network value just like a formal participant link, so these
+      // fold into the derived collaborations below (deduped against projectLinks).
+      const teamMemberships = await tx.projectTeamMember.findMany({
+        where: { companyId: id },
+        select: {
+          projectId: true,
+          role: true,
+          createdAt: true,
+          project: { select: { name: true } },
+        },
+      });
       return {
         company,
         introductions,
@@ -407,6 +422,7 @@ export default async function CompanyDetailPage({
         valueDelivered,
         notes,
         eventsAttended: eventInvites,
+        teamMemberships,
         linkOptions,
         referralOptions,
         projects,
@@ -530,6 +546,33 @@ export default async function CompanyDetailPage({
   // even before any dollar-tagged win is logged. All derived entries are
   // non-monetary (amount stays null); intros already in the manual ledger are
   // suppressed so nothing is double-counted. Reuses data already loaded above.
+  // Collaborations = projects this company is on, whether as a formal participant
+  // (project_links) or as the linked firm on a project's professional team. Merge
+  // both, deduped by project so a project surfaces once — a formal participant
+  // link wins over a team role for the label. This is why staffing a member on a
+  // project's team (with its CRM company linked) now flows to their value.
+  const collabByProject = new Map<
+    string,
+    { projectId: string; projectName: string; role: string; occurredAt: Date }
+  >();
+  for (const l of company.projectLinks) {
+    collabByProject.set(l.projectId, {
+      projectId: l.projectId,
+      projectName: l.project.name,
+      role: l.role,
+      occurredAt: l.createdAt,
+    });
+  }
+  for (const m of teamMemberships) {
+    if (collabByProject.has(m.projectId)) continue;
+    collabByProject.set(m.projectId, {
+      projectId: m.projectId,
+      projectName: m.project.name,
+      role: m.role,
+      occurredAt: m.createdAt,
+    });
+  }
+
   const derivedValue = deriveValueEntries({
     intros: introductions.map((i) => {
       // The other party — the company this member was introduced TO. Null for a
@@ -554,12 +597,7 @@ export default async function CompanyDetailPage({
       rsvp: iv.rsvp,
       occurredAt: iv.event.date ?? iv.event.createdAt,
     })),
-    collaborations: company.projectLinks.map((l) => ({
-      projectId: l.projectId,
-      projectName: l.project.name,
-      role: l.role,
-      occurredAt: l.createdAt,
-    })),
+    collaborations: [...collabByProject.values()],
     ledgerIntroIds: new Set(
       valueDelivered
         .map((v) => v.introductionId)
