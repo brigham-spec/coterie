@@ -14,7 +14,7 @@ import {
 
 // Their Network card (profile-parity P6b). Only rendered for strategic_partner
 // companies. The key external contacts this partner can connect the network
-// with — add/edit/remove, plus link each one to an existing CRM company or
+// with — add/edit/remove, plus link each one to an existing network company or
 // promote it into a fresh prospect. All writes go through the withOrg-scoped
 // key-relationship actions; this holds only local UI state (which row is open /
 // whether the add form is showing). Emails feed meeting matching.

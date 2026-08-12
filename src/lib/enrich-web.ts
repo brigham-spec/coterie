@@ -131,7 +131,7 @@ export function buildEnrichWebPrompt(context: EnrichWebContext): string {
     ? `Organization website: ${context.website}`
     : `Search for "${context.companyName}" and its primary contact by name.`;
 
-  return `You are enriching a CRM profile for ${context.orgName}, an economic-development network.
+  return `You are enriching a member profile for ${context.orgName}, an economic-development network.
 
 ## EXISTING PROFILE
 ${known}
@@ -152,7 +152,7 @@ Return ONLY a valid JSON object (no markdown, no prose):
 {"summary":"1 sentence on what the search revealed","lookingFor":"what they need — connections, capital, expertise, agencies. Specific. Max 200 chars. \\"\\" if nothing new","canOffer":"what they bring — expertise, relationships, capabilities. Specific. Max 200 chars. \\"\\" if nothing new","industry":"primary sector, 3-5 words. \\"\\" if already set and accurate","counties":"HV counties active in, comma-separated. \\"\\" if nothing new","dealSize":"typical deal size. \\"\\" if nothing new","agencyContacts":"NYS agency / government relationships found. \\"\\" if nothing new","notesAppend":"1-2 sentences of new strategic context to append to notes. \\"\\" if nothing significant"}`;
 }
 
-const SYSTEM_PROMPT = `You enrich a member's CRM profile using live web search. Return ONLY a single JSON object with the requested keys. Include only information found in real, verifiable sources — never invent, infer, or hallucinate. An empty string is always better than invented content.`;
+const SYSTEM_PROMPT = `You enrich a member's profile using live web search. Return ONLY a single JSON object with the requested keys. Include only information found in real, verifiable sources — never invent, infer, or hallucinate. An empty string is always better than invented content.`;
 
 /// Enrich a company's profile from a live web search. Ephemeral — nothing is
 /// stored; the operator reviews and applies selected fields. Returns null when the

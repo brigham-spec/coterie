@@ -93,7 +93,7 @@ PROFILE:
 ${profileText.slice(0, 6000)}`;
 }
 
-const SYSTEM_PROMPT = `You extract structured CRM fields from pasted LinkedIn profile text for an economic-development network. Return ONLY a single JSON object with the requested keys. Ground every field strictly in the supplied text — never invent contact details, employers, or facts. Use "" for anything the profile does not state.`;
+const SYSTEM_PROMPT = `You extract structured profile fields from pasted LinkedIn profile text for an economic-development network. Return ONLY a single JSON object with the requested keys. Ground every field strictly in the supplied text — never invent contact details, employers, or facts. Use "" for anything the profile does not state.`;
 
 /// Parse the pasted profile into structured fields. Ephemeral — nothing is
 /// stored; the operator reviews and saves. Returns null when the model gives

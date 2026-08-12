@@ -157,7 +157,7 @@ export function buildSynthPrompt(
     .filter(Boolean)
     .join("\n");
 
-  return `You are a CRM intelligence analyst. Read all available records for one company, then suggest specific updates to its structured relationship fields.
+  return `You are a relationship intelligence analyst. Read all available records for one company, then suggest specific updates to its structured relationship fields.
 
 COMPANY: ${context.name}${context.contactName ? ` (contact: ${context.contactName})` : ""} — ${context.industry || "industry not set"} — ${context.status}
 
@@ -182,7 +182,7 @@ Return ONLY a valid JSON object (no markdown, no prose):
 {"summary":"1-2 sentence read of what the evidence reveals","lookingFor":"","canOffer":"","counties":"","agencyContacts":"","dealSize":"","notesAppend":""}`;
 }
 
-const SYSTEM_PROMPT = `You are a CRM data analyst. You ONLY extract and organize information explicitly provided to you. You NEVER invent, infer, or hallucinate facts. If information is not clearly stated in the input, you return "" for that field. Accuracy is paramount — an empty value is always preferable to invented content.`;
+const SYSTEM_PROMPT = `You are a relationship data analyst. You ONLY extract and organize information explicitly provided to you. You NEVER invent, infer, or hallucinate facts. If information is not clearly stated in the input, you return "" for that field. Accuracy is paramount — an empty value is always preferable to invented content.`;
 
 /// Synthesize a company's profile from its internal records. Ephemeral — nothing
 /// is stored; the operator reviews and applies selected fields. Returns null when

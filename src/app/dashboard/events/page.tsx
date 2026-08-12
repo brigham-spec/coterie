@@ -52,7 +52,7 @@ function loadEventsData(orgId: string) {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });
-    // Members never on any guest list (via a CRM contact) — the "never invited"
+    // Members never on any guest list (via a network contact) — the "never invited"
     // roster the prototype nudges you to include (Coterie.html:7584).
     const members = await tx.company.findMany({
       where: { status: "member" },

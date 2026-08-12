@@ -297,7 +297,7 @@ model Project {
   realizedValue  Decimal? @map("realized_value") @db.Decimal(14, 2)
   /// Lead org/name if not yet a member (demo `prospectLead`).
   prospectLead   String?  @map("prospect_lead")
-  /// The developer/lead as a CRM company, when one exists (demo `developerMemberId`).
+  /// The developer/lead as a network company, when one exists (demo `developerMemberId`).
   /// PLAIN nullable FK (SetNull); same-org enforced in the action inside withOrg,
   /// since a composite SetNull would fight org_id's NOT NULL (mirrors team members).
   developerMemberId String? @map("developer_member_id") @db.Uuid
@@ -361,10 +361,10 @@ model ProjectLink {
 }
 
 /// The professional team on a project (projects-module parity; ported from the
-/// prototype's Professional Team section). Unlike ProjectLink (a CRM company in a
+/// prototype's Professional Team section). Unlike ProjectLink (a network company in a
 /// pipeline role), a team member is an individual professional — architect,
 /// attorney, lender, GC, etc. — captured as free text (name/org/email) so
-/// off-network professionals can be tracked, with an OPTIONAL link to a CRM
+/// off-network professionals can be tracked, with an OPTIONAL link to a network
 /// company when one exists. `role` vocab lives in @/lib/team-roles.
 model ProjectTeamMember {
   id        String @id @default(uuid()) @db.Uuid
@@ -375,7 +375,7 @@ model ProjectTeamMember {
   name      String @default("")
   org       String @default("")
   email     String @default("")
-  /// Optional link to a CRM company (the professional's firm). PLAIN nullable FK
+  /// Optional link to a network company (the professional's firm). PLAIN nullable FK
   /// (SetNull); same-org is enforced in the action inside withOrg, since a
   /// composite SetNull would fight org_id's NOT NULL (mirrors key_relationships).
   companyId String? @map("company_id") @db.Uuid
@@ -808,7 +808,7 @@ model Event {
   @@map("events")
 }
 
-/// Guest list for an event — a CRM contact or an external (non-member) guest
+/// Guest list for an event — a network contact or an external (non-member) guest
 /// (demo eventModal guest list). Composite FKs so an invitee can't straddle orgs.
 model EventInvitee {
   // Synthetic PK: contactId is nullable (external guests), so it can't be part
@@ -816,13 +816,13 @@ model EventInvitee {
   id           String  @id @default(uuid()) @db.Uuid
   orgId        String  @map("org_id") @db.Uuid
   eventId      String  @map("event_id") @db.Uuid
-  /// Null when the guest is external (not in the CRM). Plain FK to contacts.id
+  /// Null when the guest is external (not in the network). Plain FK to contacts.id
   /// (a composite FK would force SetNull to null the required org_id) —
   /// app-layer re-checked inside withOrg on write, like contacts.companyId.
   contactId    String? @map("contact_id") @db.Uuid
   externalName  String? @map("external_name")
   externalOrg   String? @map("external_org")
-  /// External-guest contact facts (prototype extEmail/extTitle) — null for CRM guests.
+  /// External-guest contact facts (prototype extEmail/extTitle) — null for network guests.
   externalEmail String? @map("external_email")
   externalTitle String? @map("external_title")
   /// invited, confirmed, declined, attended, no_show
@@ -1012,7 +1012,7 @@ model Affiliation {
 
 /// Their Network (slice P6b) — key external contacts a strategic partner can
 /// connect the network with. A flat sub-record of the owning partner company,
-/// optionally linked to a CRM company (linkedCompanyId) once that contact's org
+/// optionally linked to a network company (linkedCompanyId) once that contact's org
 /// becomes a member/prospect in this tenant. Emails feed meeting matching.
 model KeyRelationship {
   id              String  @id @default(uuid()) @db.Uuid
@@ -1026,7 +1026,7 @@ model KeyRelationship {
   relevance       String  @default("")
   email           String  @default("")
   phone           String  @default("")
-  /// Optional CRM link to a company in THIS org. Plain FK (app-layer boundary-
+  /// Optional link to a company in THIS org. Plain FK (app-layer boundary-
   /// checked inside withOrg, like Company.ownerUserId) so a SET NULL on delete
   /// doesn't fight the composite (id, org_id) target.
   linkedCompanyId String? @map("linked_company_id") @db.Uuid
@@ -1080,7 +1080,7 @@ model IntroDismissal {
 }
 
 /// Durable "don't surface this prospect again" ledger for the Prospect Finder
-/// (slice 11.6, Finder 16). External discovery surfaces NEW organisations (no CRM
+/// (slice 11.6, Finder 16). External discovery surfaces NEW organisations (no network
 /// row yet), so — unlike IntroDismissal — a dismissal references nothing but a name.
 /// We store the normalized org name (target_key) plus a reason; the finder merges
 /// these keys into excludeOrgs so parseProspectTargets drops them on the next scan.
@@ -1140,7 +1140,7 @@ model AgendaItemState {
 /// Detected" panel). The sync records org-affiliated strangers here instead of
 /// dropping them, so a human can promote one to a prospect or attach it to an
 /// existing company. Tenant-scoped: org_id + RLS. No company/contact FK — these
-/// rows are pre-CRM and reference nothing yet.
+/// rows are pre-network and reference nothing yet.
 model UnmatchedAttendee {
   id               String    @id @default(uuid()) @db.Uuid
   orgId            String    @map("org_id") @db.Uuid

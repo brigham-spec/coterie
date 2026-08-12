@@ -1,6 +1,6 @@
 // Relationship timeline (member-profile enrichment, ported from the prototype's
 // renderTimeline on the member modal, Coterie.html:6229). PURE — no I/O: given the
-// raw relationship facts already loaded for a company (when it entered the CRM, the
+// raw relationship facts already loaded for a company (when it entered the network, the
 // meetings its people attended, its introductions, and the commitments it has
 // completed), merge them into one reverse-chronological history. The caller shapes
 // each source inside its withOrg pass; this only sorts and labels, so it's fully
@@ -81,7 +81,7 @@ export type TimelineNews = {
 };
 
 export type TimelineInput = {
-  // When the company entered the CRM — the anchor at the bottom of the history.
+  // When the company entered the network — the anchor at the bottom of the history.
   addedAt: Date;
   meetings: TimelineMeeting[];
   intros: TimelineIntro[];

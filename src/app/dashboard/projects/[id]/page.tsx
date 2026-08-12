@@ -106,7 +106,7 @@ export default async function ProjectDetailPage({
       select: { id: true, name: true },
     });
     // Professional team = the individual professionals staffing the project (a
-    // roster distinct from projectLinks, which are CRM companies in pipeline
+    // roster distinct from projectLinks, which are network companies in pipeline
     // roles). RLS-scoped; the optional company link is joined for its name.
     const teamMembers = await tx.projectTeamMember.findMany({
       where: { projectId: id },

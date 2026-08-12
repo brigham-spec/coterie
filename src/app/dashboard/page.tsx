@@ -410,7 +410,7 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
-      {/* New Connections Detected — Fireflies attendees not yet in the CRM */}
+      {/* New Connections Detected — Fireflies attendees not yet in the network */}
       <NewConnections groups={connectionGroups} companies={companyOptions} />
 
       {/* ROW 3 — Active Projects | Upcoming Events | Needs a Call */}

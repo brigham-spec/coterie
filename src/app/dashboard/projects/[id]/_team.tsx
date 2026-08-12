@@ -10,7 +10,7 @@ import { addTeamMember, updateTeamMember, removeTeamMember } from "../actions";
 // Professional Team roster (projects-module parity; ported from the prototype's
 // Professional Team section, Coterie.html:17662). Each member is an INDIVIDUAL
 // professional — architect, land-use attorney, lender, GC, etc. — captured as
-// free text so off-network people can be tracked, with an optional link to a CRM
+// free text so off-network people can be tracked, with an optional link to a network
 // company. Writes go through the withOrg-scoped project actions; this holds only
 // local UI state (whether a form is open / which row is being edited).
 

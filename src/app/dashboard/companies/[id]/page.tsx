@@ -223,9 +223,10 @@ export default async function CompanyDetailPage({
           })
         : [];
       // Second-degree contacts (Members item 10): Fireflies attendees who sat in
-      // one of THIS company's meetings but match no CRM contact. meetingIds on the
-      // unmatched row intersecting this company's meeting ids scopes them to people
-      // actually seen alongside this member — the profile offers "+ Add to CRM".
+      // one of THIS company's meetings but match no network contact. meetingIds on
+      // the unmatched row intersecting this company's meeting ids scopes them to
+      // people actually seen alongside this member — the profile offers "+ Add to
+      // network".
       // Dismissed strangers are filtered here just as the dashboard panel does.
       const meetingIds = meetings.map((m) => m.id);
       const secondDegree = meetingIds.length
@@ -397,7 +398,7 @@ export default async function CompanyDetailPage({
           })
         : [];
       // Projects this company is staffed on as a professional-team firm (the
-      // team member's optional CRM company link points here). Being on the team
+      // team member's optional company link points here). Being on the team
       // is realized network value just like a formal participant link, so these
       // fold into the derived collaborations below (deduped against projectLinks).
       const teamMemberships = await tx.projectTeamMember.findMany({
@@ -550,7 +551,7 @@ export default async function CompanyDetailPage({
   // (project_links) or as the linked firm on a project's professional team. Merge
   // both, deduped by project so a project surfaces once — a formal participant
   // link wins over a team role for the label. This is why staffing a member on a
-  // project's team (with its CRM company linked) now flows to their value.
+  // project's team (with its company linked) now flows to their value.
   const collabByProject = new Map<
     string,
     { projectId: string; projectName: string; role: string; occurredAt: Date }

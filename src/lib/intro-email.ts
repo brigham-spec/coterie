@@ -12,7 +12,7 @@ import Anthropic from "@anthropic-ai/sdk";
 // grounded strictly in the two supplied profiles — no invented projects,
 // meetings, or relationships — and is EPHEMERAL (nothing is stored).
 
-// One side of the introduction. Descriptors we hold on the party's CRM profile —
+// One side of the introduction. Descriptors we hold on the party's member profile —
 // the engine cites these to make the email specific rather than generic.
 export type IntroParty = {
   name: string;

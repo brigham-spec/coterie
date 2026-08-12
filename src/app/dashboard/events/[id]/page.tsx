@@ -164,7 +164,7 @@ export default async function EventDetailPage({
   );
   const invitable = contacts.filter((c) => !invitedContactIds.has(c.id));
 
-  // CRM guests already on the list — the pool the outreach draft can write to
+  // Network guests already on the list — the pool the outreach draft can write to
   // (external guests have no profile to ground a personal invitation in). Each
   // carries its persisted outreach stage + last draft so the panel seeds from it.
   const outreachGuests = event.invitees

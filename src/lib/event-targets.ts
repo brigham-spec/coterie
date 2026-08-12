@@ -29,7 +29,7 @@ export type TargetSuggestion = {
   strength: number;
 };
 
-// A company already on the guest list (via a CRM contact), with its referrer so
+// A company already on the guest list (via a network contact), with its referrer so
 // the referral edge can point either way.
 export type InvitedCompany = {
   companyId: string;

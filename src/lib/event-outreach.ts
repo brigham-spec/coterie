@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 // Event-outreach engine (gap-audit cluster D, ported from the prototype's
 // generateInviteEmail / doGenerateOutreach, Coterie.html:7773). Given an event
-// and one invited guest (a CRM contact, grounded in their company context), write
+// and one invited guest (a network contact, grounded in their company context), write
 // a short, personal invitation email FROM the host TO that guest — the last-mile
 // draft the host edits and sends. Like the other AI features this is the single
 // server-only seam: prompt, model, and output shape live here so tenant data only
@@ -20,7 +20,7 @@ export type OutreachEvent = {
   theme: string | null;
 };
 
-// The one guest being invited. Only descriptors we hold on their CRM profile —
+// The one guest being invited. Only descriptors we hold on their member profile —
 // the engine cites these to make the email specific rather than generic.
 export type OutreachGuest = {
   name: string;

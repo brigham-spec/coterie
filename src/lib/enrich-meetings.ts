@@ -113,7 +113,7 @@ export function buildEnrichMeetingsPrompt(
     })
     .join("\n\n---\n\n");
 
-  return `Extract CRM profile data for a member organization from their recent meeting notes.
+  return `Extract member profile data for a member organization from their recent meeting notes.
 
 Member Organization: ${context.orgName}
 ${context.contactName ? `Primary Contact: ${context.contactName}\n` : ""}Current — Looking For: ${context.lookingFor || "(empty)"}
@@ -130,7 +130,7 @@ Return ONLY a valid JSON object (no markdown, no prose):
 {"summary":"1 sentence on what the notes reveal","lookingFor":"what this org needs now — connections, capital, expertise, agencies. Specific. Max 200 chars. \"\" if nothing new","canOffer":"what this org provides — expertise, relationships, capabilities. Specific. Max 200 chars. \"\" if nothing new","industry":"primary sector, 3-5 words. \"\" if already set and accurate","notesAppend":"2-3 sentences of important current strategic context to append to notes. \"\" if nothing significant"}`;
 }
 
-const SYSTEM_PROMPT = `You extract CRM profile fields from a member's meeting notes. Return ONLY a single JSON object with the requested keys. Extract only information explicitly stated or strongly implied in the notes — never invent, infer, or hallucinate. An empty string is always better than invented content.`;
+const SYSTEM_PROMPT = `You extract member profile fields from a member's meeting notes. Return ONLY a single JSON object with the requested keys. Extract only information explicitly stated or strongly implied in the notes — never invent, infer, or hallucinate. An empty string is always better than invented content.`;
 
 /// Extract profile enrichment from a company's recent meetings. Ephemeral —
 /// nothing is stored; the operator reviews and applies selected fields. Returns

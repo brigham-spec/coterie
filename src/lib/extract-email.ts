@@ -96,7 +96,7 @@ export function buildEmailPrompt(
   thread: string,
 ): string {
   const contacts = context.contactNames.filter(Boolean).slice(0, 8).join(", ");
-  return `Read this email thread for the member profile of ${context.orgName} and extract structured CRM intelligence.
+  return `Read this email thread for the member profile of ${context.orgName} and extract structured relationship intelligence.
 
 Known contacts at this member: ${contacts || "(none on file)"}
 
@@ -109,7 +109,7 @@ EMAIL THREAD:
 ${thread.slice(0, 6000)}`;
 }
 
-const SYSTEM_PROMPT = `You analyse a pasted email thread for a CRM. Return ONLY a single JSON object with the requested keys. Extract only information explicitly present in the thread — never invent, infer, or hallucinate. An empty string is always better than invented content.`;
+const SYSTEM_PROMPT = `You analyse a pasted email thread for a relationship network. Return ONLY a single JSON object with the requested keys. Extract only information explicitly present in the thread — never invent, infer, or hallucinate. An empty string is always better than invented content.`;
 
 /// Extract structured intelligence from a pasted email thread. Ephemeral —
 /// nothing is stored; the operator reviews and saves. Returns null when the model

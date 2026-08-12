@@ -9,7 +9,7 @@ import type { GuestBrief as GuestBriefType } from "@/lib/event-brief";
 
 // Guest-brief panel (slice 11.7) on the event detail page. A client shell over the
 // generateBrief server action, so the Anthropic key never crosses to the browser.
-// It briefs the attending guests (Confirmed / Attended) who have a CRM profile —
+// It briefs the attending guests (Confirmed / Attended) who have a member profile —
 // the host's crib sheet for who's in the room. Results are ephemeral: re-run on
 // demand; nothing is stored.
 

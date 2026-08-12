@@ -2110,7 +2110,7 @@ export async function synthesizePartner(
 
 // ── P6b: Their Network — key relationships (strategic_partner companies only) ─
 // The key external contacts a partner can connect the network with. Flat text
-// sub-records of the owning partner, each optionally linked to a CRM company (or
+// sub-records of the owning partner, each optionally linked to a network company (or
 // promoted into one as a fresh prospect). Every write re-loads the parent partner
 // (create) or the relationship itself (update/delete/link) inside withOrg — a
 // foreign id resolves null under RLS and the write is refused.
@@ -2207,7 +2207,7 @@ export async function deleteKeyRelationship(formData: FormData): Promise<void> {
   revalidateKeyRel(companyId);
 }
 
-// Link a relationship to an existing CRM company. Both the relationship and the
+// Link a relationship to an existing network company. Both the relationship and the
 // target company are re-verified inside withOrg, so a foreign id on either side
 // resolves null under RLS and the link is refused (same-org enforced). A blank
 // linkedCompanyId clears the link.
@@ -2247,8 +2247,8 @@ export async function linkKeyRelationship(formData: FormData): Promise<void> {
   revalidateKeyRel(companyId);
 }
 
-// Promote a relationship into the CRM as a fresh prospect company (+ primary
-// contact), then link it back. Mirrors the prototype's "+ Add to CRM". The new
+// Promote a relationship into the network as a fresh prospect company (+ primary
+// contact), then link it back. Mirrors the prototype's "+ Add to network". The new
 // company's name is the contact's org (falling back to their own name); the
 // person becomes the primary contact. All inside one withOrg tx.
 export async function addRelationshipAsProspect(

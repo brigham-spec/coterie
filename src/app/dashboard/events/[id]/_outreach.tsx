@@ -14,7 +14,7 @@ import {
 // Outreach batch panel (Events audit — ported from the prototype's
 // renderOutreachDrafts). A client shell over the draftOutreach / markOutreachSent
 // server actions, so the Anthropic key never crosses to the browser. It drafts a
-// personal invitation email for every invited CRM guest — one at a time or all at
+// personal invitation email for every invited network guest — one at a time or all at
 // once — and tracks each guest through not-started → draft ready → sent. Drafts
 // persist on the invitee (so a batch survives a reload); refinement chips redraft
 // a finished draft from a different angle. Guests can be edited before sending.

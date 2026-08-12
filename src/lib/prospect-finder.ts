@@ -6,7 +6,7 @@ import { extractJsonArray } from "@/lib/json-extract";
 
 // Prospect finder engine (slice 11.6, ported from the prototype's
 // fetchProspectTargets). Unlike Network Search — which searches the tenant's OWN
-// companies — this discovers NEW organisations OUTSIDE the CRM using Claude's
+// companies — this discovers NEW organisations OUTSIDE the network using Claude's
 // web_search tool, then scores each as a membership prospect. Two modes:
 //   • recommendations — analyse the network's gaps (missing industries, unmet
 //     "looking for" needs, services active projects lack, underserved counties)

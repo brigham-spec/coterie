@@ -67,7 +67,7 @@ export type EventIdeasInput = {
 // model's output.
 export type IdeaGuest = { companyId: string; name: string; why: string };
 
-// A suggested guest NOT in the CRM (an external anchor or a prospect to recruit).
+// A suggested guest NOT in the network (an external anchor or a prospect to recruit).
 export type IdeaExternalGuest = { org: string; why: string; isProspect: boolean };
 
 // A proposed event. `typeValue` is coerced to the canonical event vocabulary
@@ -313,7 +313,7 @@ ${typeList}
 RULES:
 1. Every event must have a "whyNow" — a specific, datable trigger from the meeting data, project activity, or a network gap.
 2. Include at least one "never invited" member in every event where they fit.
-3. Tier 1 = essential attendees (the event fails without them). Tier 2 = strong additions. Tier 3 = external orgs / prospects not in the CRM.
+3. Tier 1 = essential attendees (the event fails without them). Tier 2 = strong additions. Tier 3 = external orgs / prospects not in the network.
 4. Size events appropriately — intimate gatherings are often more valuable than large ones.
 5. At least one event should be a working session with a concrete outcome, not just networking.
 6. Suggest a specific venue — ideally a member's own space.

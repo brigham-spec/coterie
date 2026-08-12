@@ -90,7 +90,7 @@ export function parseDocumentIntel(raw: string): DocumentIntel | null {
 /// PURE: the user prompt handed alongside the document block. Gives the member's
 /// current field values as context, then asks for the exact JSON we consume.
 export function buildDocumentPrompt(context: DocumentCompanyContext): string {
-  return `Extract structured CRM intelligence from the attached document for a member profile.
+  return `Extract structured relationship intelligence from the attached document for a member profile.
 
 Member Organization: ${context.orgName}
 ${context.contactName ? `Primary Contact: ${context.contactName}\n` : ""}Document: ${context.fileName}
@@ -107,7 +107,7 @@ Return ONLY a valid JSON object (no markdown, no prose):
 {"docSummary":"1-2 sentence plain-English description of what this document is","lookingFor":"what this org needs — capital amount, type, timeline. Specific. \"\" if not found","canOffer":"what this org offers — returns, asset class, track record. Specific. \"\" if not found","counties":"geographic focus areas named in the document. \"\" if not found","dealSize":"typical deal or check size. \"\" if not found","agencyContacts":"government or agency relationships mentioned. \"\" if not found","notesAppend":"2-3 sentence summary of the document and its key terms to append to notes. \"\" if nothing significant"}`;
 }
 
-const SYSTEM_PROMPT = `You are a CRM intelligence analyst reading a member's document (offering memo, pitch deck, or investment summary). Return ONLY a single JSON object with the requested keys. Extract only information explicitly present in the document — never invent, infer, or hallucinate. An empty string is always better than invented content.`;
+const SYSTEM_PROMPT = `You are a relationship intelligence analyst reading a member's document (offering memo, pitch deck, or investment summary). Return ONLY a single JSON object with the requested keys. Extract only information explicitly present in the document — never invent, infer, or hallucinate. An empty string is always better than invented content.`;
 
 /// Extract profile intelligence from a base64-encoded PDF. Ephemeral — nothing
 /// is stored; the operator reviews and applies selected fields. Returns null when

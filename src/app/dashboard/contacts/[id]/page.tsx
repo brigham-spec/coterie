@@ -18,7 +18,7 @@ import {
 
 import { ContactDetails } from "./_details";
 
-// Contact detail — a person's home in the CRM. Surfaces their own fields (title,
+// Contact detail — a person's home in the network. Surfaces their own fields (title,
 // email, phone, LinkedIn, tags, notes) and the relations that make a contact
 // worth a click-through: introductions they're a party to, meetings they've
 // attended, and action items they own ("they owe"). Read withOrg-scoped; a

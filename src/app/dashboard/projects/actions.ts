@@ -313,7 +313,7 @@ export async function deleteProjectDeliverable(
 // ── Professional team ───────────────────────────────────────────────────────
 // A team member is an individual professional on a project (architect, attorney,
 // lender, GC, …), captured as free text so off-network professionals can be
-// tracked, with an OPTIONAL link to a CRM company. Every write re-verifies the
+// tracked, with an OPTIONAL link to a network company. Every write re-verifies the
 // parent project inside withOrg (RLS), so a foreign projectId is refused; the
 // company link, when set, is likewise verified in-tenant (company_id is a plain
 // FK whose referential check bypasses tenant scoping).
@@ -330,7 +330,7 @@ function readTeamFields(formData: FormData): {
   };
 }
 
-// Resolve an optional CRM company link (a team member's firm, a project's
+// Resolve an optional network company link (a team member's firm, a project's
 // developer), verifying it belongs to this tenant. Blank clears to null. Runs
 // inside the caller's withOrg tx (RLS-scoped, so a foreign id resolves null).
 async function resolveLinkedCompany(
@@ -735,7 +735,7 @@ export async function suggestFundingSources(
 
 // ── Project profile details (projects-module parity) ─────────────────────────
 // The editable profile facts a project accrues after creation: its sector
-// (industry), the developer/lead — either a CRM company (developer_member_id) OR
+// (industry), the developer/lead — either a network company (developer_member_id) OR
 // free-text (prospect_lead) — captured on the detail page. RLS scopes the update
 // to this org; the developer link is re-verified in-tenant.
 function readIntFromNumber(raw: string): number {

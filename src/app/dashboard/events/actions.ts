@@ -188,7 +188,7 @@ export async function markAllAttended(formData: FormData): Promise<void> {
 }
 
 // Log a member who joined as a direct result of an event (prototype draft.conversions,
-// Coterie.html:8361). A CRM company (companyId, re-checked inside withOrg → null if
+// Coterie.html:8361). A network company (companyId, re-checked inside withOrg → null if
 // foreign) snapshots its name + defaults ARR to its annualValue; an ad-hoc name is
 // also allowed. ARR (dollars) feeds the event's Projected ROI.
 export async function addConversion(formData: FormData): Promise<void> {
@@ -278,7 +278,7 @@ export async function updateEventStage(formData: FormData): Promise<void> {
   revalidatePath(`/dashboard/events/${eventId}`);
 }
 
-// Add a guest to an event — either a CRM contact (contactId) or an external guest
+// Add a guest to an event — either a network contact (contactId) or an external guest
 // (externalName). The event's composite FK keeps the invitee in the event's org;
 // a supplied contactId is re-checked inside withOrg (RLS-scoped → null if foreign)
 // so a cross-org contact can't be attached.
@@ -429,7 +429,7 @@ export async function generateBrief(
 
   if (data === null) return { status: "error", message: "Event not found." };
 
-  // Only brief guests who'll be in the room. External guests have no CRM profile to
+  // Only brief guests who'll be in the room. External guests have no member profile to
   // ground a bio in, so they're skipped (the prototype briefs members only).
   const guests: GuestContext[] = data.invitees
     .filter((i) => isAttending(i.rsvp) && i.contact !== null)
@@ -510,7 +510,7 @@ export async function suggestEvents(
         lookingFor: true,
       },
     });
-    // Every company that has ever appeared on a guest list (via a CRM contact) —
+    // Every company that has ever appeared on a guest list (via a network contact) —
     // its complement is the "never invited" set the engine prioritises.
     const invited = await tx.eventInvitee.findMany({
       where: { contactId: { not: null } },
@@ -642,7 +642,7 @@ export async function suggestGuestList(
         contact: { select: { name: true } },
       },
     });
-    // Companies that have appeared on ANY event guest list (via a CRM contact) —
+    // Companies that have appeared on ANY event guest list (via a network contact) —
     // the complement flags candidates whose company has never been invited. Ask
     // the DB for distinct company ids so this doesn't fan out over every invitee
     // row across every event.
@@ -798,7 +798,7 @@ export async function findEventTargets(
     });
     if (!event) return null;
 
-    // The companies already represented on the guest list (via a CRM contact).
+    // The companies already represented on the guest list (via a network contact).
     const invitees = await tx.eventInvitee.findMany({
       where: { eventId, contactId: { not: null } },
       select: { contact: { select: { companyId: true } } },
@@ -810,7 +810,7 @@ export async function findEventTargets(
           .filter((v): v is string => v != null),
       ),
     ];
-    // No CRM guests yet → no graph to walk.
+    // No network guests yet → no graph to walk.
     if (invitedCompanyIds.length === 0)
       return { invited: [], candidates: [], intros: [], projectLinks: [] };
 
@@ -906,10 +906,10 @@ export async function findEventTargets(
 
 // Event outreach email draft (gap-audit cluster D, ported from the prototype's
 // generateInviteEmail / generateOutreachDraft). In one withOrg read it loads the
-// event, the one invited CRM guest with their company context and recent meeting
+// event, the one invited network guest with their company context and recent meeting
 // topics, and the names of other guests already attending; the engine then drafts
 // a personal invitation email from the host to that guest. External guests have no
-// CRM profile to ground a draft in, so they're refused. Unlike the ephemeral AI
+// member profile to ground a draft in, so they're refused. Unlike the ephemeral AI
 // panels this one PERSISTS the draft on the invitee (outreach_draft) and moves it
 // to the "draft" stage — so a batch survives a reload — while leaving an
 // already-"sent" guest sent. An optional refinement angle steers a redraft.
@@ -962,7 +962,7 @@ export async function draftOutreach(
         },
       },
     });
-    // Guest must belong to this event and be a CRM contact (external guests have
+    // Guest must belong to this event and be a network contact (external guests have
     // no profile to ground a personal draft in).
     if (!invitee || invitee.eventId !== eventId || invitee.contact === null) {
       return { event, invitee: null, topics: [] as string[], others: [] as string[] };

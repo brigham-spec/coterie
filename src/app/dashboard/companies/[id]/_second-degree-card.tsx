@@ -11,9 +11,10 @@ import {
 } from "../../new-connections-actions";
 
 // Second-Degree Contacts (Members item 10) — the profile-scoped port of the
-// prototype's "+ Add to CRM" chips. Lists the Fireflies attendees who appeared in
-// one of this company's meetings but match no CRM contact (the loader intersects
-// each unmatched row's meetingIds with this company's meetings). "Add to CRM"
+// prototype's "+ Add to network" chips. Lists the Fireflies attendees who appeared
+// in one of this company's meetings but match no network contact (the loader
+// intersects each unmatched row's meetingIds with this company's meetings). "Add to
+// network"
 // attaches the person as a contact on THIS company; the × dismisses them for good.
 // Both reuse the dashboard's New Connections actions, keyed by unmatched-row id.
 // After either effect we refresh the route so the handled chip drops out and a
