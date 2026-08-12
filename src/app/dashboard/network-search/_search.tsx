@@ -13,9 +13,9 @@ import {
 import { addCommitment } from "../companies/[id]/actions";
 
 // Network Search UI (slice 11.5). A client shell over the searchNetwork server
-// action (so the Anthropic key stays server-side). The textarea holds the plain-
-// English query; example chips dispatch the action directly with a preset query
-// (formAction(FormData) — no controlled-input round-trip). Results are ephemeral,
+// action (so the Anthropic key stays server-side). The textarea is controlled by
+// `query` so an example chip both fills the box (making the search legible/
+// editable) and dispatches the action with that query. Results are ephemeral,
 // re-rendered each search.
 
 const initialState: NetworkSearchState = { status: "idle" };
@@ -39,10 +39,12 @@ export function NetworkSearch({
     searchNetwork,
     initialState,
   );
+  const [query, setQuery] = useState(initialQuery);
 
-  function runExample(query: string) {
+  function runExample(example: string) {
+    setQuery(example);
     const fd = new FormData();
-    fd.set("query", query);
+    fd.set("query", example);
     formAction(fd);
   }
 
@@ -54,7 +56,8 @@ export function NetworkSearch({
             name="query"
             rows={2}
             required
-            defaultValue={initialQuery}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
             disabled={isPending}
             onKeyDown={(e) => {
               // ⌘↵ / Ctrl+↵ submits without leaving the textarea (a plain Enter

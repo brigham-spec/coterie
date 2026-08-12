@@ -392,6 +392,20 @@ describe("updateCompany auto-tier override", () => {
     expect(company!.tier).toBe("Director");
     expect(company!.tierLocked).toBe(false);
   });
+
+  test("keeps the existing tier when annual value clears no ranked threshold", async () => {
+    // Seed a standing (Director) via a lock, then clear the lock and save with an
+    // annual value below every ranked threshold (Advisory ≥1). Auto-assignment
+    // returns null there; the save must preserve the existing tier rather than
+    // blanking it, so an unrelated field edit can't erase a member's standing.
+    await updateCompany(
+      tierFd({ annualValue: "25000", tier: "Director", tierLocked: "on" }),
+    );
+    await updateCompany(tierFd({ annualValue: "0", tier: "" }));
+    const company = await readTier();
+    expect(company!.tier).toBe("Director");
+    expect(company!.tierLocked).toBe(false);
+  });
 });
 
 describe("updateCompany owner reassignment", () => {

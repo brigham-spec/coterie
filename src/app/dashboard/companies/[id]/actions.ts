@@ -1567,6 +1567,13 @@ export async function updateCompany(formData: FormData): Promise<void> {
     });
     if (current == null) return false;
 
+    // Auto-assignment returns null when no ranked tier qualifies — every tier is
+    // unranked, or annualValue clears none of the thresholds. Keep the member's
+    // existing tier in that case rather than blanking it, so an unrelated save
+    // (or an org that hasn't set thresholds yet) can't erase a hand-set standing.
+    const resolvedTier =
+      autoTierEligible && tier === null ? current.tier : tier;
+
     // A hand-picked tier must be configured, or the row's existing value
     // (unchanged) — a since-removed tier survives an unrelated save. Auto-assigned
     // tiers come straight from the configured defs, so they need no check.
@@ -1588,7 +1595,10 @@ export async function updateCompany(formData: FormData): Promise<void> {
         throw new Error("referrer is not a company in this organization");
     }
 
-    await tx.company.update({ where: { id: companyId }, data });
+    await tx.company.update({
+      where: { id: companyId },
+      data: { ...data, tier: resolvedTier },
+    });
 
     if (current.status !== status) {
       await tx.activity.create({

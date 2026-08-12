@@ -44,6 +44,12 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
+// The id column is @db.Uuid, so a non-UUID segment (e.g. /invoices/schedule, or
+// any stale/guessed URL) makes findUnique throw a malformed-uuid error before the
+// null check can run — surfacing as a 500. Treat a non-UUID as simply not found.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default async function InvoiceDetailPage({
   params,
 }: {
@@ -51,6 +57,7 @@ export default async function InvoiceDetailPage({
 }) {
   await requireModule("invoices");
   const { id } = await params;
+  if (!UUID_RE.test(id)) notFound();
   const ctx = await requireOrgContext();
 
   const invoice = await withOrg(ctx.orgId, (tx) =>
