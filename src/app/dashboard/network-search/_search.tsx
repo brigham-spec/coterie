@@ -102,15 +102,22 @@ export function NetworkSearch({
       </Card>
 
       {isPending ? (
-        <p className="text-[11px] text-ink-3 italic">Searching the network…</p>
+        <div className="mt-4 flex items-center gap-2.5 rounded-md border border-line bg-surface px-3.5 py-3 shadow-card">
+          <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-line-2 border-t-gold" />
+          <span className="text-[11px] text-ink-2">
+            Searching the network… this can take a few seconds.
+          </span>
+        </div>
       ) : state.status === "error" ? (
-        <p className="text-[11px] text-red-ink">{state.message}</p>
+        <p className="mt-4 text-[11px] text-red-ink">{state.message}</p>
       ) : state.status === "ok" ? (
-        <Results
-          query={state.query}
-          matches={state.matches}
-          currentUserId={currentUserId}
-        />
+        <div className="mt-4">
+          <Results
+            query={state.query}
+            matches={state.matches}
+            currentUserId={currentUserId}
+          />
+        </div>
       ) : null}
     </div>
   );
