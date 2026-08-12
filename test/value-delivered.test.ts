@@ -2,7 +2,12 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildValueReport,
+  deriveValueEntries,
+  roiMultiplier,
   summarizeValueDelivered,
+  type DerivedIntro,
+  type DerivedEvent,
+  type DerivedCollaboration,
   type ValueDeliveredEntry,
 } from "@/lib/value-delivered";
 
@@ -107,5 +112,138 @@ describe("buildValueReport", () => {
     const newer = entry({ kind: "service", occurredAt: new Date("2026-05-01") });
     const r = buildValueReport([older, newer]);
     expect(r.sections[0].entries.map((e) => e.id)).toEqual([newer.id, older.id]);
+  });
+});
+
+function intro(over: Partial<DerivedIntro>): DerivedIntro {
+  return {
+    introId: Math.random().toString(36).slice(2),
+    status: "made",
+    headline: "",
+    outcome: null,
+    madeOn: new Date("2026-02-01"),
+    createdAt: new Date("2026-01-15"),
+    partyAName: "Alice",
+    partyBName: "Bob",
+    counterpartCompany: "Acme Capital",
+    ...over,
+  };
+}
+
+function evt(over: Partial<DerivedEvent>): DerivedEvent {
+  return {
+    inviteeId: Math.random().toString(36).slice(2),
+    eventName: "Spring Roundtable",
+    rsvp: "attended",
+    occurredAt: new Date("2026-03-01"),
+    ...over,
+  };
+}
+
+function collab(over: Partial<DerivedCollaboration>): DerivedCollaboration {
+  return {
+    projectId: Math.random().toString(36).slice(2),
+    projectName: "Riverside Mixed-Use",
+    role: "equity_partner",
+    occurredAt: new Date("2026-04-01"),
+    ...over,
+  };
+}
+
+describe("deriveValueEntries", () => {
+  const empty = { intros: [], events: [], collaborations: [], ledgerIntroIds: new Set<string>() };
+
+  test("no activity derives no entries", () => {
+    expect(deriveValueEntries(empty)).toEqual([]);
+  });
+
+  test("realized intros derive non-monetary introduction entries", () => {
+    const [e] = deriveValueEntries({
+      ...empty,
+      intros: [intro({ introId: "x1", headline: "Warm intro to Acme" })],
+    });
+    expect(e).toMatchObject({
+      id: "derived-intro-x1",
+      kind: "introduction",
+      amount: null,
+      summary: "Warm intro to Acme",
+      introLabel: "Alice \u2194 Bob",
+      occurredAt: new Date("2026-02-01"),
+    });
+  });
+
+  test("intros below 'made' status are excluded", () => {
+    const out = deriveValueEntries({
+      ...empty,
+      intros: [intro({ status: "suggested" }), intro({ status: "drafted" })],
+    });
+    expect(out).toEqual([]);
+  });
+
+  test("intros already in the manual ledger are suppressed (no double count)", () => {
+    const out = deriveValueEntries({
+      ...empty,
+      intros: [intro({ introId: "dup" })],
+      ledgerIntroIds: new Set(["dup"]),
+    });
+    expect(out).toEqual([]);
+  });
+
+  test("falls back to counterpart company when the intro has no headline", () => {
+    const [e] = deriveValueEntries({
+      ...empty,
+      intros: [intro({ headline: "", counterpartCompany: "Acme Capital" })],
+    });
+    expect(e.summary).toBe("Introduced to Acme Capital");
+  });
+
+  test("intro with no made date falls back to createdAt", () => {
+    const [e] = deriveValueEntries({
+      ...empty,
+      intros: [intro({ madeOn: null, createdAt: new Date("2026-01-10") })],
+    });
+    expect(e.occurredAt).toEqual(new Date("2026-01-10"));
+  });
+
+  test("attended and confirmed events derive event entries; others are excluded", () => {
+    const out = deriveValueEntries({
+      ...empty,
+      events: [
+        evt({ inviteeId: "a", rsvp: "attended", eventName: "Gala" }),
+        evt({ inviteeId: "c", rsvp: "confirmed", eventName: "Panel" }),
+        evt({ inviteeId: "d", rsvp: "invited" }),
+        evt({ inviteeId: "e", rsvp: "no_show" }),
+      ],
+    });
+    expect(out.map((e) => e.summary)).toEqual(["Attended Gala", "Confirmed for Panel"]);
+    expect(out.every((e) => e.kind === "event" && e.amount === null)).toBe(true);
+  });
+
+  test("project links derive non-monetary collaboration entries under 'other'", () => {
+    const [e] = deriveValueEntries({
+      ...empty,
+      collaborations: [collab({ projectId: "p1", projectName: "Riverside", role: "equity_partner" })],
+    });
+    expect(e).toMatchObject({
+      id: "derived-collab-p1",
+      kind: "other",
+      amount: null,
+      summary: "Collaborating on Riverside",
+      outcome: "Role: equity partner",
+    });
+  });
+});
+
+describe("roiMultiplier", () => {
+  test("divides realized value by annual dues", () => {
+    expect(roiMultiplier(150000, 50000)).toBe(3);
+  });
+
+  test("is null when there is no realized dollar value", () => {
+    expect(roiMultiplier(0, 50000)).toBeNull();
+  });
+
+  test("is null when there are no dues", () => {
+    expect(roiMultiplier(150000, 0)).toBeNull();
   });
 });

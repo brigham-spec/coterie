@@ -6,6 +6,9 @@
 // (a warm intro with no attached dollar figure), so those count toward the entry
 // tally but contribute 0 to the dollar total.
 
+import { introStageRank } from "@/lib/intro-stages";
+import { isAttending, RSVP_ATTENDED } from "@/lib/event-stages";
+
 export type ValueDeliveredEntry = {
   id: string;
   kind: string;
@@ -83,6 +86,130 @@ export type ValueReport = {
   /// Entries grouped by kind, richest kind first (same order as summary.byKind).
   sections: ValueReportSection[];
 };
+
+// ── Derived value (Phase 1, read-only) ──────────────────────────────────────
+// The manual ValueDelivered ledger is the explicit, dollar-tagged record staff
+// keep. But real membership value also shows up implicitly across the network:
+// introductions the member was a party to, events they attended, projects they
+// collaborated on. This layer DERIVES those into the same ValueDeliveredEntry
+// shape so the report reflects the full picture — never a bare "$0" when the
+// network has clearly been working for the member. Derived entries carry no
+// dollar figure (amount = null): they count as wins and chart by volume, but we
+// never invent a monetary value that wasn't recorded.
+
+/// An introduction only counts as delivered value once it has actually been
+/// made — earlier stages (suggested / drafted) are still pipeline, not a
+/// realized win. Reuses the canonical lifecycle rank so this agrees with the
+/// pipeline's "made-onward" test (introductions/page.tsx) and tolerates legacy
+/// values (which rank last, i.e. beyond made).
+export function isRealizedIntroStatus(status: string): boolean {
+  return introStageRank(status) >= introStageRank("made");
+}
+
+export type DerivedIntro = {
+  introId: string;
+  status: string;
+  headline: string;
+  outcome: string | null;
+  madeOn: Date | null;
+  createdAt: Date;
+  partyAName: string;
+  partyBName: string;
+  /// The other party's company (the member was introduced TO), when known.
+  counterpartCompany: string | null;
+};
+
+export type DerivedEvent = {
+  inviteeId: string;
+  eventName: string;
+  rsvp: string;
+  /// event.date, or the invitee's createdAt when the event has no date.
+  occurredAt: Date;
+};
+
+export type DerivedCollaboration = {
+  projectId: string;
+  projectName: string;
+  /// Team role on the project (snake_case vocabulary).
+  role: string;
+  occurredAt: Date;
+};
+
+export type DerivedInputs = {
+  intros: DerivedIntro[];
+  events: DerivedEvent[];
+  collaborations: DerivedCollaboration[];
+  /// introductionIds already represented by a manual ledger row — suppressed
+  /// from the derived layer so an intro is never counted twice (manual wins).
+  ledgerIntroIds: Set<string>;
+};
+
+/// Shape a member's network activity into derived value entries (Phase 1,
+/// read-only). Only realized activity counts (intro made+, event attended/
+/// confirmed); intros already in the manual ledger are dropped so nothing is
+/// double-counted. All derived entries are non-monetary (amount = null).
+export function deriveValueEntries(input: DerivedInputs): ValueDeliveredEntry[] {
+  const entries: ValueDeliveredEntry[] = [];
+
+  for (const i of input.intros) {
+    if (!isRealizedIntroStatus(i.status)) continue;
+    if (input.ledgerIntroIds.has(i.introId)) continue;
+    const summary =
+      i.headline.trim() ||
+      (i.counterpartCompany
+        ? `Introduced to ${i.counterpartCompany}`
+        : "Introduction made");
+    entries.push({
+      id: `derived-intro-${i.introId}`,
+      kind: "introduction",
+      amount: null,
+      summary,
+      outcome: i.outcome ?? "",
+      occurredAt: i.madeOn ?? i.createdAt,
+      introLabel: `${i.partyAName} \u2194 ${i.partyBName}`,
+    });
+  }
+
+  for (const e of input.events) {
+    if (!isAttending(e.rsvp)) continue;
+    const verb = e.rsvp === RSVP_ATTENDED ? "Attended" : "Confirmed for";
+    entries.push({
+      id: `derived-event-${e.inviteeId}`,
+      kind: "event",
+      amount: null,
+      summary: `${verb} ${e.eventName}`,
+      outcome: "",
+      occurredAt: e.occurredAt,
+      introLabel: null,
+    });
+  }
+
+  for (const c of input.collaborations) {
+    entries.push({
+      id: `derived-collab-${c.projectId}`,
+      kind: "other",
+      amount: null,
+      summary: `Collaborating on ${c.projectName}`,
+      outcome: c.role ? `Role: ${c.role.replace(/_/g, " ")}` : "",
+      occurredAt: c.occurredAt,
+      introLabel: null,
+    });
+  }
+
+  return entries;
+}
+
+/// The ROI story: how many times over the realized dollar value returned the
+/// member's annual dues. Null when either side is zero — no dues, or no
+/// dollar-tagged value yet, means no honest multiplier to show.
+export function roiMultiplier(
+  realizedValue: number,
+  annualValue: number,
+): number | null {
+  return realizedValue > 0 && annualValue > 0
+    ? realizedValue / annualValue
+    : null;
+}
 
 /// Structure a company's value-delivered entries into the shareable report: the
 /// same summary totals plus per-kind sections (richest first) and the covered

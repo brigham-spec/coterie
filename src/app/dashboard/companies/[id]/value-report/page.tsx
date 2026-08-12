@@ -4,7 +4,19 @@ import { notFound } from "next/navigation";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { VALUE_KIND_DEFS } from "@/lib/value-kinds";
-import { buildValueReport } from "@/lib/value-delivered";
+import { PRE_INTRO_STAGES } from "@/lib/intro-stages";
+import { RSVP_ATTENDED, RSVP_CONFIRMED } from "@/lib/event-stages";
+import {
+  buildValueReport,
+  deriveValueEntries,
+  roiMultiplier,
+} from "@/lib/value-delivered";
+
+// Introductions count as delivered value once they're past the pre-intro
+// (suggested / drafted) stages — i.e. actually made. Filtering by notIn the
+// pre-intro values keeps made-onward (and any legacy status) without listing
+// each lifecycle stage; isRealizedIntroStatus re-checks defensively.
+const PRE_INTRO_VALUES = PRE_INTRO_STAGES.map((s) => s.value);
 
 import { PrintButton } from "./_print-button";
 
@@ -46,7 +58,13 @@ export default async function ValueReportPage({
   const data = await withOrg(ctx.orgId, async (tx) => {
     const company = await tx.company.findUnique({
       where: { id },
-      select: { id: true, name: true, industry: true },
+      select: {
+        id: true,
+        name: true,
+        industry: true,
+        annualValue: true,
+        memberSince: true,
+      },
     });
     if (company == null) return null;
 
@@ -60,6 +78,7 @@ export default async function ValueReportPage({
         summary: true,
         outcome: true,
         occurredAt: true,
+        introductionId: true,
         introduction: {
           select: {
             partyA: { select: { name: true } },
@@ -69,24 +88,109 @@ export default async function ValueReportPage({
       },
     });
 
-    return { company, entries };
+    // Derived value layer: realized network activity the member was part of,
+    // shaped into the same entry model as the manual ledger.
+    const intros = await tx.introduction.findMany({
+      where: {
+        status: { notIn: PRE_INTRO_VALUES },
+        OR: [{ partyA: { companyId: id } }, { partyB: { companyId: id } }],
+      },
+      select: {
+        id: true,
+        status: true,
+        headline: true,
+        outcome: true,
+        madeOn: true,
+        createdAt: true,
+        partyA: {
+          select: { name: true, companyId: true, company: { select: { name: true } } },
+        },
+        partyB: {
+          select: { name: true, companyId: true, company: { select: { name: true } } },
+        },
+      },
+    });
+
+    const invitees = await tx.eventInvitee.findMany({
+      where: {
+        rsvp: { in: [RSVP_CONFIRMED, RSVP_ATTENDED] },
+        contact: { companyId: id },
+      },
+      select: {
+        id: true,
+        rsvp: true,
+        event: { select: { name: true, date: true, createdAt: true } },
+      },
+    });
+
+    const links = await tx.projectLink.findMany({
+      where: { companyId: id },
+      select: {
+        projectId: true,
+        role: true,
+        createdAt: true,
+        project: { select: { name: true } },
+      },
+    });
+
+    return { company, entries, intros, invitees, links };
   });
 
   if (data == null) notFound();
 
-  const report = buildValueReport(
-    data.entries.map((v) => ({
-      id: v.id,
-      kind: v.kind,
-      amount: v.amount == null ? null : Number(v.amount),
-      summary: v.summary,
-      outcome: v.outcome,
-      occurredAt: v.occurredAt,
-      introLabel: v.introduction
-        ? `${v.introduction.partyA.name} \u2194 ${v.introduction.partyB.name}`
-        : null,
+  const manualEntries = data.entries.map((v) => ({
+    id: v.id,
+    kind: v.kind,
+    amount: v.amount == null ? null : Number(v.amount),
+    summary: v.summary,
+    outcome: v.outcome,
+    occurredAt: v.occurredAt,
+    introLabel: v.introduction
+      ? `${v.introduction.partyA.name} \u2194 ${v.introduction.partyB.name}`
+      : null,
+  }));
+
+  const derivedEntries = deriveValueEntries({
+    intros: data.intros.map((i) => {
+      // The other party — the company the member was introduced TO. Falls back
+      // to null for a same-company intro (both parties are this member), so the
+      // summary never reads "Introduced to {member's own name}".
+      const other = i.partyA.companyId === id ? i.partyB : i.partyA;
+      return {
+        introId: i.id,
+        status: i.status,
+        headline: i.headline,
+        outcome: i.outcome,
+        madeOn: i.madeOn,
+        createdAt: i.createdAt,
+        partyAName: i.partyA.name,
+        partyBName: i.partyB.name,
+        counterpartCompany: other.companyId === id ? null : (other.company?.name ?? null),
+      };
+    }),
+    events: data.invitees.map((iv) => ({
+      inviteeId: iv.id,
+      eventName: iv.event.name,
+      rsvp: iv.rsvp,
+      occurredAt: iv.event.date ?? iv.event.createdAt,
     })),
-  );
+    collaborations: data.links.map((l) => ({
+      projectId: l.projectId,
+      projectName: l.project.name,
+      role: l.role,
+      occurredAt: l.createdAt,
+    })),
+    ledgerIntroIds: new Set(
+      data.entries
+        .map((v) => v.introductionId)
+        .filter((x): x is string => x != null),
+    ),
+  });
+
+  const report = buildValueReport([...manualEntries, ...derivedEntries]);
+
+  const annualValue = Number(data.company.annualValue);
+  const roi = roiMultiplier(report.summary.totalAmount, annualValue);
 
   const period =
     report.firstAt && report.lastAt
@@ -125,30 +229,51 @@ export default async function ValueReportPage({
           </h1>
           <div className="mt-1 text-sm text-ink-3">
             {data.company.industry ? `${data.company.industry} \u00b7 ` : ""}
+            {data.company.memberSince
+              ? `Member since ${data.company.memberSince} \u00b7 `
+              : ""}
             {period ?? "Membership summary"}
           </div>
         </header>
 
         {report.summary.entryCount === 0 ? (
           <p className="py-10 text-sm text-ink-3">
-            No value has been logged for this member yet.
+            No network activity recorded for this member yet.
           </p>
         ) : (
           <>
             <section className="border-b border-line py-6">
               <div className="flex items-baseline gap-3">
                 <span className="font-serif text-4xl text-ink">
-                  {currency.format(report.summary.totalAmount)}
+                  {useAmount
+                    ? currency.format(report.summary.totalAmount)
+                    : report.summary.entryCount}
                 </span>
                 <span className="text-sm text-ink-2">
-                  delivered across {report.summary.entryCount}{" "}
-                  {report.summary.entryCount === 1 ? "win" : "wins"}
-                  {report.summary.monetaryCount > 0 &&
-                  report.summary.monetaryCount < report.summary.entryCount
-                    ? ` (${report.summary.monetaryCount} with a dollar figure)`
-                    : ""}
+                  {useAmount ? (
+                    <>
+                      delivered across {report.summary.entryCount}{" "}
+                      {report.summary.entryCount === 1 ? "win" : "wins"}
+                      {report.summary.monetaryCount > 0 &&
+                      report.summary.monetaryCount < report.summary.entryCount
+                        ? ` (${report.summary.monetaryCount} with a dollar figure)`
+                        : ""}
+                    </>
+                  ) : (
+                    <>
+                      {report.summary.entryCount === 1 ? "win" : "wins"} delivered
+                      through the network
+                    </>
+                  )}
                 </span>
               </div>
+
+              {roi != null ? (
+                <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-gold-line bg-gold-bg px-3 py-1 text-[11px] font-medium text-gold-ink">
+                  <span className="font-serif text-sm">{roi.toFixed(1)}&times;</span>
+                  return on {currency.format(annualValue)} in membership
+                </div>
+              ) : null}
 
               <div className="mt-5 flex flex-col gap-2">
                 {report.sections.map((s) => {
