@@ -129,7 +129,11 @@ export async function generateNetworkMatches(
 
   const client = new Anthropic();
   const response = await client.messages.create({
-    model: "claude-opus-4-6",
+    // Haiku, not Opus: this is a grounded retrieval/ranking pass over the whole
+    // network (150+ profiles). Opus took ~40s on a full tenant — past the Vercel
+    // function limit, so the search timed out and appeared broken. Haiku returns
+    // comparable grounded matches in ~15s (same model the news/enrich engines use).
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 1536,
     system: SYSTEM_PROMPT,
     messages: [

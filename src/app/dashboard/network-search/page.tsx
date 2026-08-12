@@ -5,6 +5,10 @@ import { PageTitle } from "@/components/ui";
 
 import { NetworkSearch } from "./_search";
 
+// The searchNetwork server action runs an AI pass over the whole tenant network;
+// give it headroom past Vercel's short default so a full-network search can finish.
+export const maxDuration = 60;
+
 // Network Search (slice 11.5) — natural-language search over the tenant's own
 // companies. The page is a thin server shell; the search itself runs in the
 // searchNetwork server action (so the Anthropic key never crosses to the browser),
