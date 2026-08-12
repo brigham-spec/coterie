@@ -28,7 +28,7 @@ import { DailyFocus } from "./_daily-focus";
 import { IntroScan } from "./_intro-scan";
 import { NewConnections } from "./_new-connections";
 import { QuickCapture } from "./_quick-capture";
-import { syncFirefliesNow } from "./meetings/actions";
+import { SyncNowButtonCompact } from "./meetings/_sync-now";
 
 // Dashboard overview (slice 11.1) — the operator's morning surface. Six KPI
 // pills over three rows of at-a-glance cards: pipeline (projects/events/cold
@@ -840,18 +840,13 @@ function SyncStatusBar({
     >
       <div className="flex items-center justify-between gap-3">
         <p className={cn("text-[11.5px]", tone.ink)}>{label}</p>
-        <form action={syncFirefliesNow}>
-          <button
-            type="submit"
-            className={cn(
-              "flex-shrink-0 rounded-md border px-2.5 py-1 text-[10px] font-semibold whitespace-nowrap transition-opacity hover:opacity-80",
-              tone.border,
-              tone.ink,
-            )}
-          >
-            Sync now
-          </button>
-        </form>
+        <SyncNowButtonCompact
+          className={cn(
+            "flex-shrink-0 rounded-md border px-2.5 py-1 text-[10px] font-semibold whitespace-nowrap transition-opacity hover:opacity-80",
+            tone.border,
+            tone.ink,
+          )}
+        />
       </div>
       {recentSync.meetingCount > 0 ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   classifySyncStatus,
   summarizeRecentSync,
+  firefliesSyncErrorMessage,
   STALE_MS,
   type RawSyncedMeeting,
 } from "@/lib/sync-status";
@@ -86,5 +87,22 @@ describe("summarizeRecentSync", () => {
       { id: "b", name: "Beta", count: 1 },
       { id: "z", name: "Zeta", count: 1 },
     ]);
+  });
+});
+
+describe("firefliesSyncErrorMessage", () => {
+  test("a rejected key (401/403) gets a specific reconnect message", () => {
+    const reconnect = "Fireflies rejected your API key. Reconnect with a valid key.";
+    expect(firefliesSyncErrorMessage(401, "Unauthorized")).toBe(reconnect);
+    expect(firefliesSyncErrorMessage(403, "Forbidden")).toBe(reconnect);
+  });
+
+  test("any other failure passes Fireflies' own message through", () => {
+    expect(firefliesSyncErrorMessage(500, "Server error")).toBe(
+      "Fireflies error: Server error",
+    );
+    expect(firefliesSyncErrorMessage(null, "GraphQL boom")).toBe(
+      "Fireflies error: GraphQL boom",
+    );
   });
 });

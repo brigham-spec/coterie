@@ -8,7 +8,13 @@ import { optionalDate } from "@/lib/form-fields";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { revalidateActionItemSurfaces } from "@/lib/revalidate";
 import { prisma } from "@/lib/prisma";
-import { storeCredential, deleteCredential } from "@/lib/integrations";
+import {
+  storeCredential,
+  deleteCredential,
+  getCredential,
+} from "@/lib/integrations";
+import { listTranscripts, FirefliesError } from "@/lib/fireflies";
+import { firefliesSyncErrorMessage } from "@/lib/sync-status";
 import { inngest } from "@/lib/inngest";
 import {
   generateActionItems,
@@ -38,14 +44,51 @@ export async function disconnectFireflies(): Promise<void> {
   revalidatePath("/dashboard/meetings");
 }
 
-export async function syncFirefliesNow(): Promise<void> {
+export type SyncNowState =
+  | { status: "idle" }
+  | { status: "started"; transcriptCount: number }
+  | { status: "error"; message: string };
+
+// "Sync now" used to enqueue the durable job and return void — the user got no
+// signal, and any failure (bad key, Fireflies down) surfaced only silently in the
+// background job. Now we do a lightweight synchronous PREFLIGHT: fetch the
+// transcript list with the stored key. That both validates the credential (so a
+// bad key produces a specific, actionable error right here) and reports how many
+// transcripts are waiting, before handing the heavy reconcile off to the durable
+// Inngest job. useActionState on the client turns this into a loading + result.
+export async function syncFirefliesNow(
+  _prev: SyncNowState,
+  _formData: FormData,
+): Promise<SyncNowState> {
   const { orgId } = await requireOrgContext();
+
+  const credential = await getCredential(orgId, "fireflies");
+  if (credential == null)
+    return { status: "error", message: "Connect Fireflies before syncing." };
+
+  let transcriptCount: number;
+  try {
+    const transcripts = await listTranscripts(credential.accessToken);
+    transcriptCount = transcripts.length;
+  } catch (err) {
+    if (err instanceof FirefliesError)
+      return {
+        status: "error",
+        message: firefliesSyncErrorMessage(err.status, err.message),
+      };
+    return {
+      status: "error",
+      message: "Couldn't reach Fireflies. Please try again.",
+    };
+  }
+
   // Enqueue the durable sync job. org_id travels in the payload — the job has no
   // ambient tenant context (see @/lib/inngest).
   await inngest.send({ name: "coterie/fireflies.sync", data: { orgId } });
   revalidatePath("/dashboard/meetings");
   // The dashboard sync-status card reads the same integration row.
   revalidatePath("/dashboard");
+  return { status: "started", transcriptCount };
 }
 
 export type LogMeetingState =

@@ -30,6 +30,20 @@ export const STALE_MS = 7 * 86_400_000;
 // one from silently moving the other.
 export const RECENT_SYNC_WINDOW_MS = STALE_MS;
 
+// Turn a Fireflies transport failure into a specific, actionable message for the
+// "Sync now" button. A 401/403 means the stored key is bad — the one thing the
+// operator can fix by reconnecting — so it gets its own line; everything else
+// passes Fireflies' own message through. PURE (takes the status + message, not
+// the server-only FirefliesError class) so it stays testable here.
+export function firefliesSyncErrorMessage(
+  status: number | null,
+  rawMessage: string,
+): string {
+  if (status === 401 || status === 403)
+    return "Fireflies rejected your API key. Reconnect with a valid key.";
+  return `Fireflies error: ${rawMessage}`;
+}
+
 export function classifySyncStatus(
   connected: boolean,
   lastSyncedAt: Date | null,

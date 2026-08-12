@@ -16,10 +16,10 @@ import { Button, Card, CardHeader, Field, PageTitle } from "@/components/ui";
 import {
   connectFireflies,
   disconnectFireflies,
-  syncFirefliesNow,
   confirmAttendee,
   rejectAttendee,
 } from "./actions";
+import SyncNowButton from "./_sync-now";
 import {
   MeetingActionItems,
   type OwnerOption,
@@ -153,12 +153,8 @@ export default async function MeetingsPage({
           title="Fireflies"
           action={
             connected ? (
-              <div className="flex items-center gap-2">
-                <form action={syncFirefliesNow}>
-                  <Button type="submit" variant="gold">
-                    Sync now
-                  </Button>
-                </form>
+              <div className="flex items-start gap-2">
+                <SyncNowButton />
                 <form action={disconnectFireflies}>
                   <Button type="submit">Disconnect</Button>
                 </form>
