@@ -40,7 +40,8 @@ export function SecondDegreeCard({
     <Card>
       <CardHeader title="People from meetings" />
       <p className="px-4 pt-3 text-[10.5px] leading-relaxed text-ink-3">
-        Seen in this company&apos;s meetings via Fireflies but not yet in the CRM.
+        Seen in this company&apos;s meetings via Fireflies but not yet in your
+        network.
       </p>
       <ul className="flex flex-wrap gap-2 p-4">
         {people.map((p) => (
@@ -97,7 +98,7 @@ function PersonChip({
             onClick={() => run(() => attachConnection(person.id, companyId))}
             className="rounded-sm border border-gold-line bg-gold-bg px-2 py-0.5 text-[10px] font-medium text-gold-ink transition-colors hover:bg-gold-bg/70 disabled:opacity-50"
           >
-            Add to CRM
+            Add to network
           </button>
           <button
             type="button"

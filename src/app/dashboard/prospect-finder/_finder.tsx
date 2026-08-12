@@ -102,7 +102,7 @@ export function ProspectFinder({
         <ModeCard
           active={mode === "recommendations"}
           onClick={() => setMode("recommendations")}
-          title="CRM Recommendations"
+          title="Network Recommendations"
           sub="AI analyses your network's gaps and finds what's missing."
         />
         <ModeCard

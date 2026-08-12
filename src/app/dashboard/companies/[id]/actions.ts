@@ -2275,7 +2275,7 @@ export async function addRelationshipAsProspect(
     });
     if (rel == null) return null;
     if (!rel.name.trim())
-      throw new Error("add a contact name before adding to the CRM");
+      throw new Error("add a contact name before adding to the network");
     if (rel.linkedCompanyId != null)
       throw new Error("this relationship is already linked to a company");
 

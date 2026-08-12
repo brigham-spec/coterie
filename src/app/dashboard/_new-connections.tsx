@@ -55,8 +55,8 @@ export function NewConnections({
       {open ? (
         totalPeople === 0 ? (
           <p className="px-4 py-5 text-[11px] text-ink-3 italic">
-            No new people to review. Meeting attendees who aren&apos;t in your CRM
-            yet will appear here after a Fireflies sync.
+            No new people to review. Meeting attendees who aren&apos;t in your
+            network yet will appear here after a Fireflies sync.
           </p>
         ) : (
           <div>

@@ -207,7 +207,7 @@ function RelationshipLink({
             className="rounded border border-line bg-surface px-2 py-1 text-[11px] text-ink-2"
           >
             <option value="" disabled>
-              Link to CRM…
+              Link to company…
             </option>
             {linkOptions.map((o) => (
               <option key={o.id} value={o.id}>
@@ -229,7 +229,7 @@ function RelationshipLink({
           type="submit"
           className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
         >
-          + Add to CRM
+          + Add to network
         </button>
       </form>
     </div>
