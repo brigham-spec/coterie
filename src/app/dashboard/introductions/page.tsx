@@ -255,11 +255,16 @@ export default async function IntroductionsPage({
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <div className="mb-6">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <PageTitle
           title="Introductions"
           subtitle={`${introductions.length} made across ${ctx.orgName}'s network`}
         />
+        {contacts.length >= 2 ? (
+          <Link href="#log-intro" className="flex-shrink-0">
+            <Button variant="primary">Log introduction</Button>
+          </Link>
+        ) : null}
       </div>
 
       {introductions.length > 0 ? (
