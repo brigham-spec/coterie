@@ -35,8 +35,14 @@ distinction vs wealth).
 
 - Multi-email contacts from the import kept only their **first** email; extras
   must be added later via the contact editor's "additional emails" field.
-- Subject to the cross-client pending migration (see README) — News / email /
-  event-outreach features 500 in prod until `migrate deploy` runs.
+
+## Integrations
+
+- **Fireflies** connected (one `fireflies` integration credential in prod).
+  Background sync failures now surface on the meetings Fireflies card as a red
+  "Last sync failed" banner (the `last_sync_error` column, migrated to prod
+  2026-08-12), auto-clearing on the next successful sync. Currently clean (no
+  error recorded).
 
 ## Provenance
 

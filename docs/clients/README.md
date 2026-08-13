@@ -59,6 +59,8 @@ change scoped to one org id**, not a code edit. Look up the org id here first.
 
 ## Open cross-client items
 
-- **Pending migration `20260811215927_sync_schema_drift` is UNAPPLIED to prod
-  `neondb`.** News key-facts / email done-items / event-outreach features 500 in
-  prod until `prisma migrate deploy` runs against prod (additive/safe — ASK first).
+- _None open._ Prod `neondb` is fully migrated as of **2026-08-12** — `migrate
+  deploy` reports 32/32 applied (the last being
+  `20260813023759_add_integration_last_sync_error`). The earlier
+  `20260811215927_sync_schema_drift` gap (News key-facts / email done-items /
+  event-outreach) is applied and resolved.
