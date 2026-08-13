@@ -43,6 +43,11 @@ distinction vs wealth).
   "Last sync failed" banner (the `last_sync_error` column, migrated to prod
   2026-08-12), auto-clearing on the next successful sync. Currently clean (no
   error recorded).
+- **Inngest background sync verified 2026-08-12.** The `coterie` app is synced
+  in Inngest Cloud (Production), serve URL `app.coterienmt.ai/api/inngest` (not
+  a stale preview), both functions active (`fireflies-sync`, `ping`). Recent
+  `fireflies-sync` runs all Completed (0% failure); latest processed 25 meetings
+  / 74 attendees — matches the prod DB probe (fireflies_id rows 0→25).
 
 ## Provenance
 
