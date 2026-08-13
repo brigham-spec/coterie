@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "deploy": "./scripts/deploy-prod.sh",
     "postinstall": "prisma generate"
   },
   "dependencies": {
