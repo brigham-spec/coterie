@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { CSSProperties, ReactNode } from "react";
 
+import { ConnectTrigger } from "./_connect-trigger";
 import { NetworkCanvas } from "./_network-canvas";
 
 // Marketing landing for coterienmt.ai. Public, no auth. Served here at /site for
@@ -44,9 +45,9 @@ export default function SitePage() {
 
         <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6">
           <header className="flex items-center justify-between py-7">
-            <div className="text-[12px] font-medium tracking-[0.34em] text-[#f4f1eb] uppercase">
+            <ConnectTrigger className="text-[12px] font-medium tracking-[0.34em] text-[#f4f1eb] uppercase">
               Coterie
-            </div>
+            </ConnectTrigger>
             <a
               href={APP_URL}
               className="rounded-full border border-[#d4a843]/40 px-5 py-2 text-[12px] font-medium tracking-wide text-[#f4f1eb] transition-colors hover:border-[#d4a843] hover:bg-[#d4a843]/10"
@@ -68,15 +69,17 @@ export default function SitePage() {
               style={{ ...rise(90), fontSize: "clamp(2.8rem, 7vw, 5.6rem)" }}
             >
               The{" "}
-              <span
-                className="bg-clip-text text-transparent italic"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(100deg, #f0d585 0%, #d4a843 45%, #b8862f 100%)",
-                }}
-              >
-                network
-              </span>{" "}
+              <ConnectTrigger>
+                <span
+                  className="bg-clip-text text-transparent italic"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(100deg, #f0d585 0%, #d4a843 45%, #b8862f 100%)",
+                  }}
+                >
+                  network
+                </span>
+              </ConnectTrigger>{" "}
               is the strategy.
             </h1>
 
