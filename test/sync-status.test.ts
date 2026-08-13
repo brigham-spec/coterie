@@ -4,6 +4,7 @@ import {
   classifySyncStatus,
   summarizeRecentSync,
   firefliesSyncErrorMessage,
+  syncCompleted,
   STALE_MS,
   type RawSyncedMeeting,
 } from "@/lib/sync-status";
@@ -87,6 +88,24 @@ describe("summarizeRecentSync", () => {
       { id: "b", name: "Beta", count: 1 },
       { id: "z", name: "Zeta", count: 1 },
     ]);
+  });
+});
+
+describe("syncCompleted", () => {
+  test("a null current clock is never complete (job hasn't stamped yet)", () => {
+    expect(syncCompleted(null, null)).toBe(false);
+    expect(syncCompleted(1000, null)).toBe(false);
+  });
+
+  test("first sync ever completes as soon as a clock appears", () => {
+    // Null baseline = never synced before; any reading is our completion.
+    expect(syncCompleted(null, 1000)).toBe(true);
+  });
+
+  test("the clock must advance strictly past the baseline", () => {
+    expect(syncCompleted(1000, 1000)).toBe(false); // unchanged — still running
+    expect(syncCompleted(1000, 1001)).toBe(true); // advanced — done
+    expect(syncCompleted(1000, 999)).toBe(false); // stale reading
   });
 });
 

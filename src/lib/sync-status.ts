@@ -44,6 +44,20 @@ export function firefliesSyncErrorMessage(
   return `Fireflies error: ${rawMessage}`;
 }
 
+// Has a durable sync finished since we kicked it off? The "Sync now" button
+// captures the last-sync timestamp (ms) BEFORE enqueuing the background job,
+// then polls; the job advancing lastSyncedAt past that baseline is the honest
+// completion signal. A null baseline means "never synced before", so the first
+// non-null reading is itself completion. PURE so the polling client can lean on
+// a tested predicate rather than inlining the comparison.
+export function syncCompleted(
+  sinceMs: number | null,
+  currentMs: number | null,
+): boolean {
+  if (currentMs == null) return false;
+  return sinceMs == null || currentMs > sinceMs;
+}
+
 export function classifySyncStatus(
   connected: boolean,
   lastSyncedAt: Date | null,

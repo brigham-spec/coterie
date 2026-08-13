@@ -44,9 +44,40 @@ export async function disconnectFireflies(): Promise<void> {
   revalidatePath("/dashboard/meetings");
 }
 
+// A point-in-time snapshot of the two signals the "Sync now" client polls:
+// when the durable job last stamped completion (lastSyncedAt) and how many
+// Fireflies-sourced meetings exist. The client captures this before enqueuing,
+// then polls readFirefliesSyncProgress until lastSyncedMs advances past the
+// baseline — at which point the meeting delta is the "N new meetings" count.
+export interface FirefliesSyncProgress {
+  lastSyncedMs: number | null;
+  firefliesMeetingCount: number;
+}
+
+// One withOrg read shared by the start action's baseline and every poll. Synced
+// meetings are exactly those carrying a firefliesId (manual logs leave it null).
+// The two reads run SEQUENTIALLY, not Promise.all: withOrg opens a Prisma
+// interactive transaction whose RLS org_id is pinned via set_config on one
+// connection, and concurrent queries on that shared tx are unsafe (same rule the
+// sequential tenant-export loop follows).
+async function readSyncSnapshot(orgId: string): Promise<FirefliesSyncProgress> {
+  return withOrg(orgId, async (tx) => {
+    const credential = await tx.integrationCredential.findFirst({
+      where: { provider: "fireflies" },
+      select: { lastSyncedAt: true },
+    });
+    const firefliesMeetingCount = await tx.meeting.count({
+      where: { firefliesId: { not: null } },
+    });
+    return {
+      lastSyncedMs: credential?.lastSyncedAt?.getTime() ?? null,
+      firefliesMeetingCount,
+    };
+  });
+}
+
 export type SyncNowState =
-  | { status: "idle" }
-  | { status: "started"; transcriptCount: number }
+  | { status: "started"; transcriptCount: number; sinceMs: number | null; baselineMeetingCount: number }
   | { status: "error"; message: string };
 
 // "Sync now" used to enqueue the durable job and return void — the user got no
@@ -55,11 +86,12 @@ export type SyncNowState =
 // transcript list with the stored key. That both validates the credential (so a
 // bad key produces a specific, actionable error right here) and reports how many
 // transcripts are waiting, before handing the heavy reconcile off to the durable
-// Inngest job. useActionState on the client turns this into a loading + result.
-export async function syncFirefliesNow(
-  _prev: SyncNowState,
-  _formData: FormData,
-): Promise<SyncNowState> {
+// Inngest job. We also capture a baseline snapshot (last-sync clock + current
+// meeting count) so the client can POLL until the background job advances the
+// clock and then report the true "N new meetings" delta — real completion
+// feedback, not a fire-and-forget "started". No revalidatePath here: the durable
+// job hasn't written yet, so the client drives the refresh once it completes.
+export async function syncFirefliesNow(): Promise<SyncNowState> {
   const { orgId } = await requireOrgContext();
 
   const credential = await getCredential(orgId, "fireflies");
@@ -82,13 +114,26 @@ export async function syncFirefliesNow(
     };
   }
 
+  // Baseline BEFORE enqueuing so a completion the poll observes is provably ours.
+  const baseline = await readSyncSnapshot(orgId);
+
   // Enqueue the durable sync job. org_id travels in the payload — the job has no
   // ambient tenant context (see @/lib/inngest).
   await inngest.send({ name: "coterie/fireflies.sync", data: { orgId } });
-  revalidatePath("/dashboard/meetings");
-  // The dashboard sync-status card reads the same integration row.
-  revalidatePath("/dashboard");
-  return { status: "started", transcriptCount };
+  return {
+    status: "started",
+    transcriptCount,
+    sinceMs: baseline.lastSyncedMs,
+    baselineMeetingCount: baseline.firefliesMeetingCount,
+  };
+}
+
+// Poll target for the "Sync now" client — reads the same snapshot the start
+// action baselined. When lastSyncedMs advances past the captured sinceMs the
+// durable job has finished; the meeting-count delta is the newly imported count.
+export async function readFirefliesSyncProgress(): Promise<FirefliesSyncProgress> {
+  const { orgId } = await requireOrgContext();
+  return readSyncSnapshot(orgId);
 }
 
 export type LogMeetingState =
