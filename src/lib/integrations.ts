@@ -92,6 +92,29 @@ export async function hasCredential(
   return row != null;
 }
 
+export type IntegrationStatus = {
+  connected: boolean;
+  /// Message from the most recent failed background sync, or null when the last
+  /// sync succeeded / none has run (see IntegrationCredential.lastSyncError).
+  lastSyncError: string | null;
+};
+
+// Connection state plus the last background-sync failure, in one query — for the
+// meetings Fireflies card, which shows both whether the integration is connected
+// and whether its most recent sync errored. Never touches the plaintext token.
+export async function getIntegrationStatus(
+  orgId: string,
+  provider: Provider,
+): Promise<IntegrationStatus> {
+  const row = await withOrg(orgId, (tx) =>
+    tx.integrationCredential.findUnique({
+      where: { orgId_provider: { orgId, provider } },
+      select: { lastSyncError: true },
+    }),
+  );
+  return { connected: row != null, lastSyncError: row?.lastSyncError ?? null };
+}
+
 export async function deleteCredential(
   orgId: string,
   provider: Provider,

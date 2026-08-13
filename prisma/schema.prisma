@@ -753,6 +753,10 @@ model IntegrationCredential {
   /// Stamped at the end of a successful sync job (see @/lib/inngest). Null until
   /// the first sync runs — drives the dashboard sync-status card's freshness.
   lastSyncedAt    DateTime? @map("last_synced_at") @db.Timestamptz(6)
+  /// The message from the most recent FAILED background sync, cleared on the next
+  /// success (see @/lib/inngest). Non-null means the last sync errored — surfaced
+  /// on the meetings Fireflies card so background failures aren't silent.
+  lastSyncError   String?   @map("last_sync_error")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

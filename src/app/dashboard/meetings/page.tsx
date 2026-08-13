@@ -2,7 +2,7 @@ import { requireOrgContext } from "@/lib/auth";
 import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
-import { hasCredential } from "@/lib/integrations";
+import { getIntegrationStatus } from "@/lib/integrations";
 import {
   matchesMeetingFilters,
   meetingMemberFacets,
@@ -75,8 +75,8 @@ export default async function MeetingsPage({
     member: one(sp.member),
   };
 
-  const [connected, data, staffRows] = await Promise.all([
-    hasCredential(ctx.orgId, "fireflies"),
+  const [firefliesStatus, data, staffRows] = await Promise.all([
+    getIntegrationStatus(ctx.orgId, "fireflies"),
     withOrg(ctx.orgId, async (tx) => {
       const meetings = await tx.meeting.findMany({
         orderBy: { heldAt: "desc" },
@@ -115,6 +115,7 @@ export default async function MeetingsPage({
       select: { user: { select: { id: true, name: true } } },
     }),
   ]);
+  const { connected, lastSyncError } = firefliesStatus;
   const { meetings, contacts } = data;
   const contactOptions = contacts.map((c) => ({
     id: c.id,
@@ -163,11 +164,19 @@ export default async function MeetingsPage({
           }
         />
         {connected ? (
-          <p className="px-4 py-4 text-xs text-ink-3">
-            Connected. Syncing pulls your recent transcripts and matches
-            attendees to contacts. Matches below full confidence appear on each
-            meeting for you to confirm.
-          </p>
+          <>
+            {lastSyncError ? (
+              <div className="mx-4 mt-4 rounded-md border border-red-line bg-red-bg px-3 py-2 text-xs text-red-ink">
+                <span className="font-medium">Last sync failed:</span>{" "}
+                {lastSyncError} A successful sync will clear this.
+              </div>
+            ) : null}
+            <p className="px-4 py-4 text-xs text-ink-3">
+              Connected. Syncing pulls your recent transcripts and matches
+              attendees to contacts. Matches below full confidence appear on each
+              meeting for you to confirm.
+            </p>
+          </>
         ) : (
           <form action={connectFireflies} className="flex items-end gap-3 p-4">
             <Field

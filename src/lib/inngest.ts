@@ -1,8 +1,9 @@
 import { Inngest, NonRetriableError } from "inngest";
 
 import { getCredential } from "@/lib/integrations";
-import { listTranscripts } from "@/lib/fireflies";
+import { FirefliesError, listTranscripts } from "@/lib/fireflies";
 import { reconcileTranscripts } from "@/lib/fireflies-reconcile";
+import { firefliesSyncErrorMessage } from "@/lib/sync-status";
 import { withOrg } from "@/lib/tenant";
 
 // Inngest client + function registry (build item 6, spec §8). Inngest runs our
@@ -43,20 +44,43 @@ export const syncFireflies = inngest.createFunction(
     if (credential == null)
       return { meetings: 0, attendees: 0, reason: "no fireflies credential" };
 
-    const transcripts = await listTranscripts(credential.accessToken);
+    let result: Awaited<ReturnType<typeof reconcileTranscripts>>;
+    try {
+      const transcripts = await listTranscripts(credential.accessToken);
 
-    // Reconcile the pulled transcripts into Meeting rows + matched attendees
-    // (the same idempotent path the profile "paste a Fireflies ID" import uses).
-    const result = await reconcileTranscripts(orgId, transcripts);
+      // Reconcile the pulled transcripts into Meeting rows + matched attendees
+      // (the same idempotent path the profile "paste a Fireflies ID" import uses).
+      result = await reconcileTranscripts(orgId, transcripts);
+    } catch (err) {
+      // Background failures were previously silent — the operator saw only a
+      // stale "last synced" clock. Persist the failure (specific for a bad key,
+      // via the same classifier the synchronous "Sync now" preflight uses) so the
+      // meetings Fireflies card can surface it, then re-throw so Inngest's durable
+      // retry still runs. The latest attempt's message stands until a sync wins.
+      const message =
+        err instanceof FirefliesError
+          ? firefliesSyncErrorMessage(err.status, err.message)
+          : err instanceof Error
+            ? err.message
+            : "Sync failed.";
+      await withOrg(orgId, (tx) =>
+        tx.integrationCredential.updateMany({
+          where: { provider: "fireflies" },
+          data: { lastSyncError: message.slice(0, 500) },
+        }),
+      );
+      throw err;
+    }
 
     // Stamp the sync clock so the dashboard sync-status card can report
-    // freshness. updateMany (not update) keeps this a no-op-safe write scoped by
-    // RLS — a missing credential row simply updates nothing. This is a full-sync
-    // concern, so it stays here rather than in the shared reconcile.
+    // freshness, and clear any prior failure now that a sync has succeeded.
+    // updateMany (not update) keeps this a no-op-safe write scoped by RLS — a
+    // missing credential row simply updates nothing. This is a full-sync concern,
+    // so it stays here rather than in the shared reconcile.
     await withOrg(orgId, (tx) =>
       tx.integrationCredential.updateMany({
         where: { provider: "fireflies" },
-        data: { lastSyncedAt: new Date() },
+        data: { lastSyncedAt: new Date(), lastSyncError: null },
       }),
     );
 
