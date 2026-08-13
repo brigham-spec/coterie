@@ -24,6 +24,7 @@ vi.mock("@/lib/auth", () => ({
 const {
   addProjectDeliverable,
   updateProjectDeliverable,
+  editProjectDeliverable,
   deleteProjectDeliverable,
 } = await import("@/app/dashboard/projects/actions");
 
@@ -227,6 +228,93 @@ describe("updateProjectDeliverable", () => {
     );
     // RLS scoped the update to org A, so the org B row is untouched.
     expect(beta!.status).toBe("open");
+  });
+});
+
+describe("editProjectDeliverable", () => {
+  // Seed a fresh staff-owned deliverable to correct.
+  let editableId: string;
+  beforeAll(async () => {
+    editableId = await withOrg(orgA.id, async (tx) => {
+      const it = await tx.actionItem.create({
+        data: {
+          orgId: orgA.id,
+          projectId: projectAId,
+          text: "Original deliverable",
+          ownerUserId: staffUser.id,
+        },
+      });
+      return it.id;
+    });
+    mockCtx.orgId = orgA.id;
+  });
+
+  async function row(id: string) {
+    return withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({
+        where: { id },
+        select: { text: true, ownerUserId: true, ownerContactId: true },
+      }),
+    );
+  }
+
+  test("corrects the text and reassigns to an on-project contact", async () => {
+    await editProjectDeliverable(
+      fd({
+        id: editableId,
+        projectId: projectAId,
+        text: "Corrected deliverable",
+        direction: "they_owe",
+        ownerId: contactAId,
+      }),
+    );
+    expect(await row(editableId)).toEqual({
+      text: "Corrected deliverable",
+      ownerUserId: null,
+      ownerContactId: contactAId,
+    });
+  });
+
+  test("refuses an off-project contact owner, leaving the row untouched", async () => {
+    await expect(
+      editProjectDeliverable(
+        fd({
+          id: editableId,
+          projectId: projectAId,
+          text: "Should not persist",
+          direction: "they_owe",
+          ownerId: contactUnlinkedId,
+        }),
+      ),
+    ).rejects.toThrow("owner must be a contact on a company linked to this project");
+    expect(await row(editableId)).toEqual({
+      text: "Corrected deliverable",
+      ownerUserId: null,
+      ownerContactId: contactAId,
+    });
+  });
+
+  test("refuses to touch a deliverable from another tenant", async () => {
+    // The foreign project id resolves to null under org A's RLS, so the reload
+    // guard refuses before any write.
+    await expect(
+      editProjectDeliverable(
+        fd({
+          id: deliverableBId,
+          projectId: projectBId,
+          text: "Hijacked",
+          direction: "we_owe",
+          ownerId: staffUser.id,
+        }),
+      ),
+    ).rejects.toThrow("project not found in this organization");
+    const beta = await withOrg(orgB.id, (tx) =>
+      tx.actionItem.findUnique({
+        where: { id: deliverableBId },
+        select: { text: true },
+      }),
+    );
+    expect(beta!.text).toBe("Beta deliverable");
   });
 });
 

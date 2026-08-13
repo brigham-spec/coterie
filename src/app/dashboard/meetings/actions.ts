@@ -447,3 +447,55 @@ export async function deleteActionItem(formData: FormData): Promise<void> {
   );
   revalidateActionItemSurfaces();
 }
+
+// Manually correct a persisted item — the AI extraction can mis-word an item or
+// mis-attribute its owner, so a human fixes both after the fact. The reassigned
+// owner is re-validated exactly like saveActionItems (staff via org_memberships,
+// contact via the RLS-scoped network) to keep the owner-XOR CHECK satisfied. RLS
+// scopes the id to the org so a foreign id matches no row.
+export async function editActionItem(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const text = String(formData.get("text") ?? "")
+    .trim()
+    .slice(0, 500);
+  const ownerKind = String(formData.get("ownerKind") ?? "").trim();
+  const ownerId = String(formData.get("ownerId") ?? "").trim();
+  if (id === "") throw new Error("item required");
+  if (text === "") throw new Error("an action item is required");
+  if (ownerKind !== "staff" && ownerKind !== "contact")
+    throw new Error("invalid owner");
+  if (ownerId === "") throw new Error("an owner is required");
+
+  // Staff owners are org members (org_memberships carries no RLS, so scope it
+  // explicitly by org + user — refuses a foreign-tenant user).
+  if (ownerKind === "staff") {
+    const member = await prisma.orgMembership.findUnique({
+      where: { orgId_userId: { orgId, userId: ownerId } },
+      select: { userId: true },
+    });
+    if (!member) throw new Error("owner is not a member of this organization");
+  }
+
+  await withOrg(orgId, async (tx) => {
+    if (ownerKind === "contact") {
+      // Any network contact may own the item (cross-attribution); RLS scopes the
+      // lookup so a foreign id resolves to null.
+      const contact = await tx.contact.findUnique({
+        where: { id: ownerId },
+        select: { id: true },
+      });
+      if (!contact) throw new Error("contact not found in this organization");
+    }
+    await tx.actionItem.updateMany({
+      where: { id },
+      data: {
+        text,
+        ownerUserId: ownerKind === "staff" ? ownerId : null,
+        ownerContactId: ownerKind === "contact" ? ownerId : null,
+      },
+    });
+  });
+  revalidateActionItemSurfaces();
+}

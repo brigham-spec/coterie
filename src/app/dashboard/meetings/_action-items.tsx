@@ -9,6 +9,7 @@ import {
   saveActionItems,
   updateActionItemStatus,
   deleteActionItem,
+  editActionItem,
 } from "./actions";
 
 // Action items on a meeting card (gap-audit cluster A). Extraction is
@@ -28,6 +29,9 @@ export type PersistedItem = {
   text: string;
   status: string;
   owner: string;
+  // The resolved owner as "staff:<id>" or "contact:<id>" (or "" if unowned),
+  // used to prefill the owner picker when editing.
+  ownerKey: string;
 };
 
 // A proposal being reviewed. ownerKey encodes the resolved owner as "staff:<id>"
@@ -126,39 +130,13 @@ export function MeetingActionItems({
       ) : (
         <ul className="flex flex-col gap-1.5">
           {items.map((it) => (
-            <li
+            <EditableActionItem
               key={it.id}
-              className="flex items-start justify-between gap-3 text-[11px]"
-            >
-              <span
-                className={
-                  it.status === "open" ? "text-ink" : "text-ink-3 line-through"
-                }
-              >
-                <span className="font-medium">{it.owner}</span>
-                {" · "}
-                {it.text}
-              </span>
-              <span className="flex flex-shrink-0 items-center gap-1">
-                {it.status !== "done" ? (
-                  <form action={updateActionItemStatus}>
-                    <input type="hidden" name="id" value={it.id} />
-                    <input type="hidden" name="status" value="done" />
-                    <Button type="submit">Done</Button>
-                  </form>
-                ) : (
-                  <form action={updateActionItemStatus}>
-                    <input type="hidden" name="id" value={it.id} />
-                    <input type="hidden" name="status" value="open" />
-                    <Button type="submit">Reopen</Button>
-                  </form>
-                )}
-                <form action={deleteActionItem}>
-                  <input type="hidden" name="id" value={it.id} />
-                  <Button type="submit">Delete</Button>
-                </form>
-              </span>
-            </li>
+              item={it}
+              staffOptions={staffOptions}
+              attendeeOptions={attendeeOptions}
+              networkOptions={networkOptions}
+            />
           ))}
         </ul>
       )}
@@ -203,32 +181,11 @@ export function MeetingActionItems({
                     className="rounded-sm border border-line-2 bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-gold-line disabled:opacity-50"
                   >
                     <option value="">— choose owner —</option>
-                    <optgroup label="Staff">
-                      {staffOptions.map((s) => (
-                        <option key={s.id} value={`staff:${s.id}`}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Attendees">
-                      {attendeeOptions.map((c) => (
-                        <option key={c.id} value={`contact:${c.id}`}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                    {networkOptions.length > 0 ? (
-                      // Cross-attribution: a member mentioned in the notes who
-                      // wasn't at the meeting. Owning them the item surfaces it
-                      // on their company profile.
-                      <optgroup label="Network">
-                        {networkOptions.map((c) => (
-                          <option key={c.id} value={`contact:${c.id}`}>
-                            {c.name} · {c.company}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null}
+                    <OwnerOptions
+                      staffOptions={staffOptions}
+                      attendeeOptions={attendeeOptions}
+                      networkOptions={networkOptions}
+                    />
                   </select>
                   <button
                     type="button"
@@ -268,5 +225,153 @@ export function MeetingActionItems({
         )
       ) : null}
     </div>
+  );
+}
+
+// The owner picker's option groups, shared by the proposal-review select and the
+// per-item edit select so both offer the same staff / attendee / network pools.
+// Attendees and network members both encode as "contact:<id>"; staff as
+// "staff:<id>".
+function OwnerOptions({
+  staffOptions,
+  attendeeOptions,
+  networkOptions,
+}: {
+  staffOptions: OwnerOption[];
+  attendeeOptions: OwnerOption[];
+  networkOptions: NetworkOption[];
+}) {
+  return (
+    <>
+      <optgroup label="Staff">
+        {staffOptions.map((s) => (
+          <option key={s.id} value={`staff:${s.id}`}>
+            {s.name}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="Attendees">
+        {attendeeOptions.map((c) => (
+          <option key={c.id} value={`contact:${c.id}`}>
+            {c.name}
+          </option>
+        ))}
+      </optgroup>
+      {networkOptions.length > 0 ? (
+        // Cross-attribution: a member mentioned in the notes who wasn't at the
+        // meeting. Owning them the item surfaces it on their company profile.
+        <optgroup label="Network">
+          {networkOptions.map((c) => (
+            <option key={c.id} value={`contact:${c.id}`}>
+              {c.name} · {c.company}
+            </option>
+          ))}
+        </optgroup>
+      ) : null}
+    </>
+  );
+}
+
+// A persisted item: read-only by default, with an inline edit toggle so a human
+// can fix an AI-mis-worded item or reassign a mis-attributed owner. Save posts to
+// editActionItem, which re-validates the owner and revalidates the surface, so
+// the form closes itself once the write lands.
+function EditableActionItem({
+  item,
+  staffOptions,
+  attendeeOptions,
+  networkOptions,
+}: {
+  item: PersistedItem;
+  staffOptions: OwnerOption[];
+  attendeeOptions: OwnerOption[];
+  networkOptions: NetworkOption[];
+}) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <li>
+        <form
+          action={async (fd) => {
+            // The owner option encodes "kind:id"; split it into the fields the
+            // action validates.
+            const owner = String(fd.get("owner") ?? "");
+            const sep = owner.indexOf(":");
+            fd.set("ownerKind", sep === -1 ? "" : owner.slice(0, sep));
+            fd.set("ownerId", sep === -1 ? "" : owner.slice(sep + 1));
+            await editActionItem(fd);
+            setEditing(false);
+          }}
+          className="flex flex-wrap items-center gap-2"
+        >
+          <input type="hidden" name="id" value={item.id} />
+          <input
+            name="text"
+            defaultValue={item.text}
+            required
+            maxLength={500}
+            aria-label="Action item text"
+            className="min-w-[180px] flex-1 rounded-sm border border-line-2 bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-gold-line"
+          />
+          <select
+            name="owner"
+            defaultValue={item.ownerKey}
+            required
+            aria-label="Owner"
+            className="rounded-sm border border-line-2 bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-gold-line"
+          >
+            <option value="">— choose owner —</option>
+            <OwnerOptions
+              staffOptions={staffOptions}
+              attendeeOptions={attendeeOptions}
+              networkOptions={networkOptions}
+            />
+          </select>
+          <Button type="submit" variant="primary">
+            Save
+          </Button>
+          <Button type="button" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+        </form>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-start justify-between gap-3 text-[11px]">
+      <span
+        className={
+          item.status === "open" ? "text-ink" : "text-ink-3 line-through"
+        }
+      >
+        <span className="font-medium">{item.owner}</span>
+        {" · "}
+        {item.text}
+      </span>
+      <span className="flex flex-shrink-0 items-center gap-1">
+        {item.status !== "done" ? (
+          <form action={updateActionItemStatus}>
+            <input type="hidden" name="id" value={item.id} />
+            <input type="hidden" name="status" value="done" />
+            <Button type="submit">Done</Button>
+          </form>
+        ) : (
+          <form action={updateActionItemStatus}>
+            <input type="hidden" name="id" value={item.id} />
+            <input type="hidden" name="status" value="open" />
+            <Button type="submit">Reopen</Button>
+          </form>
+        )}
+        <Button type="button" onClick={() => setEditing(true)}>
+          Edit
+        </Button>
+        <form action={deleteActionItem}>
+          <input type="hidden" name="id" value={item.id} />
+          <Button type="submit">Delete</Button>
+        </form>
+      </span>
+    </li>
   );
 }

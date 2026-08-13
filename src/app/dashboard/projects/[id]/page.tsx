@@ -200,6 +200,7 @@ export default async function ProjectDetailPage({
     text: d.text,
     status: d.status,
     direction: d.ownerUserId ? "we_owe" : "they_owe",
+    ownerId: d.ownerUserId ?? d.ownerContactId ?? "",
     ownerName: d.ownerUser?.name ?? d.ownerContact?.name ?? "Unassigned",
   }));
   const teamRows: TeamMemberRow[] = teamMembers.map((m) => ({

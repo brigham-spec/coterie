@@ -327,6 +327,11 @@ export default async function MeetingsPage({
                           status: it.status,
                           owner:
                             it.ownerUser?.name ?? it.ownerContact?.name ?? "—",
+                          ownerKey: it.ownerUserId
+                            ? `staff:${it.ownerUserId}`
+                            : it.ownerContactId
+                              ? `contact:${it.ownerContactId}`
+                              : "",
                         }))}
                       />
                     </div>

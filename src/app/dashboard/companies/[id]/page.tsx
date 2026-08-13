@@ -215,6 +215,8 @@ export default async function CompanyDetailPage({
                   id: true,
                   text: true,
                   status: true,
+                  ownerUserId: true,
+                  ownerContactId: true,
                   ownerUser: { select: { name: true } },
                   ownerContact: { select: { name: true } },
                 },
@@ -458,6 +460,11 @@ export default async function CompanyDetailPage({
       text: it.text,
       status: it.status,
       owner: it.ownerUser?.name ?? it.ownerContact?.name ?? "—",
+      ownerKey: it.ownerUserId
+        ? `staff:${it.ownerUserId}`
+        : it.ownerContactId
+          ? `contact:${it.ownerContactId}`
+          : "",
     })),
   }));
 

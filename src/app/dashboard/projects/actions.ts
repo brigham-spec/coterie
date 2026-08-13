@@ -215,6 +215,50 @@ function revalidateDeliverable(projectId: string): void {
   revalidatePath("/dashboard/commitments");
 }
 
+// Re-validate a deliverable's owner against the allowed set inside the tenant tx,
+// returning the owner-XOR pair for the action_item write. A "we owe" owner must be
+// org staff (org_memberships carries no RLS, so scope it explicitly by org + user);
+// a "they owe" owner must be a contact at a company on THIS project. The project is
+// reloaded under RLS first, so a foreign or off-project owner (and a foreign project
+// id) is refused. The bare-prisma membership lookup runs on its own connection, so
+// it stays sequential with the tx — never concurrent on the pinned client.
+async function resolveDeliverableOwner(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  projectId: string,
+  direction: "we_owe" | "they_owe",
+  ownerId: string,
+): Promise<{ ownerUserId: string | null; ownerContactId: string | null }> {
+  // RLS scopes the project to this org; a foreign id resolves to null.
+  const project = await tx.project.findUnique({
+    where: { id: projectId },
+    select: { projectLinks: { select: { companyId: true } } },
+  });
+  if (!project) throw new Error("project not found in this organization");
+
+  if (direction === "we_owe") {
+    const member = await prisma.orgMembership.findUnique({
+      where: { orgId_userId: { orgId, userId: ownerId } },
+      select: { userId: true },
+    });
+    if (!member) throw new Error("owner is not a member of this organization");
+    return { ownerUserId: ownerId, ownerContactId: null };
+  }
+
+  // A "they owe" owner must be a contact at a company on this project.
+  const companyIds = project.projectLinks.map((l) => l.companyId);
+  const contact =
+    companyIds.length === 0
+      ? null
+      : await tx.contact.findFirst({
+          where: { id: ownerId, companyId: { in: companyIds } },
+          select: { id: true },
+        });
+  if (!contact)
+    throw new Error("owner must be a contact on a company linked to this project");
+  return { ownerUserId: null, ownerContactId: ownerId };
+}
+
 export async function addProjectDeliverable(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();
 
@@ -229,46 +273,10 @@ export async function addProjectDeliverable(formData: FormData): Promise<void> {
     throw new Error("invalid direction");
   if (!ownerId) throw new Error("an owner is required");
 
-  // "We owe" owners are org staff (org_memberships carries no RLS, so scope it
-  // explicitly by org + user — refuses a foreign-tenant user).
-  if (direction === "we_owe") {
-    const member = await prisma.orgMembership.findUnique({
-      where: { orgId_userId: { orgId, userId: ownerId } },
-      select: { userId: true },
-    });
-    if (!member) throw new Error("owner is not a member of this organization");
-  }
-
   await withOrg(orgId, async (tx) => {
-    // RLS scopes the project to this org; a foreign id resolves to null.
-    const project = await tx.project.findUnique({
-      where: { id: projectId },
-      select: { projectLinks: { select: { companyId: true } } },
-    });
-    if (!project) throw new Error("project not found in this organization");
-
-    if (direction === "they_owe") {
-      // A "they owe" owner must be a contact at a company on this project.
-      const companyIds = project.projectLinks.map((l) => l.companyId);
-      const contact =
-        companyIds.length === 0
-          ? null
-          : await tx.contact.findFirst({
-              where: { id: ownerId, companyId: { in: companyIds } },
-              select: { id: true },
-            });
-      if (!contact)
-        throw new Error("owner must be a contact on a company linked to this project");
-    }
-
+    const owner = await resolveDeliverableOwner(tx, orgId, projectId, direction, ownerId);
     await tx.actionItem.create({
-      data: {
-        orgId,
-        projectId,
-        text,
-        ownerUserId: direction === "we_owe" ? ownerId : null,
-        ownerContactId: direction === "they_owe" ? ownerId : null,
-      },
+      data: { orgId, projectId, text, ...owner },
     });
   });
 
@@ -307,6 +315,38 @@ export async function deleteProjectDeliverable(
   await withOrg(orgId, (tx) =>
     tx.actionItem.deleteMany({ where: { id, projectId } }),
   );
+  revalidateDeliverable(projectId);
+}
+
+// Manually correct a deliverable — the AI can mis-word an item or mis-attribute
+// its owner, so a human fixes the description and reassigns the owner after the
+// fact. The reassigned owner is re-validated exactly like addProjectDeliverable
+// (via resolveDeliverableOwner) to keep the owner-XOR CHECK satisfied. RLS scopes
+// the id + project to the org so a foreign deliverable matches no row.
+export async function editProjectDeliverable(
+  formData: FormData,
+): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const id = String(formData.get("id") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const text = String(formData.get("text") ?? "").trim();
+  const direction = String(formData.get("direction") ?? "").trim();
+  const ownerId = String(formData.get("ownerId") ?? "").trim();
+
+  if (!id || !projectId) throw new Error("deliverable and project are required");
+  if (!text) throw new Error("a deliverable description is required");
+  if (direction !== "we_owe" && direction !== "they_owe")
+    throw new Error("invalid direction");
+  if (!ownerId) throw new Error("an owner is required");
+
+  await withOrg(orgId, async (tx) => {
+    const owner = await resolveDeliverableOwner(tx, orgId, projectId, direction, ownerId);
+    await tx.actionItem.updateMany({
+      where: { id, projectId },
+      data: { text, ...owner },
+    });
+  });
   revalidateDeliverable(projectId);
 }
 

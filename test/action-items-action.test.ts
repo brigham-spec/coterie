@@ -20,7 +20,7 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-const { saveActionItems, logManualMeeting } = await import(
+const { saveActionItems, editActionItem, logManualMeeting } = await import(
   "@/app/dashboard/meetings/actions"
 );
 
@@ -204,6 +204,100 @@ describe("saveActionItems action", () => {
       }),
     );
     expect(leaked).toBeNull();
+  });
+});
+
+function editFd(entries: Record<string, string>): FormData {
+  const f = new FormData();
+  for (const [k, v] of Object.entries(entries)) f.set(k, v);
+  return f;
+}
+
+describe("editActionItem action", () => {
+  // Seed a fresh staff-owned item to correct, so these tests don't depend on
+  // ordering against the saveActionItems block above.
+  let itemId: string;
+  beforeAll(async () => {
+    itemId = await withOrg(orgA.id, async (tx) => {
+      const it = await tx.actionItem.create({
+        data: {
+          orgId: orgA.id,
+          meetingId: meetingAId,
+          text: "Original wording",
+          ownerUserId: staffUser.id,
+        },
+      });
+      return it.id;
+    });
+  });
+
+  async function itemRow(id: string) {
+    return withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({
+        where: { id },
+        select: { text: true, ownerUserId: true, ownerContactId: true },
+      }),
+    );
+  }
+
+  test("corrects the text and reassigns to a network contact (clears staff)", async () => {
+    mockCtx.orgId = orgA.id;
+    await editActionItem(
+      editFd({
+        id: itemId,
+        text: "Corrected wording",
+        ownerKind: "contact",
+        ownerId: contactA1Id,
+      }),
+    );
+    expect(await itemRow(itemId)).toEqual({
+      text: "Corrected wording",
+      ownerUserId: null,
+      ownerContactId: contactA1Id,
+    });
+  });
+
+  test("reassigns back to a staff owner (clears contact)", async () => {
+    mockCtx.orgId = orgA.id;
+    await editActionItem(
+      editFd({
+        id: itemId,
+        text: "Corrected wording",
+        ownerKind: "staff",
+        ownerId: staffUser.id,
+      }),
+    );
+    expect(await itemRow(itemId)).toEqual({
+      text: "Corrected wording",
+      ownerUserId: staffUser.id,
+      ownerContactId: null,
+    });
+  });
+
+  test("refuses a foreign-tenant contact owner, leaving the row untouched", async () => {
+    mockCtx.orgId = orgA.id;
+    await expect(
+      editActionItem(
+        editFd({
+          id: itemId,
+          text: "Should not persist",
+          ownerKind: "contact",
+          ownerId: contactBId,
+        }),
+      ),
+    ).rejects.toThrow("contact not found in this organization");
+    expect(await itemRow(itemId)).toEqual({
+      text: "Corrected wording",
+      ownerUserId: staffUser.id,
+      ownerContactId: null,
+    });
+  });
+
+  test("rejects a blank owner", async () => {
+    mockCtx.orgId = orgA.id;
+    await expect(
+      editActionItem(editFd({ id: itemId, text: "x", ownerKind: "staff", ownerId: "" })),
+    ).rejects.toThrow("an owner is required");
   });
 });
 
