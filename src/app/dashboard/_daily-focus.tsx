@@ -9,6 +9,7 @@ import {
 
 import { Button, Card, CardHeader } from "@/components/ui";
 import type { FocusHorizon } from "@/lib/daily-focus";
+import type { DashboardScope } from "@/lib/dashboard-scope";
 import type { AgendaFocusItem, AgendaState } from "@/lib/agenda-state";
 
 import {
@@ -35,7 +36,7 @@ const TABS: Array<{ key: FocusHorizon; label: string }> = [
   { key: "month", label: "This Month" },
 ];
 
-export function DailyFocus() {
+export function DailyFocus({ scope }: { scope: DashboardScope }) {
   const [horizon, setHorizon] = useState<FocusHorizon>("today");
   const [state, formAction, isPending] = useActionState(
     generateDailyFocus,
@@ -98,6 +99,7 @@ export function DailyFocus() {
         action={
           <form action={formAction}>
             <input type="hidden" name="horizon" value={horizon} />
+            <input type="hidden" name="scope" value={scope} />
             <Button type="submit" variant="gold" disabled={isPending}>
               {buttonLabel}
             </Button>

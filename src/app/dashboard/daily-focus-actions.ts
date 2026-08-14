@@ -21,6 +21,7 @@ import {
   type StoredAgendaState,
 } from "@/lib/agenda-state";
 import { generateFocusSynthesis } from "@/lib/daily-focus-synthesis";
+import { resolveScope } from "@/lib/dashboard-scope";
 
 // Daily Focus action (gap-audit cluster B). The client card holds only the active
 // horizon; the whole assembly runs here so the Anthropic key never crosses to the
@@ -56,7 +57,11 @@ export async function generateDailyFocus(
   if (!isFocusHorizon(horizon))
     return { status: "error", message: "invalid horizon" };
 
-  const { orgId, userName } = await requireOrgContext();
+  const { orgId, userId, userName, role } = await requireOrgContext();
+
+  // Personal-vs-org scoping, re-resolved server-side through the same clamp as
+  // the page so a staff user can't widen to "everyone" by editing the field.
+  const scope = resolveScope(role === "admin", String(formData.get("scope") ?? ""));
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -65,7 +70,12 @@ export async function generateDailyFocus(
 
   const { commitments, events, states } = await withOrg(orgId, async (tx) => {
     const rawCommitments = await tx.actionItem.findMany({
-      where: { status: "open" },
+      // "mine" keeps only commitments this user owns (staff-owned "we owe" rows);
+      // "everyone" is the whole org. Events below stay shared in both scopes.
+      where:
+        scope === "mine"
+          ? { status: "open", ownerUserId: userId }
+          : { status: "open" },
       select: {
         id: true,
         text: true,

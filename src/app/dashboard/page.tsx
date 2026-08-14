@@ -21,6 +21,7 @@ import {
   type EnrichmentNudge as EnrichmentNudgeItem,
 } from "@/lib/enrichment-nudge";
 import { buildReferralLeaderboard } from "@/lib/referral-leaderboard";
+import { resolveScope, type DashboardScope } from "@/lib/dashboard-scope";
 import { cn, StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
@@ -62,8 +63,17 @@ const COLD_DEFAULT = 45;
 // finish instead of timing out.
 export const maxDuration = 60;
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ scope?: string }>;
+}) {
   const ctx = await requireOrgContext();
+  const isAdmin = ctx.role === "admin";
+  // Personal-vs-org scoping for the tailored cards. Staff are pinned to "mine";
+  // admins honor the ?scope param and default to "everyone". The clamp lives in
+  // resolveScope so a staff user can't widen their view by tampering the URL.
+  const scope = resolveScope(isAdmin, (await searchParams).scope);
   const now = new Date();
   // dueOn is a @db.Date at UTC midnight, so these revenue-bucket boundaries are
   // built in the UTC calendar too (review M2); the day-window anchors below are
@@ -108,6 +118,8 @@ export default async function DashboardPage() {
         website: true,
         lookingFor: true,
         canOffer: true,
+        // The assigned staff owner — scopes the "Needs a Call" card/tile to "mine".
+        ownerUserId: true,
         // Who referred this company — drives the referral leaderboard tally.
         referredById: true,
         // Presence of a primary contact drives the enrichment nudge — take 1 is
@@ -279,8 +291,10 @@ export default async function DashboardPage() {
   );
 
   // ── Needs a Call — members past their tier's cold threshold ─────────────────
+  // In "mine" scope this narrows to members this user owns; "everyone" is org-wide.
   const coldMembers = companies
     .filter((c) => c.status === "member")
+    .filter((c) => scope === "everyone" || c.ownerUserId === ctx.userId)
     .map((c) => {
       const days = c.lastContactAt
         ? Math.floor((now.getTime() - c.lastContactAt.getTime()) / DAY)
@@ -317,8 +331,11 @@ export default async function DashboardPage() {
   return (
     <div className="mx-auto w-full max-w-6xl">
       {/* Hero greeting */}
-      <div className="mb-6">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <Greeting name={ctx.userName || "there"} />
+        {/* Admin-only scope toggle — narrows the tailored cards (Needs a Call,
+            Daily Focus) to this user's own work or the whole org. */}
+        {isAdmin ? <ScopeToggle scope={scope} /> : null}
       </div>
 
       {/* Metric strip — the network at a glance */}
@@ -344,7 +361,7 @@ export default async function DashboardPage() {
 
       {/* Daily Focus — AI briefing over open commitments + upcoming events,
           across Today / This Week / This Month horizons (on-demand). */}
-      <DailyFocus />
+      <DailyFocus scope={scope} />
 
       {/* Layer-0 — proactive introduction scanner */}
       <IntroScan />
@@ -644,6 +661,37 @@ function initials(name: string): string {
     .slice(0, 2)
     .map((w) => w.charAt(0).toUpperCase())
     .join("");
+}
+
+// Admin-only segmented control that carries the ?scope param. Zero-JS: each side
+// is a Link, so switching is a plain navigation the server re-resolves through
+// resolveScope.
+function ScopeToggle({ scope }: { scope: DashboardScope }) {
+  const opts: Array<{ key: DashboardScope; label: string }> = [
+    { key: "mine", label: "Mine" },
+    { key: "everyone", label: "Everyone" },
+  ];
+  return (
+    <div className="flex flex-shrink-0 overflow-hidden rounded-md border border-line bg-surface">
+      {opts.map((o) => {
+        const active = o.key === scope;
+        return (
+          <Link
+            key={o.key}
+            href={o.key === "everyone" ? "/dashboard" : `/dashboard?scope=${o.key}`}
+            className={cn(
+              "px-3 py-1.5 text-[11px] font-medium transition-colors",
+              active
+                ? "bg-teal-bg text-teal-ink"
+                : "text-ink-3 hover:bg-surface-2 hover:text-ink",
+            )}
+          >
+            {o.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
 }
 
 function Metric({
