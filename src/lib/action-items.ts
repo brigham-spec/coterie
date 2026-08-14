@@ -32,6 +32,20 @@ export type ActionItemCandidate = {
   ownerId: string | null;
 };
 
+/// PURE: map a resolved owner (a real staff user or contact + id) to the
+/// action_items owner-XOR columns. Exactly one of ownerUserId/ownerContactId is
+/// non-null, satisfying the CHECK — the single place that encoding lives, shared
+/// by every write path that persists an owned item.
+export function ownerColumns(
+  ownerKind: "staff" | "contact",
+  ownerId: string,
+): { ownerUserId: string | null; ownerContactId: string | null } {
+  return {
+    ownerUserId: ownerKind === "staff" ? ownerId : null,
+    ownerContactId: ownerKind === "contact" ? ownerId : null,
+  };
+}
+
 // Resolve a model-supplied owner name to a real candidate. Staff take precedence
 // over contacts on a tie (a staff member logging their own follow-up is the more
 // common case), matching case-insensitively on the trimmed full name.

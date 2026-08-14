@@ -3,6 +3,7 @@ import { Inngest, NonRetriableError } from "inngest";
 import { getCredential } from "@/lib/integrations";
 import { FirefliesError, listTranscripts } from "@/lib/fireflies";
 import { reconcileTranscripts } from "@/lib/fireflies-reconcile";
+import { autoExtractActionItems } from "@/lib/auto-action-items";
 import { firefliesSyncErrorMessage } from "@/lib/sync-status";
 import { withOrg } from "@/lib/tenant";
 
@@ -84,7 +85,23 @@ export const syncFireflies = inngest.createFunction(
       }),
     );
 
-    return result;
+    // Auto-extract action items for the meetings this run created, so the
+    // operator arrives to a populated worklist instead of extracting each one by
+    // hand. This runs AFTER the sync clock is stamped: the reconcile (the durable
+    // work) has already succeeded, so an extraction hiccup must not fail the sync
+    // or trip a retry that would re-reconcile. It's best-effort and self-bounds to
+    // newly-created meetings (see auto-action-items.ts).
+    let actionItems = 0;
+    try {
+      actionItems = await autoExtractActionItems(orgId, result.createdMeetingIds);
+    } catch (err) {
+      // Swallow — a successful sync should never be undone by extraction. The
+      // manual "Extract" button remains available for these meetings. Log it so
+      // a persistent extraction failure isn't silently invisible.
+      console.error("auto-extract action items failed after sync:", err);
+    }
+
+    return { ...result, actionItems };
   },
 );
 

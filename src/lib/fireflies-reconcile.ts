@@ -31,6 +31,11 @@ export type ReconcileResult = {
   meetings: number;
   attendees: number;
   newConnections: number;
+  // Ids of meetings created by THIS run (not ones an update touched). The sync
+  // job uses these to auto-extract action items exactly once per meeting — a
+  // re-sync updates the same row, so it never re-appears here and can't trigger
+  // a duplicate extraction. Empty for the import path, which ignores it.
+  createdMeetingIds: string[];
 };
 
 export async function reconcileTranscripts(
@@ -65,6 +70,7 @@ export async function reconcileTranscripts(
   let meetings = 0;
   let attendees = 0;
   let newConnections = 0;
+  const createdMeetingIds: string[] = [];
 
   for (const transcript of transcripts) {
     const heldAt =
@@ -87,8 +93,17 @@ export async function reconcileTranscripts(
           transcriptUrl,
         },
         update: { title, heldAt, summary, transcriptUrl },
+        select: { id: true, createdAt: true, updatedAt: true },
       }),
     );
+    // Detect create-vs-update: the sync job must auto-extract action items only
+    // for meetings this run actually created (a re-sync updating the same row
+    // must not re-extract). A freshly-created row has createdAt === updatedAt (a
+    // later update always bumps @updatedAt), so equal timestamps mark a create.
+    // This also races safely: of two concurrent syncs, only the one that won the
+    // create sees equal timestamps, so a meeting is extracted at most once.
+    if (meeting.createdAt.getTime() === meeting.updatedAt.getTime())
+      createdMeetingIds.push(meeting.id);
     meetings++;
 
     for (const attendee of transcript.meeting_attendees ?? []) {
@@ -202,5 +217,5 @@ export async function reconcileTranscripts(
     }
   }
 
-  return { meetings, attendees, newConnections };
+  return { meetings, attendees, newConnections, createdMeetingIds };
 }

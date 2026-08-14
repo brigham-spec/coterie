@@ -18,9 +18,10 @@ import { firefliesSyncErrorMessage } from "@/lib/sync-status";
 import { inngest } from "@/lib/inngest";
 import {
   generateActionItems,
+  ownerColumns,
   type ActionItemCandidate,
-  type OwnerCandidate,
 } from "@/lib/action-items";
+import { loadStaffOwners, loadAttendeeOwners } from "@/lib/action-item-owners";
 
 // Meetings surface actions (build item 6 slice 5). Connecting Fireflies stores
 // the per-org API key encrypted (see @/lib/integrations + @/lib/crypto); the key
@@ -250,35 +251,12 @@ export async function rejectAttendee(formData: FormData): Promise<void> {
 }
 
 // ── Action items (gap-audit cluster A) ─────────────────────────────────────
-// Extraction is human-in-the-loop: the AI proposes items + resolved owners, a
-// human confirms/edits the owner and drops noise, then confirmed rows persist.
-// The action_items owner-XOR CHECK (exactly one of user/contact, never null)
-// means we never auto-commit a guessed owner (see @/lib/action-items).
-
-// Org staff who can own a "we owe" item — the org's members. org_memberships is
-// a platform table (no RLS), so it is read off the bare prisma client, exactly
-// as @/lib/auth does.
-async function loadStaffOwners(orgId: string): Promise<OwnerCandidate[]> {
-  const rows = await prisma.orgMembership.findMany({
-    where: { orgId },
-    select: { user: { select: { id: true, name: true } } },
-  });
-  return rows.map((r) => ({ id: r.user.id, name: r.user.name }));
-}
-
-// This meeting's matched attendee contacts — the "they owe" owner candidates.
-async function loadAttendeeOwners(
-  orgId: string,
-  meetingId: string,
-): Promise<OwnerCandidate[]> {
-  const rows = await withOrg(orgId, (tx) =>
-    tx.meetingAttendee.findMany({
-      where: { meetingId },
-      select: { contactId: true, contact: { select: { name: true } } },
-    }),
-  );
-  return rows.map((r) => ({ id: r.contactId, name: r.contact.name }));
-}
+// Manual extraction is human-in-the-loop: the AI proposes items + resolved
+// owners, a human confirms/edits the owner and drops noise, then confirmed rows
+// persist. The action_items owner-XOR CHECK (exactly one of user/contact, never
+// null) means we never auto-commit a guessed owner (see @/lib/action-items). The
+// owner-candidate loaders live in @/lib/action-item-owners (shared with the
+// automatic on-sync extraction).
 
 export type ExtractState =
   | { status: "idle" }
@@ -392,9 +370,9 @@ export async function saveActionItems(formData: FormData): Promise<void> {
       const ownerId = typeof r.ownerId === "string" ? r.ownerId : "";
       if (text === "") continue;
       if (ownerKind === "staff" && staffIds.has(ownerId))
-        toCreate.push({ text, ownerUserId: ownerId, ownerContactId: null });
+        toCreate.push({ text, ...ownerColumns("staff", ownerId) });
       else if (ownerKind === "contact" && contactIds.has(ownerId))
-        toCreate.push({ text, ownerUserId: null, ownerContactId: ownerId });
+        toCreate.push({ text, ...ownerColumns("contact", ownerId) });
       // Rows with an unresolved/foreign owner are rejected — the XOR CHECK needs
       // exactly one valid owner, so we drop them rather than guess.
     }
@@ -490,11 +468,7 @@ export async function editActionItem(formData: FormData): Promise<void> {
     }
     await tx.actionItem.updateMany({
       where: { id },
-      data: {
-        text,
-        ownerUserId: ownerKind === "staff" ? ownerId : null,
-        ownerContactId: ownerKind === "contact" ? ownerId : null,
-      },
+      data: { text, ...ownerColumns(ownerKind, ownerId) },
     });
   });
   revalidateActionItemSurfaces();
