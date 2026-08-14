@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import type { CSSProperties, ReactNode } from "react";
 
 import { ConnectTrigger } from "./_connect-trigger";
@@ -45,8 +46,15 @@ export default function SitePage() {
 
         <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6">
           <header className="flex items-center justify-between py-7">
-            <ConnectTrigger className="text-[12px] font-medium tracking-[0.34em] text-[#f4f1eb] uppercase">
-              Coterie
+            <ConnectTrigger className="inline-flex items-center">
+              <Image
+                src="/coterie-logo.png"
+                alt="Coterie"
+                width={960}
+                height={340}
+                priority
+                className="h-7 w-auto"
+              />
             </ConnectTrigger>
             <a
               href={APP_URL}
@@ -179,7 +187,13 @@ export default function SitePage() {
       {/* ── FOOTER ───────────────────────────────────────────── */}
       <footer style={{ background: INK }} className="text-[#f4f1eb]/50">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 border-t border-[#f4f1eb]/10 px-6 py-9 text-[12px] sm:flex-row">
-          <div className="tracking-[0.3em] text-[#d4a843] uppercase">Coterie</div>
+          <Image
+            src="/coterie-logo.png"
+            alt="Coterie"
+            width={960}
+            height={340}
+            className="h-5 w-auto"
+          />
           <div className="flex items-center gap-7">
             <a href={CONTACT} className="transition-colors hover:text-[#f4f1eb]">
               Contact
