@@ -13,13 +13,18 @@ import type { Prisma } from "@/generated/prisma/client";
  *
  * `set_config(..., true)` makes the setting local to this transaction, so it
  * cannot leak onto another request sharing a pooled connection.
+ *
+ * `options` is passed straight to Prisma's interactive transaction — chiefly
+ * `timeout` (ms), which a bulk write (many sequential statements in one tx) can
+ * raise above the 5s default so it isn't rolled back mid-import.
  */
 export function withOrg<T>(
   orgId: string,
   work: (tx: Prisma.TransactionClient) => Promise<T>,
+  options?: { maxWait?: number; timeout?: number },
 ): Promise<T> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.org_id', ${orgId}, true)`;
     return work(tx);
-  });
+  }, options);
 }

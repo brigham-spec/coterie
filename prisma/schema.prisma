@@ -76,6 +76,8 @@ model Organization {
   proactiveScanCaches    ProactiveScanCache[]
   notes                  Note[]
   agendaItemStates       AgendaItemState[]
+  linkedinImports        LinkedinImport[]
+  linkedinContacts       LinkedinContact[]
 
   @@map("organizations")
 }
@@ -263,6 +265,8 @@ model Contact {
   meetingAttendees MeetingAttendee[]
   ownedActionItems ActionItem[]      @relation("ActionItemOwnerContact")
   eventInvitees    EventInvitee[]
+  /// The LinkedIn-tier row this contact was promoted from, if any.
+  linkedinSource   LinkedinContact?  @relation("LinkedinPromotion")
 
   // Composite-FK target for meeting_attendees (id, org_id).
   @@unique([id, orgId])
@@ -270,6 +274,89 @@ model Contact {
   @@index([companyId])
   @@index([orgId, email])
   @@map("contacts")
+}
+
+/// A single LinkedIn "Connections.csv" upload — the frozen snapshot-of-record for
+/// the file itself (spec: LinkedIn contact layer). Contact ROWS dedupe across
+/// imports, but each upload keeps its own provenance row so the export date and
+/// file are always attributable. Tenant-scoped (RLS).
+model LinkedinImport {
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  /// User-supplied export date (LinkedIn's CSV does not embed it). Always shown
+  /// alongside results so recall never implies more freshness than exists.
+  exportedOn       DateTime? @map("exported_on") @db.Timestamptz(6)
+  fileName         String?   @map("file_name")
+  rowCount         Int       @map("row_count")
+  importedByUserId String?   @map("imported_by_user_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contacts     LinkedinContact[]
+
+  @@index([orgId])
+  @@map("linkedin_imports")
+}
+
+/// A person from the LinkedIn export — a SEPARATE storage tier from Contact so the
+/// recall layer never clutters the member/contact lists. One row per person
+/// (deduped by dedupeKey); re-imports update dimensions and keep the most recent
+/// export as provenance. STATED fields are verbatim from the CSV; the INFERRED
+/// dimensions are null until the enrichment pass fills them (enrichedAt null =
+/// invisible to search). Every inferred dimension carries its own *Source
+/// (stated|inferred) and *Confidence (high|low) so provenance is never lost.
+model LinkedinContact {
+  id        String @id @default(uuid()) @db.Uuid
+  orgId     String @map("org_id") @db.Uuid
+  importId  String @map("import_id") @db.Uuid
+  /// One-row-per-person key: normalized profileUrl, else normalized name|company.
+  dedupeKey String @map("dedupe_key")
+
+  // ── STATED (verbatim from the CSV) ──
+  firstName   String    @map("first_name")
+  lastName    String    @map("last_name")
+  fullName    String    @map("full_name")
+  company     String    @default("")
+  title       String    @default("")
+  profileUrl  String?   @map("profile_url")
+  email       String?
+  connectedOn DateTime? @map("connected_on") @db.Timestamptz(6)
+
+  // ── INFERRED dimensions (null until enriched; geography deferred to promotion) ──
+  industry              String?
+  industrySource        String? @map("industry_source")
+  industryConfidence    String? @map("industry_confidence")
+  geography             String?
+  geographySource       String? @map("geography_source")
+  geographyConfidence   String? @map("geography_confidence")
+  seniority             String?
+  senioritySource       String? @map("seniority_source")
+  seniorityConfidence   String? @map("seniority_confidence")
+  jobFunction           String? @map("job_function")
+  jobFunctionSource     String? @map("job_function_source")
+  jobFunctionConfidence String? @map("job_function_confidence")
+
+  /// Null = not yet enriched, therefore invisible to the recall search.
+  enrichedAt DateTime? @map("enriched_at") @db.Timestamptz(6)
+
+  // ── PROMOTION path (into a real Contact) ──
+  promotedContactId String?   @map("promoted_contact_id") @db.Uuid
+  promotedAt        DateTime? @map("promoted_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization    Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  import          LinkedinImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  // Composite FK keeps the promotion target inside the same tenant.
+  promotedContact Contact?       @relation("LinkedinPromotion", fields: [promotedContactId, orgId], references: [id, orgId], onDelete: SetNull)
+
+  @@unique([orgId, dedupeKey])
+  @@unique([promotedContactId, orgId])
+  @@index([orgId])
+  @@index([orgId, importId])
+  @@index([orgId, enrichedAt])
+  @@map("linkedin_contacts")
 }
 
 /// Multi-party initiatives — relocations, developments, cluster efforts (spec §3.6).

@@ -74,6 +74,15 @@ const NAV_ICONS: Record<NavIcon, ReactNode> = {
       <path d="M8 2.5l1.7 3.4 3.8.5-2.7 2.6.6 3.7L8 11.5 4.6 12.7l.6-3.7-2.7-2.6 3.8-.5z" />
     </>
   ),
+  linkedin: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
+      <path d="M5.2 6.8v3.8" />
+      <path d="M5.2 4.9v.01" />
+      <path d="M7.6 10.6V6.8" />
+      <path d="M7.6 8.4c0-.9.7-1.6 1.6-1.6s1.6.7 1.6 1.6v2.2" />
+    </>
+  ),
   news: (
     <>
       <rect x="2.5" y="3.5" width="11" height="9" rx="1" />

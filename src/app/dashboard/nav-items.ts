@@ -17,6 +17,7 @@ export type NavIcon =
   | "commitments"
   | "network-search"
   | "prospect-finder"
+  | "linkedin"
   | "news"
   | "email"
   | "events"
@@ -68,6 +69,7 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/dashboard/prospect-finder",
         icon: "prospect-finder",
       },
+      { label: "LinkedIn", href: "/dashboard/linkedin", icon: "linkedin" },
       { label: "News", href: "/dashboard/news", icon: "news" },
       { label: "Email", href: "/dashboard/email", icon: "email" },
     ],
