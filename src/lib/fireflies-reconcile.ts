@@ -10,6 +10,7 @@ import {
   inferOrgName,
   inferPersonName,
 } from "@/lib/new-connections";
+import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 
 // Shared Fireflies reconcile (build item 6, spec §3.16). Turns fetched
@@ -47,6 +48,20 @@ export async function reconcileTranscripts(
     }),
   }));
 
+  // The org's own staff (email -> userId). An attendee whose email matches a
+  // staffer is recorded as staff attendance (tier-3 "New Connections" scoping),
+  // NOT matched as a contact or captured as a new connection. Read via bare
+  // prisma: org_memberships/users carry no RLS (platform-level), so this is a
+  // separate connection from the withOrg tx — never run it concurrently on a
+  // pinned tx client.
+  const staffRows = await prisma.orgMembership.findMany({
+    where: { orgId },
+    select: { user: { select: { id: true, email: true } } },
+  });
+  const staffByEmail = new Map(
+    staffRows.map((r) => [normalizeEmail(r.user.email), r.user.id]),
+  );
+
   let meetings = 0;
   let attendees = 0;
   let newConnections = 0;
@@ -77,6 +92,23 @@ export async function reconcileTranscripts(
     meetings++;
 
     for (const attendee of transcript.meeting_attendees ?? []) {
+      // Our own staff: record who was on the call (scopes the dashboard's New
+      // Connections to "my meetings") and skip — a staffer is never a contact
+      // match or a "new connection" to themselves.
+      const staffUserId = staffByEmail.get(normalizeEmail(attendee.email));
+      if (staffUserId != null) {
+        await withOrg(orgId, (tx) =>
+          tx.meetingStaffAttendee.upsert({
+            where: {
+              meetingId_userId: { meetingId: meeting.id, userId: staffUserId },
+            },
+            create: { orgId, meetingId: meeting.id, userId: staffUserId },
+            update: {},
+          }),
+        );
+        continue;
+      }
+
       const match = matchAttendee(
         {
           email: attendee.email,

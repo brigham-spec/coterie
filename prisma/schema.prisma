@@ -52,6 +52,7 @@ model Organization {
   introductions          Introduction[]
   meetings               Meeting[]
   meetingAttendees       MeetingAttendee[]
+  meetingStaffAttendees  MeetingStaffAttendee[]
   actionItems            ActionItem[]
   invoices               Invoice[]
   payments               Payment[]
@@ -97,6 +98,7 @@ model User {
   authoredNotes      Note[]               @relation("NoteAuthor")
   ownedIntroductions Introduction[]       @relation("IntroductionOwner")
   ownedProposals     MembershipProposal[] @relation("ProposalOwner")
+  attendedMeetings   MeetingStaffAttendee[]
 
   @@map("users")
 }
@@ -494,15 +496,40 @@ model Meeting {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  attendees    MeetingAttendee[]
-  actionItems  ActionItem[]
+  organization  Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  attendees     MeetingAttendee[]
+  staffAttendees MeetingStaffAttendee[]
+  actionItems   ActionItem[]
 
   // Composite-FK target for meeting_attendees (id, org_id).
   @@unique([id, orgId])
   @@index([orgId])
   @@index([orgId, heldAt(sort: Desc)])
   @@map("meetings")
+}
+
+/// Which of THIS tenant's staff attended a meeting (tier-3 personalization).
+/// Fireflies transcripts carry attendee emails but never a host/organizer, and
+/// the credential is org-wide — so a staff member is identified by matching the
+/// attendee email against the org's own users during reconcile. Lets the
+/// dashboard scope "New Connections" to the meetings a given staffer was on, and
+/// stops a staffer's own email from being captured as their own new connection.
+model MeetingStaffAttendee {
+  orgId     String @map("org_id") @db.Uuid
+  meetingId String @map("meeting_id") @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FK includes org_id so the meeting must be in the SAME org.
+  meeting      Meeting      @relation(fields: [meetingId, orgId], references: [id, orgId], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([meetingId, userId])
+  @@index([orgId])
+  @@index([userId])
+  @@map("meeting_staff_attendees")
 }
 
 /// Junction with match provenance (spec §3.10). Low-confidence matches are

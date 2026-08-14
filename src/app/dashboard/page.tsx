@@ -103,6 +103,7 @@ export default async function DashboardPage({
     proposals,
     invoices,
     unmatched,
+    myMeetingIds,
     pendingIntros,
     firefliesCred,
     recentSyncedMeetings,
@@ -197,8 +198,20 @@ export default async function DashboardPage({
         inferredOrg: true,
         seenCount: true,
         lastMeetingTitle: true,
+        // Which meetings evidenced this stranger — intersected with the user's
+        // own meetings to scope New Connections to "mine".
+        meetingIds: true,
       },
     });
+    // Meetings the current user was on (staff attendance from Fireflies). Only
+    // needed to filter New Connections down to "mine"; skip the query otherwise.
+    const myMeetingIds =
+      scope === "mine"
+        ? await tx.meetingStaffAttendee.findMany({
+            where: { userId: ctx.userId },
+            select: { meetingId: true },
+          })
+        : [];
     // Fireflies-evidenced intro-stage advances awaiting confirmation.
     const pendingIntros = await loadPendingIntroDetections(tx);
     // Fireflies connection + last-sync clock for the sync-status card. RLS
@@ -233,6 +246,7 @@ export default async function DashboardPage({
       proposals,
       invoices,
       unmatched,
+      myMeetingIds,
       pendingIntros,
       firefliesCred,
       recentSyncedMeetings,
@@ -264,7 +278,14 @@ export default async function DashboardPage({
   );
 
   // New Connections Detected — cluster unmatched meeting attendees by domain.
-  const connectionGroups = groupConnections(unmatched);
+  // Under "mine" the list is narrowed to strangers seen in the current user's
+  // own meetings; admins viewing "everyone" see the whole tenant's backlog.
+  const mineMeetingSet = new Set(myMeetingIds.map((m) => m.meetingId));
+  const scopedUnmatched =
+    scope === "mine"
+      ? unmatched.filter((u) => u.meetingIds.some((id) => mineMeetingSet.has(id)))
+      : unmatched;
+  const connectionGroups = groupConnections(scopedUnmatched);
   const companyOptions = companies.map((c) => ({ id: c.id, name: c.name }));
 
   // Referral Leaderboard — rank in-network referrers by referrals made.
