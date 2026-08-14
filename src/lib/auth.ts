@@ -121,10 +121,16 @@ async function provisionUser(clerkUserId: string) {
     [cu?.firstName, cu?.lastName].filter(Boolean).join(" ") ||
     cu?.username ||
     email;
+  // `name` is the recognized display name shown throughout the tool (owner,
+  // actor, greeting, staff pickers). We SEED it from Clerk on first sight but do
+  // NOT re-sync it on later requests — once provisioned it's the user's to edit
+  // in Settings (updateDisplayName), and re-deriving it here would clobber that
+  // edit on the very next page load. Email still syncs (it's identity, used to
+  // recognize the platform operator).
   return prisma.user.upsert({
     where: { clerkId: clerkUserId },
     create: { clerkId: clerkUserId, email, name },
-    update: { email, name },
+    update: { email },
   });
 }
 

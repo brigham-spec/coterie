@@ -7,6 +7,7 @@ import { readMemberTierDefs } from "@/lib/member-tiers";
 import { enabledModuleKeys } from "@/lib/modules";
 import { Button, Card, CardHeader, PageTitle } from "@/components/ui";
 
+import { NameForm } from "./_name-form";
 import { TiersForm } from "./_tiers-form";
 import { ModulesForm } from "./_modules-form";
 import { RestoreForm } from "./_restore-form";
@@ -50,6 +51,17 @@ export default async function SettingsPage() {
           subtitle={`Organization configuration for ${ctx.orgName}`}
         />
       </div>
+
+      <Card className="mb-6">
+        <CardHeader title="Your name" />
+        <div className="p-4">
+          <p className="mb-4 text-xs text-ink-2">
+            Set the name others recognize you by in this tool. It&rsquo;s seeded
+            from your login and yours to change.
+          </p>
+          <NameForm currentName={ctx.userName} email={ctx.userEmail} />
+        </div>
+      </Card>
 
       <Card>
         <CardHeader title="Member tiers" />
