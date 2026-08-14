@@ -13,8 +13,6 @@ import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { RSVP_CONFIRMED, RSVP_ATTENDED } from "@/lib/event-stages";
 import { deriveValueEntries } from "@/lib/value-delivered";
 import {
-  Card,
-  CardHeader,
   PageTitle,
   StatusBadge,
   TagBadge,
@@ -23,6 +21,7 @@ import {
   Th,
   Tr,
 } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import { CompanyBrief } from "./_brief";
 import { MeetingPrep } from "./_meeting-prep";
@@ -839,8 +838,7 @@ export default async function CompanyDetailPage({
         }))}
       />
 
-      <Card>
-        <CardHeader title="Projects" />
+      <CollapsibleCard id="company-projects" title="Projects">
         {company.projectLinks.length === 0 ? (
           <p className="px-4 py-6 text-xs text-ink-3">
             Not linked to any projects yet.
@@ -873,7 +871,7 @@ export default async function CompanyDetailPage({
             ))}
           </Table>
         )}
-      </Card>
+      </CollapsibleCard>
 
       <MeetingsCard
         companyId={company.id}

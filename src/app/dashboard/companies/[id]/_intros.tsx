@@ -2,7 +2,8 @@
 
 import { useActionState, useState, useTransition } from "react";
 
-import { Button, Card, CardHeader } from "@/components/ui";
+import { Button } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import { dismissIntro, suggestIntros, type IntroSuggestState } from "./actions";
 import type { IntroSuggestion } from "@/lib/intro-engine";
@@ -30,22 +31,22 @@ export function IntroSuggestions({ companyId }: { companyId: string }) {
       : [];
 
   return (
-    <Card>
-      <CardHeader
-        title="Suggested introductions"
-        action={
-          <form action={formAction}>
-            <input type="hidden" name="companyId" value={companyId} />
-            <Button type="submit" variant="gold" disabled={isPending}>
-              {isPending
-                ? "Thinking…"
-                : state.status === "ok"
-                  ? "Refresh"
-                  : "Suggest introductions"}
-            </Button>
-          </form>
-        }
-      />
+    <CollapsibleCard
+      id="company-intro-suggestions"
+      title="Suggested introductions"
+      action={
+        <form action={formAction}>
+          <input type="hidden" name="companyId" value={companyId} />
+          <Button type="submit" variant="gold" disabled={isPending}>
+            {isPending
+              ? "Thinking…"
+              : state.status === "ok"
+                ? "Refresh"
+                : "Suggest introductions"}
+          </Button>
+        </form>
+      }
+    >
       <div className="px-4 py-4">
         {state.status === "error" ? (
           <p className="text-xs text-red-ink">{state.message}</p>
@@ -75,7 +76,7 @@ export function IntroSuggestions({ companyId }: { companyId: string }) {
           </p>
         )}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }
 

@@ -2,14 +2,8 @@
 
 import { useState } from "react";
 
-import {
-  Button,
-  Card,
-  CardHeader,
-  Field,
-  SelectField,
-  Textarea,
-} from "@/components/ui";
+import { Button, Field, SelectField, Textarea } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
 import { autoAssignTier, type MemberTier } from "@/lib/member-tiers";
 import { ORG_TAGS } from "@/lib/tags";
@@ -141,19 +135,19 @@ function ReadView({
   const hasNarrative = narrative.some((n) => n.value);
 
   return (
-    <Card>
-      <CardHeader
-        title="Details"
-        action={
-          <button
-            type="button"
-            onClick={onEdit}
-            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-          >
-            Edit
-          </button>
-        }
-      />
+    <CollapsibleCard
+      id="company-details"
+      title="Details"
+      action={
+        <button
+          type="button"
+          onClick={onEdit}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          Edit
+        </button>
+      }
+    >
       <dl className="grid grid-cols-2 gap-4 p-4 text-xs sm:grid-cols-3">
         {facts.map((f) => (
           <div key={f.label}>
@@ -192,7 +186,7 @@ function ReadView({
       ) : null}
       <LifecycleBar company={company} />
       <DangerZone company={company} />
-    </Card>
+    </CollapsibleCard>
   );
 }
 
@@ -304,8 +298,7 @@ function EditForm({
     : null;
 
   return (
-    <Card>
-      <CardHeader title="Edit details" />
+    <CollapsibleCard id="company-details" title="Edit details">
       <form
         action={async (fd) => {
           await updateCompany(fd);
@@ -517,6 +510,6 @@ function EditForm({
           </Button>
         </div>
       </form>
-    </Card>
+    </CollapsibleCard>
   );
 }

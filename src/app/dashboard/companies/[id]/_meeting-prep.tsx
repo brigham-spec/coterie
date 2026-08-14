@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 
-import { Button, Card, CardHeader } from "@/components/ui";
+import { Button } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import { generateMeetingPrepAction, type MeetingPrepState } from "./actions";
 
@@ -21,22 +22,22 @@ export function MeetingPrep({ companyId }: { companyId: string }) {
   );
 
   return (
-    <Card>
-      <CardHeader
-        title="Meeting prep"
-        action={
-          <form action={formAction}>
-            <input type="hidden" name="companyId" value={companyId} />
-            <Button type="submit" variant="gold" disabled={isPending}>
-              {isPending
-                ? "Preparing…"
-                : state.status === "ok"
-                  ? "Refresh"
-                  : "Prep me"}
-            </Button>
-          </form>
-        }
-      />
+    <CollapsibleCard
+      id="company-meeting-prep"
+      title="Meeting prep"
+      action={
+        <form action={formAction}>
+          <input type="hidden" name="companyId" value={companyId} />
+          <Button type="submit" variant="gold" disabled={isPending}>
+            {isPending
+              ? "Preparing…"
+              : state.status === "ok"
+                ? "Refresh"
+                : "Prep me"}
+          </Button>
+        </form>
+      }
+    >
       <div className="px-4 py-4">
         {state.status === "error" ? (
           <p className="text-xs text-red-ink">{state.message}</p>
@@ -51,6 +52,6 @@ export function MeetingPrep({ companyId }: { companyId: string }) {
           </p>
         )}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }

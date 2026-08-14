@@ -4,13 +4,12 @@ import { useState } from "react";
 
 import {
   Button,
-  Card,
-  CardHeader,
   Field,
   SelectField,
   StatusBadge,
   Textarea,
 } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import { PROPOSAL_STATUS_DEFS } from "@/lib/proposal-statuses";
 
 import {
@@ -61,20 +60,19 @@ export function ProposalsCard({
   const [adding, setAdding] = useState(false);
 
   return (
-    <Card>
-      <CardHeader
-        title="Membership proposals"
-        action={
-          <button
-            type="button"
-            onClick={() => setAdding((v) => !v)}
-            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-          >
-            {adding ? "Close" : "Log proposal"}
-          </button>
-        }
-      />
-
+    <CollapsibleCard
+      id="company-proposals"
+      title="Membership proposals"
+      action={
+        <button
+          type="button"
+          onClick={() => setAdding((v) => !v)}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          {adding ? "Close" : "Log proposal"}
+        </button>
+      }
+    >
       {adding ? (
         <div className="border-b border-line p-4">
           <ProposalForm companyId={companyId} onDone={() => setAdding(false)} />
@@ -92,7 +90,7 @@ export function ProposalsCard({
           ))}
         </ul>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

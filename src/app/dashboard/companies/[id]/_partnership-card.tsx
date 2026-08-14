@@ -2,7 +2,8 @@
 
 import { useActionState, useState } from "react";
 
-import { Button, Card, CardHeader, Field, Textarea } from "@/components/ui";
+import { Button, Field, Textarea } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import {
   synthesizePartner,
@@ -62,25 +63,24 @@ export function PartnershipCard({
   }
 
   return (
-    <Card>
-      <CardHeader
-        title="Partnership"
-        action={
-          <form action={synthAction}>
-            <input type="hidden" name="companyId" value={companyId} />
-            <input type="hidden" name="website" value={website} />
-            <input
-              type="hidden"
-              name="partnerRelationship"
-              value={relationship}
-            />
-            <Button type="submit" variant="gold" disabled={synthesizing}>
-              {synthesizing ? "Researching…" : "Synthesize"}
-            </Button>
-          </form>
-        }
-      />
-
+    <CollapsibleCard
+      id="company-partnership"
+      title="Partnership"
+      action={
+        <form action={synthAction}>
+          <input type="hidden" name="companyId" value={companyId} />
+          <input type="hidden" name="website" value={website} />
+          <input
+            type="hidden"
+            name="partnerRelationship"
+            value={relationship}
+          />
+          <Button type="submit" variant="gold" disabled={synthesizing}>
+            {synthesizing ? "Researching…" : "Synthesize"}
+          </Button>
+        </form>
+      }
+    >
       <div className="p-4">
         {synthState.status === "error" ? (
           <p className="mb-3 text-xs text-red-ink">{synthState.message}</p>
@@ -159,6 +159,6 @@ export function PartnershipCard({
           </div>
         </form>
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }

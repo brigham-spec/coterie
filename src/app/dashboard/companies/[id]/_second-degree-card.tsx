@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { Card, CardHeader } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import {
   attachConnection,
@@ -38,8 +38,7 @@ export function SecondDegreeCard({
   if (people.length === 0) return null;
 
   return (
-    <Card>
-      <CardHeader title="People from meetings" />
+    <CollapsibleCard id="company-second-degree" title="People from meetings">
       <p className="px-4 pt-3 text-[10.5px] leading-relaxed text-ink-3">
         Seen in this company&apos;s meetings via Fireflies but not yet in your
         network.
@@ -49,7 +48,7 @@ export function SecondDegreeCard({
           <PersonChip key={p.id} companyId={companyId} person={p} />
         ))}
       </ul>
-    </Card>
+    </CollapsibleCard>
   );
 }
 

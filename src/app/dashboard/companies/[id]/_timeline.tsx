@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-import { Button, Card, CardHeader, Textarea } from "@/components/ui";
+import { Button, Textarea } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import type { TimelineEntry } from "@/lib/relationship-timeline";
 
 import { addNote, editNote, deleteNote } from "./actions";
@@ -37,20 +38,19 @@ export function RelationshipTimeline({
   const [adding, setAdding] = useState(false);
 
   return (
-    <Card>
-      <CardHeader
-        title="Relationship timeline"
-        action={
-          <button
-            type="button"
-            onClick={() => setAdding((v) => !v)}
-            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-          >
-            {adding ? "Close" : "Add note"}
-          </button>
-        }
-      />
-
+    <CollapsibleCard
+      id="company-timeline"
+      title="Relationship timeline"
+      action={
+        <button
+          type="button"
+          onClick={() => setAdding((v) => !v)}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          {adding ? "Close" : "Add note"}
+        </button>
+      }
+    >
       {adding ? (
         <div className="border-b border-line p-4">
           <NoteForm companyId={companyId} onDone={() => setAdding(false)} />
@@ -67,7 +67,7 @@ export function RelationshipTimeline({
           />
         ))}
       </ol>
-    </Card>
+    </CollapsibleCard>
   );
 }
 

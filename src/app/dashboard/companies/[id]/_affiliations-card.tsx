@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-import { Button, Card, CardHeader, Field, Textarea } from "@/components/ui";
+import { Button, Field, Textarea } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import {
   addAffiliation,
@@ -40,20 +41,19 @@ export function AffiliationsCard({
   const [adding, setAdding] = useState(false);
 
   return (
-    <Card>
-      <CardHeader
-        title="Additional companies & affiliations"
-        action={
-          <button
-            type="button"
-            onClick={() => setAdding((v) => !v)}
-            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-          >
-            {adding ? "Close" : "Add"}
-          </button>
-        }
-      />
-
+    <CollapsibleCard
+      id="company-affiliations"
+      title="Additional companies & affiliations"
+      action={
+        <button
+          type="button"
+          onClick={() => setAdding((v) => !v)}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          {adding ? "Close" : "Add"}
+        </button>
+      }
+    >
       {adding ? (
         <div className="border-b border-line p-4">
           <AffiliationForm
@@ -77,7 +77,7 @@ export function AffiliationsCard({
           ))}
         </ul>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

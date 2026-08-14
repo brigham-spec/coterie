@@ -5,13 +5,12 @@ import Link from "next/link";
 
 import {
   Button,
-  Card,
-  CardHeader,
   Field,
   SelectField,
   StatusBadge,
   Textarea,
 } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import { VALUE_KIND_DEFS } from "@/lib/value-kinds";
 import {
   summarizeValueDelivered,
@@ -75,30 +74,29 @@ export function ValueDeliveredCard({
   const barMax = Math.max(1, ...summary.byKind.map(magnitude));
 
   return (
-    <Card>
-      <CardHeader
-        title="Value delivered"
-        action={
-          <div className="flex items-center gap-4">
-            {all.length > 0 ? (
-              <Link
-                href={`/dashboard/companies/${companyId}/value-report`}
-                className="text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase hover:text-ink"
-              >
-                View report
-              </Link>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setAdding((v) => !v)}
-              className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+    <CollapsibleCard
+      id="company-value-delivered"
+      title="Value delivered"
+      action={
+        <div className="flex items-center gap-4">
+          {all.length > 0 ? (
+            <Link
+              href={`/dashboard/companies/${companyId}/value-report`}
+              className="text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase hover:text-ink"
             >
-              {adding ? "Close" : "Log value"}
-            </button>
-          </div>
-        }
-      />
-
+              View report
+            </Link>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setAdding((v) => !v)}
+            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+          >
+            {adding ? "Close" : "Log value"}
+          </button>
+        </div>
+      }
+    >
       {all.length > 0 ? (
         <div className="flex flex-col gap-3 border-b border-line px-4 py-4">
           <div className="flex items-baseline gap-2">
@@ -169,7 +167,7 @@ export function ValueDeliveredCard({
           ))}
         </ul>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

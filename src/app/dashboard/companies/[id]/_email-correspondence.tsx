@@ -2,7 +2,8 @@
 
 import { useActionState, useState, useTransition } from "react";
 
-import { Button, Card, CardHeader, TagBadge, Textarea } from "@/components/ui";
+import { Button, TagBadge, Textarea } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import { parseActionItems, sentimentTone } from "@/lib/email-intel";
 
 import {
@@ -67,20 +68,19 @@ export function EmailCorrespondence({
       : null;
 
   return (
-    <Card>
-      <CardHeader
-        title="Email correspondence"
-        action={
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-          >
-            {open ? "Close" : "Paste thread"}
-          </button>
-        }
-      />
-
+    <CollapsibleCard
+      id="company-email"
+      title="Email correspondence"
+      action={
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          {open ? "Close" : "Paste thread"}
+        </button>
+      }
+    >
       {open ? (
         <div className="border-b border-line p-4">
           {review ? (
@@ -130,7 +130,7 @@ export function EmailCorrespondence({
           ))}
         </ul>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 
-import { Button, Card, CardHeader, Field, Textarea } from "@/components/ui";
+import { Button, Field, Textarea } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import {
   MeetingActionItems,
@@ -72,22 +73,21 @@ export function MeetingsCard({
   const canLog = contacts.length > 0;
 
   return (
-    <Card>
-      <CardHeader
-        title="Meetings"
-        action={
-          canLog ? (
-            <button
-              type="button"
-              onClick={() => setAdding((v) => !v)}
-              className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-            >
-              {adding ? "Close" : "Log meeting"}
-            </button>
-          ) : null
-        }
-      />
-
+    <CollapsibleCard
+      id="company-meetings"
+      title="Meetings"
+      action={
+        canLog ? (
+          <button
+            type="button"
+            onClick={() => setAdding((v) => !v)}
+            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+          >
+            {adding ? "Close" : "Log meeting"}
+          </button>
+        ) : null
+      }
+    >
       {adding ? (
         <div className="border-b border-line p-4">
           <MeetingForm
@@ -119,7 +119,7 @@ export function MeetingsCard({
           ))}
         </ul>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

@@ -2,7 +2,8 @@
 
 import { useActionState, useState } from "react";
 
-import { Button, Card, CardHeader } from "@/components/ui";
+import { Button } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import {
   applyWebEnrichment,
@@ -62,23 +63,22 @@ export function EnrichFromWeb({ companyId }: { companyId: string }) {
   const selectedCount = Object.keys(selection).length;
 
   return (
-    <Card>
-      <CardHeader
-        title="Enrich from web"
-        action={
-          <form action={enrichAction}>
-            <input type="hidden" name="companyId" value={companyId} />
-            <Button type="submit" variant="gold" disabled={enriching}>
-              {enriching
-                ? "Searching…"
-                : enrichState.status === "ok"
-                  ? "Re-search"
-                  : "Enrich from web"}
-            </Button>
-          </form>
-        }
-      />
-
+    <CollapsibleCard
+      id="company-enrich-web"
+      title="Enrich from web"
+      action={
+        <form action={enrichAction}>
+          <input type="hidden" name="companyId" value={companyId} />
+          <Button type="submit" variant="gold" disabled={enriching}>
+            {enriching
+              ? "Searching…"
+              : enrichState.status === "ok"
+                ? "Re-search"
+                : "Enrich from web"}
+          </Button>
+        </form>
+      }
+    >
       <div className="px-4 py-4">
         {enrichState.status === "error" ? (
           <p className="text-xs text-red-ink">{enrichState.message}</p>
@@ -152,6 +152,6 @@ export function EnrichFromWeb({ companyId }: { companyId: string }) {
           </form>
         ) : null}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }

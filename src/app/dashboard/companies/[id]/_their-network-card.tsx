@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-import { Button, Card, CardHeader, Field, Textarea } from "@/components/ui";
+import { Button, Field, Textarea } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import {
   addKeyRelationship,
@@ -46,20 +47,19 @@ export function TheirNetworkCard({
   const [adding, setAdding] = useState(false);
 
   return (
-    <Card>
-      <CardHeader
-        title="Their network"
-        action={
-          <button
-            type="button"
-            onClick={() => setAdding((v) => !v)}
-            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-          >
-            {adding ? "Close" : "Add"}
-          </button>
-        }
-      />
-
+    <CollapsibleCard
+      id="company-their-network"
+      title="Their network"
+      action={
+        <button
+          type="button"
+          onClick={() => setAdding((v) => !v)}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          {adding ? "Close" : "Add"}
+        </button>
+      }
+    >
       <p className="border-b border-line px-4 py-2 text-[11px] text-ink-3 italic">
         Key external contacts this partner can connect you with. Emails feed
         meeting matching.
@@ -92,7 +92,7 @@ export function TheirNetworkCard({
           ))}
         </ul>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

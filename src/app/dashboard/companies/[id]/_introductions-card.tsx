@@ -5,8 +5,6 @@ import Link from "next/link";
 
 import {
   Button,
-  Card,
-  CardHeader,
   Field,
   SelectField,
   StatusBadge,
@@ -16,6 +14,7 @@ import {
   Th,
   Tr,
 } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import { INTRO_STAGES, getIntroStageDef } from "@/lib/intro-stages";
 
 import { confirmIntroAdvance } from "./actions";
@@ -82,28 +81,28 @@ export function IntroductionsCard({
   const canLog = partyAOptions.length > 0 && partyBOptions.length > 0;
 
   return (
-    <Card>
-      <CardHeader
-        title="Introductions"
-        action={
-          <div className="flex items-center gap-4">
-            {pendingIntros.length > 0 ? (
-              <span className="rounded-full bg-teal-bg px-2 py-0.5 text-[10px] font-semibold text-teal-ink">
-                {pendingIntros.length} pending
-              </span>
-            ) : null}
-            {canLog ? (
-              <button
-                type="button"
-                onClick={() => setLogging((v) => !v)}
-                className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-              >
-                {logging ? "Close" : "Log intro"}
-              </button>
-            ) : null}
-          </div>
-        }
-      />
+    <CollapsibleCard
+      id="company-introductions"
+      title="Introductions"
+      action={
+        <div className="flex items-center gap-4">
+          {pendingIntros.length > 0 ? (
+            <span className="rounded-full bg-teal-bg px-2 py-0.5 text-[10px] font-semibold text-teal-ink">
+              {pendingIntros.length} pending
+            </span>
+          ) : null}
+          {canLog ? (
+            <button
+              type="button"
+              onClick={() => setLogging((v) => !v)}
+              className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+            >
+              {logging ? "Close" : "Log intro"}
+            </button>
+          ) : null}
+        </div>
+      }
+    >
 
       {pendingIntros.length > 0 ? (
         <div className="border-b border-line bg-teal-bg/30 px-4 py-3">
@@ -175,7 +174,7 @@ export function IntroductionsCard({
           ))}
         </Table>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

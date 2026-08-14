@@ -2,7 +2,8 @@
 
 import { useActionState, useState } from "react";
 
-import { Button, Card, CardHeader } from "@/components/ui";
+import { Button } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import {
   applyMeetingEnrichment,
@@ -59,23 +60,22 @@ export function EnrichFromMeetings({ companyId }: { companyId: string }) {
   const selectedCount = Object.keys(selection).length;
 
   return (
-    <Card>
-      <CardHeader
-        title="Enrich from meetings"
-        action={
-          <form action={enrichAction}>
-            <input type="hidden" name="companyId" value={companyId} />
-            <Button type="submit" variant="gold" disabled={enriching}>
-              {enriching
-                ? "Reading…"
-                : enrichState.status === "ok"
-                  ? "Re-scan"
-                  : "Enrich from meetings"}
-            </Button>
-          </form>
-        }
-      />
-
+    <CollapsibleCard
+      id="company-enrich-meetings"
+      title="Enrich from meetings"
+      action={
+        <form action={enrichAction}>
+          <input type="hidden" name="companyId" value={companyId} />
+          <Button type="submit" variant="gold" disabled={enriching}>
+            {enriching
+              ? "Reading…"
+              : enrichState.status === "ok"
+                ? "Re-scan"
+                : "Enrich from meetings"}
+          </Button>
+        </form>
+      }
+    >
       <div className="px-4 py-4">
         {enrichState.status === "error" ? (
           <p className="text-xs text-red-ink">{enrichState.message}</p>
@@ -150,6 +150,6 @@ export function EnrichFromMeetings({ companyId }: { companyId: string }) {
           </form>
         ) : null}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { Button, Card, CardHeader } from "@/components/ui";
+import { Button } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import { saveNewsItem, deleteNewsItem, linkNewsToProject } from "../../news/actions";
 
@@ -46,28 +47,27 @@ export function SavedArticlesCard({
   const [adding, setAdding] = useState(false);
 
   return (
-    <Card>
-      <CardHeader
-        title="Saved Articles & News"
-        action={
-          <div className="flex items-center gap-3">
-            <Link
-              href={`/dashboard/news?company=${companyId}`}
-              className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-            >
-              Scan the web
-            </Link>
-            <button
-              type="button"
-              onClick={() => setAdding((v) => !v)}
-              className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-            >
-              {adding ? "Close" : "Add link"}
-            </button>
-          </div>
-        }
-      />
-
+    <CollapsibleCard
+      id="company-saved-articles"
+      title="Saved Articles & News"
+      action={
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/dashboard/news?company=${companyId}`}
+            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+          >
+            Scan the web
+          </Link>
+          <button
+            type="button"
+            onClick={() => setAdding((v) => !v)}
+            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+          >
+            {adding ? "Close" : "Add link"}
+          </button>
+        </div>
+      }
+    >
       {adding ? (
         <div className="border-b border-line p-4">
           <AddLinkForm companyId={companyId} onDone={() => setAdding(false)} />
@@ -90,7 +90,7 @@ export function SavedArticlesCard({
           ))}
         </ul>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

@@ -2,7 +2,8 @@
 
 import { useActionState, useState } from "react";
 
-import { Button, Card, CardHeader } from "@/components/ui";
+import { Button } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import {
   analyzeDocumentAction,
@@ -59,9 +60,7 @@ export function AnalyzeDocument({ companyId }: { companyId: string }) {
   const selectedCount = Object.keys(selection).length;
 
   return (
-    <Card>
-      <CardHeader title="Analyze a document" />
-
+    <CollapsibleCard id="company-analyze-document" title="Analyze a document">
       <div className="px-4 py-4">
         {review ? null : (
           <>
@@ -152,6 +151,6 @@ export function AnalyzeDocument({ companyId }: { companyId: string }) {
           </form>
         ) : null}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }

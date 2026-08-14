@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-import { Button, Card, CardHeader, Field, SelectField, Textarea } from "@/components/ui";
+import { Button, Field, SelectField, Textarea } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import { isActiveCommitment } from "@/lib/commitments";
 
 import {
@@ -70,20 +71,19 @@ export function CommitmentsCard({
   const closed = commitments.filter((c) => !isActiveCommitment(c.status));
 
   return (
-    <Card>
-      <CardHeader
-        title="Commitments"
-        action={
-          <button
-            type="button"
-            onClick={() => setAdding((v) => !v)}
-            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
-          >
-            {adding ? "Close" : "Add commitment"}
-          </button>
-        }
-      />
-
+    <CollapsibleCard
+      id="company-commitments"
+      title="Commitments"
+      action={
+        <button
+          type="button"
+          onClick={() => setAdding((v) => !v)}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          {adding ? "Close" : "Add commitment"}
+        </button>
+      }
+    >
       {adding ? (
         <div className="border-b border-line p-4">
           <CommitmentForm
@@ -165,7 +165,7 @@ export function CommitmentsCard({
           </ul>
         </div>
       ) : null}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

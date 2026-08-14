@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 
-import { Button, Card, CardHeader } from "@/components/ui";
+import { Button } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import { generateWhyJoin, type WhyJoinState } from "./actions";
 
@@ -33,22 +34,22 @@ export function WhyJoin({ companyId }: { companyId: string }) {
   );
 
   return (
-    <Card>
-      <CardHeader
-        title="Why join?"
-        action={
-          <form action={formAction}>
-            <input type="hidden" name="companyId" value={companyId} />
-            <Button type="submit" variant="gold" disabled={isPending}>
-              {isPending
-                ? "Writing…"
-                : state.status === "ok"
-                  ? "Rewrite"
-                  : "Make the case"}
-            </Button>
-          </form>
-        }
-      />
+    <CollapsibleCard
+      id="company-why-join"
+      title="Why join?"
+      action={
+        <form action={formAction}>
+          <input type="hidden" name="companyId" value={companyId} />
+          <Button type="submit" variant="gold" disabled={isPending}>
+            {isPending
+              ? "Writing…"
+              : state.status === "ok"
+                ? "Rewrite"
+                : "Make the case"}
+          </Button>
+        </form>
+      }
+    >
       <div className="px-4 py-4">
         {state.status === "error" ? (
           <p className="text-xs text-red-ink">{state.message}</p>
@@ -114,6 +115,6 @@ export function WhyJoin({ companyId }: { companyId: string }) {
           </p>
         )}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }
