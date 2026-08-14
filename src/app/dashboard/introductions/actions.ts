@@ -26,7 +26,7 @@ import {
 // foreign id resolves null → throw) before creating.
 
 export async function createIntroduction(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
+  const { orgId, userId } = await requireOrgContext();
 
   const partyAContactId = String(formData.get("partyAContactId") ?? "").trim();
   const partyBContactId = String(formData.get("partyBContactId") ?? "").trim();
@@ -71,6 +71,7 @@ export async function createIntroduction(formData: FormData): Promise<void> {
         connectionType,
         headline,
         notes,
+        ownerUserId: userId,
       },
     });
   });

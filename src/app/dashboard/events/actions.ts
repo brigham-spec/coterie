@@ -1219,7 +1219,7 @@ export type LogIntroState =
 export async function logIntroductionAtEvent(
   formData: FormData,
 ): Promise<LogIntroState> {
-  const { orgId } = await requireOrgContext();
+  const { orgId, userId } = await requireOrgContext();
 
   const eventId = String(formData.get("eventId") ?? "").trim();
   const partyAContactId = String(formData.get("partyAContactId") ?? "").trim();
@@ -1256,6 +1256,7 @@ export async function logIntroductionAtEvent(
         source: "manual",
         eventId,
         madeOn,
+        ownerUserId: userId,
       },
     });
     return null;

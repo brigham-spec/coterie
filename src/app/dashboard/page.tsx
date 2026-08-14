@@ -151,6 +151,7 @@ export default async function DashboardPage({
       select: { id: true, name: true, type: true, venue: true, date: true },
     });
     const intros = await tx.introduction.findMany({
+      where: scope === "mine" ? { ownerUserId: ctx.userId } : undefined,
       orderBy: { createdAt: "desc" },
       take: 20,
       select: {
@@ -162,6 +163,7 @@ export default async function DashboardPage({
       },
     });
     const proposals = await tx.membershipProposal.findMany({
+      where: scope === "mine" ? { ownerUserId: ctx.userId } : undefined,
       orderBy: { createdAt: "desc" },
       select: {
         id: true,

@@ -156,6 +156,7 @@ describe("createProposal", () => {
           sentOn: true,
           driveUrl: true,
           notes: true,
+          ownerUserId: true,
         },
       }),
     );
@@ -165,6 +166,8 @@ describe("createProposal", () => {
     expect(proposal!.sentOn?.toISOString().slice(0, 10)).toBe("2026-06-01");
     expect(proposal!.driveUrl).toBe("https://drive.test/proposal");
     expect(proposal!.notes).toBe("First offer.");
+    // The creating staff user is stamped as owner — scopes the dashboard "mine".
+    expect(proposal!.ownerUserId).toBe(staffUser.id);
   });
 
   test("rejects an unknown status", async () => {

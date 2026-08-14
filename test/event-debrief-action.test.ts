@@ -205,6 +205,8 @@ describe("post-event debrief actions", () => {
     expect(intro?.partyBContactId).toBe(bobId);
     expect(intro?.status).toBe("made");
     expect(intro?.source).toBe("manual");
+    // The creating staff user is stamped as owner — scopes the dashboard "mine".
+    expect(intro?.ownerUserId).toBe(staffUser.id);
   });
 
   test("refuses an introduction between identical parties", async () => {

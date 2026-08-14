@@ -142,6 +142,7 @@ describe("createIntroduction", () => {
           headline: true,
           madeOn: true,
           connectionType: true,
+          ownerUserId: true,
         },
       }),
     );
@@ -151,6 +152,8 @@ describe("createIntroduction", () => {
     expect(intro!.madeOn?.toISOString().slice(0, 10)).toBe("2026-06-01");
     // Omitted connection type is stored as the empty default, not rejected.
     expect(intro!.connectionType).toBe("");
+    // The creating staff user is stamped as owner — scopes the dashboard "mine".
+    expect(intro!.ownerUserId).toBe(staffUser.id);
   });
 
   test("rejects an invalid stage", async () => {

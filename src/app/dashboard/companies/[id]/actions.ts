@@ -1645,7 +1645,7 @@ function optionalAmount(formData: FormData, key: string): string | null {
 }
 
 export async function createProposal(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
+  const { orgId, userId } = await requireOrgContext();
 
   const companyId = String(formData.get("companyId") ?? "").trim();
   if (!companyId) throw new Error("missing company");
@@ -1669,7 +1669,17 @@ export async function createProposal(formData: FormData): Promise<void> {
     if (company == null) return false;
 
     await tx.membershipProposal.create({
-      data: { orgId, companyId, tier, amount, status, sentOn, driveUrl, notes },
+      data: {
+        orgId,
+        companyId,
+        tier,
+        amount,
+        status,
+        sentOn,
+        driveUrl,
+        notes,
+        ownerUserId: userId,
+      },
     });
     return true;
   });
