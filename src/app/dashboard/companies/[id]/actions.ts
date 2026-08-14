@@ -30,7 +30,7 @@ import { COMMITMENT_STATUSES } from "@/lib/commitments";
 import { isProposalStatus } from "@/lib/proposal-statuses";
 import { isValueKind } from "@/lib/value-kinds";
 import { optionalDate, optionalUrl, assertHttpUrl } from "@/lib/form-fields";
-import { ORG_TAGS } from "@/lib/tags";
+import { ORG_TAG_KEYS } from "@/lib/tags";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { generateCompanyBrief } from "@/lib/anthropic";
 import { generateMeetingPrep, type PrepCommitment } from "@/lib/meeting-prep";
@@ -1428,8 +1428,6 @@ export async function deleteEmailCorrespondence(formData: FormData): Promise<voi
 // so the relationship timeline reflects the lifecycle (mirrors the prototype's
 // statusHistory). org_id and the acting user are stamped from the resolved
 // context, never from client input.
-
-const ORG_TAG_KEYS = new Set(ORG_TAGS.map((t) => t.key));
 
 function optionalText(formData: FormData, key: string): string | null {
   const v = String(formData.get(key) ?? "").trim();

@@ -22,7 +22,6 @@ import {
   PageTitle,
   SelectField,
   StatusBadge,
-  TagBadge,
   Table,
   Td,
   Th,
@@ -34,6 +33,7 @@ import { createCompany } from "./actions";
 import { CompanyFilters } from "./_filters";
 import { LinkedInParse } from "./_linkedin-parse";
 import { BatchSynth } from "./_batch-synth";
+import { OwnerCell, TierCell, TagsCell, ValueCell } from "./_inline-edit";
 
 // Companies — the network's central table (build item 4, enriched in slice 11.2).
 // The list is filtered and sorted entirely from the URL query string (segment /
@@ -114,7 +114,7 @@ export default async function CompaniesPage({
   // tallies (both bounded per-tenant reads, attributed in memory), and the org's
   // configured member tiers (organizations carry no RLS — a plain query). The
   // tier list orders the filter facet.
-  const [{ companies, openActionByCompany, introByCompany }, org] =
+  const [{ companies, openActionByCompany, introByCompany }, org, staffRows] =
     await Promise.all([
       withOrg(ctx.orgId, async (tx) => {
         const companies = await tx.company.findMany({
@@ -151,8 +151,16 @@ export default async function CompaniesPage({
         where: { id: ctx.orgId },
         select: { settings: true },
       }),
+      // Full org staff list for the inline owner picker (org_memberships carry no
+      // RLS — scope by orgId).
+      prisma.orgMembership.findMany({
+        where: { orgId: ctx.orgId },
+        orderBy: { user: { name: "asc" } },
+        select: { user: { select: { id: true, name: true } } },
+      }),
     ]);
   const configuredTiers = readMemberTiers(org?.settings);
+  const staff = staffRows.map((m) => ({ id: m.user.id, name: m.user.name }));
 
   const segment = SEGMENTS.find((s) => s.key === segmentKey) ?? SEGMENTS[0];
 
@@ -440,33 +448,31 @@ export default async function CompaniesPage({
                       ) : null}
                     </div>
                   </Td>
-                  <Td>{c.owner?.name ?? "—"}</Td>
-                  <Td className="text-ink-2">{c.tier ?? "—"}</Td>
                   <Td>
-                    {c.networkTags.length === 0 ? (
-                      <span className="text-ink-3">—</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {c.networkTags.slice(0, 3).map((key) => {
-                          const def = getTagDef(key);
-                          return (
-                            <TagBadge
-                              key={key}
-                              label={def.label}
-                              tone={def.tone}
-                              title={def.desc}
-                            />
-                          );
-                        })}
-                        {c.networkTags.length > 3 ? (
-                          <span className="text-[10px] text-ink-3">
-                            +{c.networkTags.length - 3}
-                          </span>
-                        ) : null}
-                      </div>
-                    )}
+                    <OwnerCell
+                      companyId={c.id}
+                      ownerUserId={c.ownerUserId}
+                      ownerName={c.owner?.name ?? null}
+                      staff={staff}
+                    />
                   </Td>
-                  <Td>{currency.format(Number(c.annualValue))}</Td>
+                  <Td className="text-ink-2">
+                    <TierCell
+                      companyId={c.id}
+                      tier={c.tier}
+                      tiers={configuredTiers}
+                    />
+                  </Td>
+                  <Td>
+                    <TagsCell companyId={c.id} tags={c.networkTags} />
+                  </Td>
+                  <Td>
+                    <ValueCell
+                      companyId={c.id}
+                      value={String(c.annualValue)}
+                      display={currency.format(Number(c.annualValue))}
+                    />
+                  </Td>
                   <Td className={STALE_CLASS[staleTone(c.lastContactAt, now)]}>
                     {relContact(c.lastContactAt, now)}
                   </Td>

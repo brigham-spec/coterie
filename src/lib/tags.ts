@@ -142,6 +142,13 @@ export const CONTACT_TAGS: readonly TagDef[] = [
   },
 ];
 
+// The closed set of org-tag keys — the vocabulary a company's networkTags is
+// filtered to on every write (the profile's updateCompany and the list's inline
+// tag editor both guard against it).
+export const ORG_TAG_KEYS: ReadonlySet<string> = new Set(
+  ORG_TAGS.map((t) => t.key),
+);
+
 const BY_KEY: ReadonlyMap<string, TagDef> = new Map(
   [...ORG_TAGS, ...CONTACT_TAGS].map((t) => [t.key, t]),
 );
