@@ -24,6 +24,7 @@ function row(overrides: Partial<LinkedinSearchRow> = {}): LinkedinSearchRow {
     seniorityConfidence: overrides.seniorityConfidence ?? null,
     jobFunction: overrides.jobFunction ?? null,
     jobFunctionConfidence: overrides.jobFunctionConfidence ?? null,
+    promotedContactId: overrides.promotedContactId ?? null,
   };
 }
 

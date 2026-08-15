@@ -11,7 +11,12 @@ import {
   type LinkedinSearchRow,
 } from "@/lib/linkedin-search";
 
-import { searchLinkedin, type LinkedinSearchState } from "./actions";
+import {
+  promoteLinkedinContact,
+  searchLinkedin,
+  type LinkedinSearchState,
+  type PromoteState,
+} from "./actions";
 
 // Recall search (step 3): the tenant asks "who do I know that does X" in plain
 // English and gets back the enriched connections whose stated + inferred fields
@@ -22,6 +27,43 @@ import { searchLinkedin, type LinkedinSearchState } from "./actions";
 // dimension never reads the same as a match on a verbatim one.
 
 const initial: LinkedinSearchState = { status: "idle" };
+const promoteInitial: PromoteState = { status: "idle" };
+
+// Turn a recalled connection into a real network Contact (step 4). Shows a link
+// to the new contact once promoted — either from a prior promotion (the row
+// already carries promotedContactId) or from this session's action result. A
+// person can only be promoted once; after that the button becomes that link.
+function PromoteControl({ row }: { row: LinkedinSearchRow }) {
+  const [state, action, pending] = useActionState(
+    promoteLinkedinContact,
+    promoteInitial,
+  );
+
+  const promotedId =
+    state.status === "ok" ? state.contactId : row.promotedContactId;
+  if (promotedId) {
+    return (
+      <a
+        href={`/dashboard/contacts/${promotedId}`}
+        className="text-[11px] font-medium text-gold hover:underline"
+      >
+        View contact →
+      </a>
+    );
+  }
+
+  return (
+    <form action={action} className="flex items-center gap-2">
+      <input type="hidden" name="linkedinContactId" value={row.id} />
+      <Button type="submit" variant="default" disabled={pending}>
+        {pending ? "Promoting…" : "Promote to contact"}
+      </Button>
+      {state.status === "error" ? (
+        <span className="text-[11px] text-red-ink">{state.message}</span>
+      ) : null}
+    </form>
+  );
+}
 
 function MatchBadge({
   field,
@@ -72,11 +114,14 @@ function HitCard({ hit }: { hit: LinkedinSearchHit }) {
           <span className="text-xs text-ink-2">{subtitle}</span>
         ) : null}
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] text-ink-3">matched on</span>
-        {matched.map((field) => (
-          <MatchBadge key={field} field={field} row={row} />
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] text-ink-3">matched on</span>
+          {matched.map((field) => (
+            <MatchBadge key={field} field={field} row={row} />
+          ))}
+        </div>
+        <PromoteControl row={row} />
       </div>
     </li>
   );

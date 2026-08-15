@@ -1,8 +1,12 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
+import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
+import { normalizeCompanyName } from "@/lib/csv-import";
 import { inngest } from "@/lib/inngest";
 import { withOrg } from "@/lib/tenant";
 import {
@@ -322,10 +326,122 @@ export async function searchLinkedin(
         seniorityConfidence: true,
         jobFunction: true,
         jobFunctionConfidence: true,
+        promotedContactId: true,
       },
     }),
   );
 
   const hits = searchLinkedinContacts(rows, query);
   return { status: "ok", query, hits, searched: rows.length };
+}
+
+export type PromoteState =
+  | { status: "idle" }
+  | { status: "error"; message: string }
+  | { status: "ok"; contactId: string };
+
+/// Promote a recalled LinkedIn connection into a real network Contact (recall-layer
+/// step 4). Admin-only, in-action gated so the result surfaces through useActionState.
+///
+/// A Contact must hang off a Company, so we find-or-create one from the connection's
+/// STATED company name (deduped by normalized name, exactly like the CSV importer) —
+/// a new company lands as a "prospect" with the same seed activity a manual create
+/// gets. The stated fields carry over verbatim (name/title/email/profileUrl); the
+/// INFERRED dimensions never do — a guess must not enter the members list dressed as
+/// a stated contact fact. Idempotent: a connection already linked to a contact
+/// (promotedContactId set) is refused, never double-promoted.
+export async function promoteLinkedinContact(
+  _prev: PromoteState,
+  formData: FormData,
+): Promise<PromoteState> {
+  const ctx = await requireOrgContext();
+  if (ctx.role !== "admin")
+    return { status: "error", message: "Only admins can promote connections." };
+
+  const id = String(formData.get("linkedinContactId") ?? "").trim();
+  if (id === "") return { status: "error", message: "Missing connection." };
+
+  const result = await withOrg(
+    ctx.orgId,
+    async (tx): Promise<{ error: string } | { contactId: string }> => {
+    // Sequential reads/writes: one pooled connection per withOrg tx.
+    const connection = await tx.linkedinContact.findUnique({
+      where: { id },
+      select: {
+        fullName: true,
+        company: true,
+        title: true,
+        email: true,
+        profileUrl: true,
+        promotedContactId: true,
+      },
+    });
+    if (connection === null) return { error: "Connection not found." };
+    if (connection.promotedContactId !== null)
+      return { error: "This connection is already a contact." };
+
+    const companyName = connection.company.trim();
+    if (companyName === "")
+      return { error: "This connection has no company on record to attach a contact to." };
+
+    // Find-or-create the parent company by normalized name — same dedupe key the
+    // importer uses, so a promotion reuses an existing company rather than forking
+    // a near-duplicate. New companies seed the status-changed activity a manual
+    // create logs, keeping their timeline honest.
+    const norm = normalizeCompanyName(companyName);
+    const companies = await tx.company.findMany({ select: { id: true, name: true } });
+    let companyId = companies.find(
+      (c) => normalizeCompanyName(c.name) === norm,
+    )?.id;
+    if (companyId === undefined) {
+      companyId = randomUUID();
+      await tx.company.create({
+        data: {
+          id: companyId,
+          orgId: ctx.orgId,
+          name: companyName,
+          status: "prospect",
+          industry: "",
+          annualValue: "0",
+        },
+      });
+      await tx.activity.create({
+        data: {
+          orgId: ctx.orgId,
+          companyId,
+          actorUserId: ctx.userId,
+          type: ACTIVITY_STATUS_CHANGED,
+          payload: { from: null, to: "prospect" },
+          occurredAt: new Date(),
+        },
+      });
+    }
+
+    const contact = await tx.contact.create({
+      data: {
+        orgId: ctx.orgId,
+        companyId,
+        name: connection.fullName,
+        title: connection.title || null,
+        email: connection.email,
+        linkedin: connection.profileUrl,
+      },
+      select: { id: true },
+    });
+
+    await tx.linkedinContact.update({
+      where: { id },
+      data: { promotedContactId: contact.id, promotedAt: new Date() },
+    });
+
+    return { contactId: contact.id };
+    },
+  );
+
+  if ("error" in result) return { status: "error", message: result.error };
+
+  revalidatePath("/dashboard/linkedin");
+  revalidatePath("/dashboard/companies");
+  revalidatePath("/dashboard/contacts");
+  return { status: "ok", contactId: result.contactId };
 }

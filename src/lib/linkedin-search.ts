@@ -29,6 +29,10 @@ export type LinkedinSearchRow = {
   seniorityConfidence: string | null;
   jobFunction: string | null;
   jobFunctionConfidence: string | null;
+  // Set once a connection has been promoted into a real Contact (recall-layer
+  // step 4). Inert to scoring — carried only so a result can show, and refuse,
+  // a person who is already a network contact.
+  promotedContactId: string | null;
 };
 
 export type LinkedinSearchField =
