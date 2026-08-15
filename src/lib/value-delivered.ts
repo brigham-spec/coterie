@@ -37,7 +37,7 @@ export type ValueDeliveredSummary = {
 /// breakdown the profile card renders. Ordering is deterministic so the visual
 /// bars are stable across renders.
 export function summarizeValueDelivered(
-  entries: ValueDeliveredEntry[],
+  entries: readonly Pick<ValueDeliveredEntry, "kind" | "amount">[],
 ): ValueDeliveredSummary {
   let totalAmount = 0;
   let monetaryCount = 0;

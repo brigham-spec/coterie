@@ -33,7 +33,19 @@ import { optionalDate, optionalUrl, assertHttpUrl } from "@/lib/form-fields";
 import { ORG_TAG_KEYS } from "@/lib/tags";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { generateCompanyBrief } from "@/lib/anthropic";
-import { generateMeetingPrep, type PrepCommitment } from "@/lib/meeting-prep";
+import {
+  generateMeetingPrep,
+  MAX_CANDIDATES,
+  type PrepCommitment,
+  type PrepCandidate,
+  type PrepValueSnapshot,
+  type MeetingPrepBrief,
+} from "@/lib/meeting-prep";
+import {
+  deriveValueEntries,
+  summarizeValueDelivered,
+} from "@/lib/value-delivered";
+import { RSVP_CONFIRMED, RSVP_ATTENDED } from "@/lib/event-stages";
 import {
   generateProfileEnrichment,
   type EnrichMeeting,
@@ -328,16 +340,38 @@ export async function dismissIntro(
 
 // Pre-meeting brief (gap-audit cluster A). The company is re-loaded withOrg-scoped
 // from the id in the form (never a client payload), so a foreign id resolves null
-// and no other tenant's relationship is prepped. Around it we gather the meetings
-// this company's contacts attended and the still-open commitments on those
-// meetings — the grounding the two-sentence prep note is written from. The
-// Anthropic call runs server-side in @/lib/meeting-prep; the key never reaches the
-// browser. Ephemeral: nothing is persisted (no schema field for it).
+// and no other tenant's relationship is prepped. Around it we gather everything the
+// user needs to walk in oriented: the meetings this company's people attended, the
+// still-open commitments on those meetings, recent coverage, a value-delivered
+// snapshot, and the network companies it could be introduced to. The Anthropic call
+// runs server-side in @/lib/meeting-prep; the key never reaches the browser.
+//
+// INTEGRITY: the model writes only the connective narrative + intro rationales. The
+// concrete fact sections below (last meeting, open action items, news, value) are
+// carried VERBATIM from the DB in `sections` and rendered by the client, never
+// paraphrased by the model. Every recommended intro companyId is validated against
+// the candidate pool inside generateMeetingPrep, so a hallucinated target is dropped.
+//
+// Ephemeral: nothing is persisted (no schema field for it) — regenerated on demand.
+
+// The verbatim fact sections rendered alongside the narrative. All fields are
+// DB-sourced (dates are ISO strings so the state stays serializable); the client
+// renders them literally, so no fact here is ever the model's paraphrase.
+export type PrepSections = {
+  lastMeeting: { title: string; heldAt: string } | null;
+  actionItems: { text: string; owedBy: "us" | "them" }[];
+  news: { headline: string; url: string | null; capturedAt: string }[];
+  value: PrepValueSnapshot;
+};
 
 export type MeetingPrepState =
   | { status: "idle" }
-  | { status: "ok"; prep: string }
+  | { status: "ok"; brief: MeetingPrepBrief; sections: PrepSections }
   | { status: "error"; message: string };
+
+// Cap the news headlines folded into the brief so a heavily-covered company still
+// yields a bounded prompt; freshest first, so the most relevant coverage survives.
+const PREP_NEWS_LIMIT = 5;
 
 export async function generateMeetingPrepAction(
   _prev: MeetingPrepState,
@@ -349,6 +383,7 @@ export async function generateMeetingPrepAction(
   const { orgId, userName } = await requireOrgContext();
 
   const data = await withOrg(orgId, async (tx) => {
+    // Sequential reads only — one pooled connection per withOrg tx.
     const company = await tx.company.findUnique({
       where: { id: companyId },
       include: {
@@ -394,7 +429,94 @@ export async function generateMeetingPrepAction(
         })
       : [];
 
-    return { company, recentMeetings, openCommitments };
+    // Recent coverage worth mentioning — the same NewsItem ledger the profile's
+    // Saved Coverage card shows, scoped to this company, freshest first.
+    const newsItems = await tx.newsItem.findMany({
+      where: { companyId },
+      orderBy: { capturedAt: "desc" },
+      take: PREP_NEWS_LIMIT,
+      select: { headline: true, url: true, capturedAt: true },
+    });
+
+    // Value-delivered inputs — the manual ledger plus the network activity the
+    // profile derives value from (realized intros, attended events, project
+    // collaborations). Mirrors the profile's Value Delivered card so the snapshot
+    // is the same honest figure, never a bare "$0" when the network has worked.
+    const valueDelivered = await tx.valueDelivered.findMany({
+      where: { companyId },
+      select: { amount: true, kind: true, introductionId: true },
+    });
+    const introductions = await tx.introduction.findMany({
+      where: {
+        OR: [{ partyA: { companyId } }, { partyB: { companyId } }],
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        headline: true,
+        outcome: true,
+        madeOn: true,
+        createdAt: true,
+        partyA: {
+          select: { name: true, company: { select: { id: true, name: true } } },
+        },
+        partyB: {
+          select: { name: true, company: { select: { id: true, name: true } } },
+        },
+      },
+    });
+    const eventInvites = contactIds.length
+      ? await tx.eventInvitee.findMany({
+          where: {
+            contactId: { in: contactIds },
+            rsvp: { in: [RSVP_CONFIRMED, RSVP_ATTENDED] },
+          },
+          select: {
+            id: true,
+            rsvp: true,
+            event: { select: { name: true, date: true, createdAt: true } },
+          },
+        })
+      : [];
+
+    // Companies already introduced to the focus (either direction) — excluded
+    // from the candidate pool below.
+    const excluded = new Set<string>();
+    for (const i of introductions) {
+      if (i.partyA.company?.id) excluded.add(i.partyA.company.id);
+      if (i.partyB.company?.id) excluded.add(i.partyB.company.id);
+    }
+
+    // Candidate pool for grounded intro recommendations: the tenant's network
+    // companies, minus the focus and anyone it's already been introduced to. The
+    // model may only recommend from this pool. Bound the fetch — the prompt only
+    // reads the first MAX_CANDIDATES, so pulling the whole network is wasted work;
+    // the margin covers the focus + excluded rows that get filtered out.
+    const poolCompanies = await tx.company.findMany({
+      where: { status: { in: [...NETWORK_STATUSES] } },
+      orderBy: { name: "asc" },
+      take: MAX_CANDIDATES + excluded.size + 1,
+      select: {
+        id: true,
+        name: true,
+        industry: true,
+        lookingFor: true,
+        canOffer: true,
+      },
+    });
+
+    return {
+      company,
+      recentMeetings,
+      openCommitments,
+      newsItems,
+      valueDelivered,
+      introductions,
+      eventInvites,
+      poolCompanies,
+      excluded,
+    };
   });
 
   if (data == null)
@@ -407,9 +529,94 @@ export async function generateMeetingPrepAction(
     owedBy: c.ownerUserId != null ? "us" : "them",
   }));
 
+  // Value snapshot: the manual ledger folded together with derived network value
+  // (the same computation the profile card does), summarized to the totals the
+  // brief reminds the company of.
+  const derivedValue = deriveValueEntries({
+    intros: data.introductions.map((i) => {
+      const other =
+        i.partyA.company?.id === companyId ? i.partyB : i.partyA;
+      return {
+        introId: i.id,
+        status: i.status,
+        headline: i.headline,
+        outcome: i.outcome,
+        madeOn: i.madeOn,
+        createdAt: i.createdAt,
+        partyAName: i.partyA.name,
+        partyBName: i.partyB.name,
+        counterpartCompany:
+          other.company?.id === companyId ? null : (other.company?.name ?? null),
+      };
+    }),
+    events: data.eventInvites.map((iv) => ({
+      inviteeId: iv.id,
+      eventName: iv.event.name,
+      rsvp: iv.rsvp,
+      occurredAt: iv.event.date ?? iv.event.createdAt,
+    })),
+    collaborations: data.company.projectLinks.map((l) => ({
+      projectId: l.projectId,
+      projectName: l.project.name,
+      role: l.role,
+      occurredAt: l.createdAt,
+    })),
+    ledgerIntroIds: new Set(
+      data.valueDelivered
+        .map((v) => v.introductionId)
+        .filter((x): x is string => x != null),
+    ),
+  });
+  const manualEntries = data.valueDelivered.map((v) => ({
+    kind: v.kind,
+    amount: v.amount == null ? null : Number(v.amount),
+  }));
+  const { totalAmount, entryCount, monetaryCount } = summarizeValueDelivered([
+    ...manualEntries,
+    ...derivedValue,
+  ]);
+  const valueSnapshot: PrepValueSnapshot = {
+    totalAmount,
+    entryCount,
+    monetaryCount,
+  };
+
+  const eligible = new Set(
+    eligibleCandidateIds(
+      companyId,
+      data.poolCompanies.map((c) => c.id),
+      data.excluded,
+    ),
+  );
+  const candidates: PrepCandidate[] = data.poolCompanies
+    .filter((c) => eligible.has(c.id))
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      industry: c.industry,
+      lookingFor: c.lookingFor,
+      canOffer: c.canOffer,
+    }));
+
+  const sections: PrepSections = {
+    lastMeeting: data.recentMeetings[0]
+      ? {
+          title: data.recentMeetings[0].title,
+          heldAt: data.recentMeetings[0].heldAt.toISOString().slice(0, 10),
+        }
+      : null,
+    actionItems: commitments,
+    news: data.newsItems.map((n) => ({
+      headline: n.headline,
+      url: n.url,
+      capturedAt: n.capturedAt.toISOString().slice(0, 10),
+    })),
+    value: valueSnapshot,
+  };
+
   try {
     await enforceAiRateLimit(orgId);
-    const prep = await generateMeetingPrep({
+    const brief = await generateMeetingPrep({
       userName,
       company: {
         name: data.company.name,
@@ -435,8 +642,14 @@ export async function generateMeetingPrepAction(
         summary: m.summary,
       })),
       openCommitments: commitments,
+      recentNews: data.newsItems.map((n) => ({
+        headline: n.headline,
+        capturedAt: n.capturedAt.toISOString().slice(0, 10),
+      })),
+      valueSnapshot,
+      candidates,
     });
-    return { status: "ok", prep };
+    return { status: "ok", brief, sections };
   } catch (err) {
     console.error("meeting prep failed", err);
     if (err instanceof AiRateLimitError)
