@@ -12,16 +12,7 @@ import { hasCredential } from "@/lib/integrations";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { RSVP_CONFIRMED, RSVP_ATTENDED } from "@/lib/event-stages";
 import { deriveValueEntries } from "@/lib/value-delivered";
-import {
-  PageTitle,
-  StatusBadge,
-  TagBadge,
-  Table,
-  Td,
-  Th,
-  Tr,
-} from "@/components/ui";
-import { CollapsibleCard } from "@/components/collapsible-card";
+import { PageTitle, TagBadge } from "@/components/ui";
 
 import { CompanyBrief } from "./_brief";
 import { MeetingPrep } from "./_meeting-prep";
@@ -45,6 +36,7 @@ import { SavedArticlesCard } from "./_saved-articles";
 import { RelationshipTimeline } from "./_timeline";
 import { IntroductionsCard } from "./_introductions-card";
 import { StatusPill } from "./_status-pill";
+import { ProjectsCard } from "./_projects-card";
 
 // Company detail — the central relationship's home. Surfaces the company's own
 // fields (including the slice-11.0 relationship attributes: what it's looking
@@ -838,40 +830,19 @@ export default async function CompanyDetailPage({
         }))}
       />
 
-      <CollapsibleCard id="company-projects" title="Projects">
-        {company.projectLinks.length === 0 ? (
-          <p className="px-4 py-6 text-xs text-ink-3">
-            Not linked to any projects yet.
-          </p>
-        ) : (
-          <Table
-            head={
-              <>
-                <Th>Project</Th>
-                <Th>Role</Th>
-                <Th>Stage</Th>
-              </>
-            }
-          >
-            {company.projectLinks.map((l) => (
-              <Tr key={l.projectId}>
-                <Td className="font-medium">
-                  <Link
-                    href={`/dashboard/projects/${l.project.id}`}
-                    className="hover:text-gold hover:underline"
-                  >
-                    {l.project.name}
-                  </Link>
-                </Td>
-                <Td className="capitalize">{l.role.replace(/_/g, " ")}</Td>
-                <Td>
-                  <StatusBadge status={l.project.stage} />
-                </Td>
-              </Tr>
-            ))}
-          </Table>
+      <ProjectsCard
+        companyId={company.id}
+        links={company.projectLinks.map((l) => ({
+          projectId: l.project.id,
+          projectName: l.project.name,
+          projectStage: l.project.stage,
+          role: l.role,
+        }))}
+        // Every org project this company isn't already linked to.
+        linkable={projects.filter(
+          (p) => !company.projectLinks.some((l) => l.project.id === p.id),
         )}
-      </CollapsibleCard>
+      />
 
       <MeetingsCard
         companyId={company.id}

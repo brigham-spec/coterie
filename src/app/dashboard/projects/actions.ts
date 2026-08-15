@@ -161,7 +161,10 @@ export async function linkCompany(formData: FormData): Promise<void> {
     tx.projectLink.create({ data: { orgId, projectId, companyId, role } }),
   );
 
+  // Both link surfaces (the project page and the company profile) revalidate,
+  // since either can create the link.
   revalidatePath(`/dashboard/projects/${projectId}`);
+  revalidatePath(`/dashboard/companies/${companyId}`);
 }
 
 // Detach a company from a project. The project_links row keys on
@@ -181,6 +184,7 @@ export async function unlinkCompany(formData: FormData): Promise<void> {
   );
 
   revalidatePath(`/dashboard/projects/${projectId}`);
+  revalidatePath(`/dashboard/companies/${companyId}`);
 }
 
 // Permanently delete a project. All child rows cascade at the DB (project_links,

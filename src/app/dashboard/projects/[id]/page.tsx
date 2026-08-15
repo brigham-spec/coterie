@@ -42,6 +42,8 @@ import { FundingCard, type FundingRow } from "./_funding";
 import { EconomicImpactCard } from "./_economic-impact";
 import { HvServicesCard } from "./_hv-services";
 
+import { PROJECT_LINK_ROLES } from "@/lib/project-roles";
+
 // Project detail — the seat of company participation. project_links carries
 // composite FKs to projects(id, org_id) and companies(id, org_id), so a link can
 // never straddle orgs; the read below is withOrg-scoped so nothing foreign shows.
@@ -68,13 +70,7 @@ const stageDateFmt = new Intl.DateTimeFormat("en-US", {
 });
 
 // developer, lender, site_host, agency, advisor, … (schema §3.7).
-const roleOptions = [
-  { value: "developer", label: "Developer" },
-  { value: "lender", label: "Lender" },
-  { value: "site_host", label: "Site host" },
-  { value: "agency", label: "Agency" },
-  { value: "advisor", label: "Advisor" },
-];
+const roleOptions = PROJECT_LINK_ROLES;
 
 // The open-role scan (scanOpenRole) runs an opus pass; give its server action
 // headroom past Vercel's short default so it can finish instead of timing out.
