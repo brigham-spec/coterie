@@ -78,6 +78,7 @@ model Organization {
   agendaItemStates       AgendaItemState[]
   linkedinImports        LinkedinImport[]
   linkedinContacts       LinkedinContact[]
+  knowledgeDocs          KnowledgeDoc[]
 
   @@map("organizations")
 }
@@ -357,6 +358,34 @@ model LinkedinContact {
   @@index([orgId, importId])
   @@index([orgId, enrichedAt])
   @@map("linkedin_contacts")
+}
+
+/// A piece of a tenant's own collateral — a pitch deck, value-prop one-pager, or
+/// SOP — stored as EXTRACTED TEXT (never a binary). Per-tenant knowledge that
+/// grounds the proposal + prospect value-prop generators in each org's real
+/// material. Tenant-scoped (RLS).
+model KnowledgeDoc {
+  id      String @id @default(uuid()) @db.Uuid
+  orgId   String @map("org_id") @db.Uuid
+  /// deck | value_prop | sop | other (see @/lib/knowledge-docs).
+  kind    String
+  title   String
+  /// Normalized text extracted from the upload (or pasted directly).
+  content String @db.Text
+  /// Original filename when uploaded; null when pasted.
+  sourceName String? @map("source_name")
+  charCount  Int     @map("char_count")
+  /// The admin who added it (users carry no RLS, so a plain uuid, no FK).
+  createdByUserId String? @map("created_by_user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, kind])
+  @@map("knowledge_docs")
 }
 
 /// Multi-party initiatives — relocations, developments, cluster efforts (spec §3.6).

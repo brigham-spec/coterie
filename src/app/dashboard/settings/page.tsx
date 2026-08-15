@@ -3,14 +3,17 @@ import Link from "next/link";
 import { requireOrgContext } from "@/lib/auth";
 import { isPlatformAdmin } from "@/lib/platform-admin";
 import { prisma } from "@/lib/prisma";
+import { withOrg } from "@/lib/tenant";
 import { readMemberTierDefs } from "@/lib/member-tiers";
 import { readMembershipPackages } from "@/lib/membership-packages";
+import { isKnowledgeKind } from "@/lib/knowledge-docs";
 import { enabledModuleKeys } from "@/lib/modules";
 import { Button, Card, CardHeader, PageTitle } from "@/components/ui";
 
 import { NameForm } from "./_name-form";
 import { TiersForm } from "./_tiers-form";
 import { PackagesForm } from "./_packages-form";
+import { KnowledgeForm, type KnowledgeDocRow } from "./_knowledge-form";
 import { ModulesForm } from "./_modules-form";
 import { RestoreForm } from "./_restore-form";
 
@@ -32,6 +35,26 @@ export default async function SettingsPage() {
   const isAdmin = ctx.role === "admin";
   const isOperator = isPlatformAdmin(ctx);
   const enabledModules = [...enabledModuleKeys(org?.settings)];
+  // Collateral docs are only shown/managed by admins.
+  const knowledgeDocs: KnowledgeDocRow[] = isAdmin
+    ? (
+        await withOrg(ctx.orgId, (tx) =>
+          tx.knowledgeDoc.findMany({
+            orderBy: { createdAt: "desc" },
+            select: {
+              id: true,
+              kind: true,
+              title: true,
+              sourceName: true,
+              charCount: true,
+            },
+          }),
+        )
+      ).map((d) => ({
+        ...d,
+        kind: isKnowledgeKind(d.kind) ? d.kind : "other",
+      }))
+    : [];
   // The operator restore picks a target org across the whole platform, so the
   // org list is fetched only for the operator (organizations carries no RLS).
   const orgs = isOperator
@@ -148,6 +171,22 @@ export default async function SettingsPage() {
           )}
         </div>
       </Card>
+
+      {isAdmin && (
+        <Card className="mt-6">
+          <CardHeader title="Collateral" />
+          <div className="p-4">
+            <p className="mb-4 text-xs text-ink-2">
+              Your organization&rsquo;s own material — pitch decks, value-prop
+              one-pagers, SOPs. Upload a PDF or text file (the text is extracted
+              and stored; the file itself is not kept) or paste text. This grounds
+              the proposal and prospect value-prop generators in what you actually
+              offer. Admin only.
+            </p>
+            <KnowledgeForm docs={knowledgeDocs} />
+          </div>
+        </Card>
+      )}
 
       {isAdmin && (
         <Card className="mt-6">
