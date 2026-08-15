@@ -4,11 +4,13 @@ import { requireOrgContext } from "@/lib/auth";
 import { isPlatformAdmin } from "@/lib/platform-admin";
 import { prisma } from "@/lib/prisma";
 import { readMemberTierDefs } from "@/lib/member-tiers";
+import { readMembershipPackages } from "@/lib/membership-packages";
 import { enabledModuleKeys } from "@/lib/modules";
 import { Button, Card, CardHeader, PageTitle } from "@/components/ui";
 
 import { NameForm } from "./_name-form";
 import { TiersForm } from "./_tiers-form";
+import { PackagesForm } from "./_packages-form";
 import { ModulesForm } from "./_modules-form";
 import { RestoreForm } from "./_restore-form";
 
@@ -26,6 +28,7 @@ export default async function SettingsPage() {
     select: { settings: true },
   });
   const tiers = readMemberTierDefs(org?.settings);
+  const packages = readMembershipPackages(org?.settings);
   const isAdmin = ctx.role === "admin";
   const isOperator = isPlatformAdmin(ctx);
   const enabledModules = [...enabledModuleKeys(org?.settings)];
@@ -91,6 +94,54 @@ export default async function SettingsPage() {
                       ? "unranked"
                       : `≥ ${valueFmt.format(t.minValue)}`}
                   </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader title="Membership packages" />
+        <div className="p-4">
+          <p className="mb-4 text-xs text-ink-2">
+            The offerings your organization proposes to members and prospects —
+            name, annual price, and the services each includes. These feed
+            membership proposals and prospect value props. Distinct from Member
+            tiers above (a member&rsquo;s standing); packages are what you sell.
+          </p>
+
+          {isAdmin ? (
+            <PackagesForm packages={packages} />
+          ) : packages.length === 0 ? (
+            <p className="text-xs text-ink-3">
+              No membership packages configured. An admin can set them here.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {packages.map((p) => (
+                <li
+                  key={p.name}
+                  className="rounded border border-line p-3 text-xs text-ink"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold">{p.name}</span>
+                    <span className="text-ink-3">
+                      {p.annualPrice === null
+                        ? "custom"
+                        : `${valueFmt.format(p.annualPrice)}/yr`}
+                    </span>
+                  </div>
+                  {p.summary !== "" && (
+                    <p className="mt-1 text-ink-2">{p.summary}</p>
+                  )}
+                  {p.includedServices.length > 0 && (
+                    <ul className="mt-2 list-disc pl-4 text-ink-2">
+                      {p.includedServices.map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               ))}
             </ul>

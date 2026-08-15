@@ -2,10 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 
+import { Prisma } from "@/generated/prisma/client";
+
 import { requireOrgContext } from "@/lib/auth";
 import { isPlatformAdmin } from "@/lib/platform-admin";
 import { prisma } from "@/lib/prisma";
 import { type MemberTier, normalizeMemberTierDefs } from "@/lib/member-tiers";
+import {
+  type MembershipPackage,
+  normalizeMembershipPackages,
+} from "@/lib/membership-packages";
 import { normalizeModuleSelection } from "@/lib/modules";
 
 // Org settings mutations. organizations carries NO RLS (it's platform data, not
@@ -13,6 +19,29 @@ import { normalizeModuleSelection } from "@/lib/modules";
 // connection, scoped explicitly by the context orgId. Configuration changes are
 // admin-only: staff can read the settings surface but the write is gated on the
 // Clerk-derived role, failing closed for anyone else.
+
+// Shallow-merge a patch into the org's settings JSON, preserving every other
+// key. Every mutation below stores one section of settings, so this
+// read-coerce-merge-write dance lives here once rather than being repeated.
+async function patchOrgSettings(
+  orgId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { settings: true },
+  });
+  const settings =
+    org?.settings != null && typeof org.settings === "object"
+      ? (org.settings as Record<string, unknown>)
+      : {};
+  await prisma.organization.update({
+    where: { id: orgId },
+    data: {
+      settings: { ...settings, ...patch } as Prisma.InputJsonValue,
+    },
+  });
+}
 
 // useActionState result. On success we echo the NORMALIZED tier defs back so the
 // editor can show the admin exactly what was stored (blanks/dupes dropped,
@@ -53,19 +82,7 @@ export async function updateMemberTiers(
     }),
   );
 
-  const org = await prisma.organization.findUnique({
-    where: { id: orgId },
-    select: { settings: true },
-  });
-  const settings =
-    org?.settings != null && typeof org.settings === "object"
-      ? (org.settings as Record<string, unknown>)
-      : {};
-
-  await prisma.organization.update({
-    where: { id: orgId },
-    data: { settings: { ...settings, memberTiers: tiers } },
-  });
+  await patchOrgSettings(orgId, { memberTiers: tiers });
 
   revalidatePath("/dashboard/settings");
   // The tier vocabulary also feeds the companies-list filter and every company
@@ -74,6 +91,55 @@ export async function updateMemberTiers(
   revalidatePath("/dashboard/companies");
   revalidatePath("/dashboard/companies/[id]", "page");
   return { status: "saved", tiers };
+}
+
+// useActionState result for the membership-packages editor. On success we echo
+// the NORMALIZED packages back so the editor shows exactly what was stored
+// (blank-name packages dropped, prices coerced, service bullets cleaned) rather
+// than leaving the admin to spot the difference on reload.
+export type UpdatePackagesState =
+  | { status: "idle" }
+  | { status: "saved"; packages: MembershipPackage[] }
+  | { status: "error"; message: string };
+
+// Persist the org's membership packages — the sellable offerings proposals and
+// the (later) generators draw on. The editor submits parallel arrays paired by
+// index: one name / price / summary per row, plus that row's services as a
+// newline-delimited textarea. We zip and normalize through the shared helper,
+// then merge into the settings JSON so other keys are preserved. Admin-only, and
+// the gate fails closed before any query.
+export async function updateMembershipPackages(
+  _prev: UpdatePackagesState,
+  formData: FormData,
+): Promise<UpdatePackagesState> {
+  const { orgId, role } = await requireOrgContext();
+  if (role !== "admin")
+    return {
+      status: "error",
+      message: "Only an admin can change organization settings.",
+    };
+
+  const names = formData.getAll("name").map(String);
+  const prices = formData.getAll("price").map(String);
+  const summaries = formData.getAll("summary").map(String);
+  const services = formData.getAll("services").map(String);
+  const packages = normalizeMembershipPackages(
+    names.map((name, i) => {
+      const raw = (prices[i] ?? "").trim();
+      const num = raw === "" ? null : Number(raw);
+      return {
+        name,
+        annualPrice: num !== null && Number.isFinite(num) ? num : null,
+        summary: summaries[i] ?? "",
+        includedServices: (services[i] ?? "").split(/\r?\n/),
+      };
+    }),
+  );
+
+  await patchOrgSettings(orgId, { membershipPackages: packages });
+
+  revalidatePath("/dashboard/settings");
+  return { status: "saved", packages };
 }
 
 // useActionState result for the "your name" form. On success we echo the stored
@@ -137,19 +203,7 @@ export async function setOrgModules(
 
   const modules = normalizeModuleSelection(formData.getAll("module").map(String));
 
-  const org = await prisma.organization.findUnique({
-    where: { id: ctx.orgId },
-    select: { settings: true },
-  });
-  const settings =
-    org?.settings != null && typeof org.settings === "object"
-      ? (org.settings as Record<string, unknown>)
-      : {};
-
-  await prisma.organization.update({
-    where: { id: ctx.orgId },
-    data: { settings: { ...settings, modules } },
-  });
+  await patchOrgSettings(ctx.orgId, { modules });
 
   // The enabled set drives the whole dashboard shell (sidebar + command palette)
   // and every route guard, so bust the layout for the entire section.
