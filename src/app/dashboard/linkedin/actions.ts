@@ -9,6 +9,11 @@ import {
   parseLinkedinCsv,
   type LinkedinParsedRow,
 } from "@/lib/linkedin-csv";
+import {
+  searchLinkedinContacts,
+  tokenizeQuery,
+  type LinkedinSearchHit,
+} from "@/lib/linkedin-search";
 
 // Admin-only importer for a LinkedIn "Connections.csv" export. The rows land in a
 // SEPARATE storage tier (linkedin_contacts) so they never clutter the members or
@@ -272,4 +277,55 @@ export async function triggerEnrichment(
     return { status: "error", message: "Couldn't start enrichment. Try again." };
   }
   return { status: "queued" };
+}
+
+export type LinkedinSearchState =
+  | { status: "idle" }
+  | { status: "error"; message: string }
+  | { status: "ok"; query: string; hits: LinkedinSearchHit[]; searched: number };
+
+/// Deterministic recall search over this tenant's ENRICHED connections. Admin-only
+/// (mirroring the importer's in-action gate so the result surfaces cleanly through
+/// useActionState). The "invisible until enriched" rule is enforced at the query —
+/// only enrichedAt:null-excluded rows are ever loaded, so an un-enriched connection
+/// can never appear in a recall result. The scoring itself is pure + explainable
+/// (see linkedin-search.ts): every hit reports which stated/inferred fields matched.
+export async function searchLinkedin(
+  _prev: LinkedinSearchState,
+  formData: FormData,
+): Promise<LinkedinSearchState> {
+  const ctx = await requireOrgContext();
+  if (ctx.role !== "admin")
+    return { status: "error", message: "Only admins can search connections." };
+
+  const query = String(formData.get("query") ?? "").trim();
+  if (query === "")
+    return { status: "error", message: "Enter what you're looking for." };
+  if (tokenizeQuery(query).length === 0)
+    return {
+      status: "error",
+      message: "Add a search term — try an industry, role, or company.",
+    };
+
+  const rows = await withOrg(ctx.orgId, (tx) =>
+    tx.linkedinContact.findMany({
+      where: { enrichedAt: { not: null } },
+      select: {
+        id: true,
+        fullName: true,
+        company: true,
+        title: true,
+        profileUrl: true,
+        industry: true,
+        industryConfidence: true,
+        seniority: true,
+        seniorityConfidence: true,
+        jobFunction: true,
+        jobFunctionConfidence: true,
+      },
+    }),
+  );
+
+  const hits = searchLinkedinContacts(rows, query);
+  return { status: "ok", query, hits, searched: rows.length };
 }

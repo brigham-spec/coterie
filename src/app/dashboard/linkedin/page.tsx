@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { requireOrgContext } from "@/lib/auth";
+import { inferredBadge } from "@/lib/linkedin-search";
 import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import {
@@ -16,6 +17,7 @@ import {
 
 import { EnrichButton } from "./_enrich-button";
 import { ImportForm } from "./_import-form";
+import { SearchPanel } from "./_search";
 
 // The LinkedIn contact layer — a searchable recall tier built from a tenant's
 // exported LinkedIn connections, kept separate from members/contacts. This page
@@ -47,13 +49,11 @@ function InferredCell({
   confidence: string | null;
 }) {
   if (!value) return <span className="text-ink-3">—</span>;
+  const badge = inferredBadge(confidence);
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-ink">{value}</span>
-      <TagBadge
-        label={`inferred · ${confidence ?? "low"}`}
-        tone={confidence === "high" ? "teal" : "slate"}
-      />
+      <TagBadge label={badge.label} tone={badge.tone} />
     </div>
   );
 }
@@ -147,6 +147,20 @@ export default async function LinkedinPage() {
               All imported connections are enriched.
             </p>
           ) : null}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Recall search"
+          action={
+            <span className="text-[11px] text-ink-2">
+              {enriched} searchable
+            </span>
+          }
+        />
+        <div className="p-4">
+          <SearchPanel />
         </div>
       </Card>
 
