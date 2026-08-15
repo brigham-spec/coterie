@@ -15,6 +15,11 @@ import { withOrg } from "@/lib/tenant";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
+// commitImport enqueues a background enrichment run after a successful write; the
+// enqueue is best-effort and out of scope here, so stub the Inngest client.
+const inngestSend = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/inngest", () => ({ inngest: { send: inngestSend } }));
+
 const mockCtx = vi.hoisted(() => ({
   orgId: "",
   orgName: "",
@@ -175,6 +180,12 @@ describe("commitImport", () => {
       csvForm(CSV, { fileName: "connections.csv", exportedOn: "2026-08-10" }),
     );
     expect(result).toEqual({ status: "ok", created: 1, updated: 1 });
+
+    // A successful import kicks off the background enrichment pass for this org.
+    expect(inngestSend).toHaveBeenCalledWith({
+      name: "coterie/linkedin.enrich",
+      data: { orgId: orgA.id },
+    });
 
     const state = await withOrg(orgA.id, async (tx) => {
       const ada = await tx.linkedinContact.findUnique({

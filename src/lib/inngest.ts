@@ -4,6 +4,7 @@ import { getCredential } from "@/lib/integrations";
 import { FirefliesError, listTranscripts } from "@/lib/fireflies";
 import { reconcileTranscripts } from "@/lib/fireflies-reconcile";
 import { autoExtractActionItems } from "@/lib/auto-action-items";
+import { enrichLinkedinContacts } from "@/lib/linkedin-enrich-run";
 import { firefliesSyncErrorMessage } from "@/lib/sync-status";
 import { withOrg } from "@/lib/tenant";
 
@@ -105,5 +106,42 @@ export const syncFireflies = inngest.createFunction(
   },
 );
 
+// Bulk-enrich a tenant's un-enriched LinkedIn connections in the background. The
+// import lands raw rows fast (invisible to recall until enriched); this job fills
+// the inferred dimensions afterward so a 1,000+ export doesn't block the upload.
+//
+// enrichLinkedinContacts does a bounded slice of work per invocation (batches,
+// capped) and reports whether a backlog remains. When it does, the job sleeps
+// past the per-minute AI cap and re-sends its own trigger event — draining the
+// backlog across as many invocations as it takes, terminating when no un-enriched
+// rows are left. Idempotent: only enrichedAt:null rows are ever touched.
+export const enrichLinkedin = inngest.createFunction(
+  { id: "linkedin-enrich", triggers: [{ event: "coterie/linkedin.enrich" }] },
+  async ({ event, step }) => {
+    // No auth context here — the org_id is the only tenant signal, so validate it
+    // explicitly. A malformed event is a bug, not a transient failure; don't retry.
+    const data = event.data as { orgId?: unknown };
+    if (typeof data.orgId !== "string" || data.orgId === "")
+      throw new NonRetriableError("linkedin.enrich event missing orgId");
+    const orgId = data.orgId;
+
+    const result = await step.run("enrich-batch", () =>
+      enrichLinkedinContacts(orgId),
+    );
+
+    // Backlog left (per-run ceiling or the org's AI cap) → cool down past the
+    // per-minute window, then re-trigger to resume. Chains until fully drained.
+    if (result.remaining) {
+      await step.sleep("ai-cooldown", "1m");
+      await step.sendEvent("continue-linkedin-enrich", {
+        name: "coterie/linkedin.enrich",
+        data: { orgId },
+      });
+    }
+
+    return result;
+  },
+);
+
 // Registered with the serve route (src/app/api/inngest/route.ts).
-export const functions = [ping, syncFireflies];
+export const functions = [ping, syncFireflies, enrichLinkedin];

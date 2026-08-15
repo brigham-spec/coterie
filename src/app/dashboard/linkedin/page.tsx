@@ -14,14 +14,20 @@ import {
   Tr,
 } from "@/components/ui";
 
+import { EnrichButton } from "./_enrich-button";
 import { ImportForm } from "./_import-form";
 
 // The LinkedIn contact layer — a searchable recall tier built from a tenant's
 // exported LinkedIn connections, kept separate from members/contacts. This page
-// is the step-1 surface: upload the export and see the raw stated rows land,
-// un-enriched. Admin-only (matches the CSV importer): non-admins get notFound()
-// so the surface's existence isn't disclosed. Module-gated like the other
-// optional sections.
+// is the step-1/2 surface: upload the export (rows land un-enriched), then run the
+// bulk enrichment pass that fills the inferred dimensions. Admin-only (matches the
+// CSV importer): non-admins get notFound() so the surface's existence isn't
+// disclosed. Module-gated like the other optional sections.
+//
+// Integrity is the point of this layer, so the display never lets an inference
+// pass as fact: stated columns (Company/Title) are shown plainly, while each
+// inferred dimension carries a visible "inferred" marker + its high/low confidence
+// grade. An un-enriched row shows an em-dash, not a guess.
 
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
@@ -29,6 +35,28 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   timeZone: "UTC",
 });
+
+// One inferred dimension cell: the value with a visible provenance marker (never
+// bare), or an em-dash when there's no inference. The confidence grade tints the
+// badge so a low-confidence call reads differently from a high-confidence one.
+function InferredCell({
+  value,
+  confidence,
+}: {
+  value: string | null;
+  confidence: string | null;
+}) {
+  if (!value) return <span className="text-ink-3">—</span>;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-ink">{value}</span>
+      <TagBadge
+        label={`inferred · ${confidence ?? "low"}`}
+        tone={confidence === "high" ? "teal" : "slate"}
+      />
+    </div>
+  );
+}
 
 export default async function LinkedinPage() {
   await requireModule("linkedin");
@@ -53,6 +81,12 @@ export default async function LinkedinPage() {
           title: true,
           connectedOn: true,
           enrichedAt: true,
+          industry: true,
+          industryConfidence: true,
+          seniority: true,
+          seniorityConfidence: true,
+          jobFunction: true,
+          jobFunctionConfidence: true,
         },
       });
       const latestImport = await tx.linkedinImport.findFirst({
@@ -69,8 +103,10 @@ export default async function LinkedinPage() {
     },
   );
 
+  const pending = total - enriched;
+
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className="mx-auto w-full max-w-5xl">
       <div className="mb-6">
         <PageTitle
           title="LinkedIn"
@@ -82,6 +118,35 @@ export default async function LinkedinPage() {
         <CardHeader title="Import LinkedIn connections" />
         <div className="p-4">
           <ImportForm />
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Enrichment"
+          action={
+            <span className="text-[11px] text-ink-2">
+              {enriched} of {total} enriched
+            </span>
+          }
+        />
+        <div className="flex flex-col gap-3 p-4">
+          <p className="text-xs text-ink-2">
+            Enrichment infers each connection&rsquo;s{" "}
+            <strong className="text-ink">industry</strong>,{" "}
+            <strong className="text-ink">seniority</strong>, and{" "}
+            <strong className="text-ink">function</strong> from their stated name,
+            company, and title. Every inferred value is marked{" "}
+            <strong className="text-ink">inferred</strong> and graded for
+            confidence — it never implies more certainty than the stated fields
+            support. Geography is left for the promotion pass.
+          </p>
+          <EnrichButton pending={pending} />
+          {pending === 0 && total > 0 ? (
+            <p className="text-xs text-ink-3">
+              All imported connections are enriched.
+            </p>
+          ) : null}
         </div>
       </Card>
 
@@ -107,9 +172,13 @@ export default async function LinkedinPage() {
             <>
               <p className="mb-3 text-xs text-ink-2">
                 Showing the {recent.length} most recent of{" "}
-                <strong className="text-ink">{total}</strong> connections. Rows
-                land <strong className="text-ink">un-enriched</strong> — the
-                searchable dimensions fill in on a later pass.
+                <strong className="text-ink">{total}</strong> connections.{" "}
+                <span className="text-ink-3">Company</span> and{" "}
+                <span className="text-ink-3">Title</span> are stated verbatim from
+                the export; <span className="text-ink-3">Industry</span>,{" "}
+                <span className="text-ink-3">Seniority</span>, and{" "}
+                <span className="text-ink-3">Function</span> are inferred and
+                marked as such.
               </p>
               <div className="overflow-hidden rounded-sm border border-line">
                 <Table
@@ -118,8 +187,9 @@ export default async function LinkedinPage() {
                       <Th>Name</Th>
                       <Th>Company</Th>
                       <Th>Title</Th>
-                      <Th>Connected</Th>
-                      <Th>Enrichment</Th>
+                      <Th>Industry</Th>
+                      <Th>Seniority</Th>
+                      <Th>Function</Th>
                     </>
                   }
                 >
@@ -128,13 +198,22 @@ export default async function LinkedinPage() {
                       <Td>{c.fullName}</Td>
                       <Td className="text-ink-2">{c.company || "—"}</Td>
                       <Td className="text-ink-2">{c.title || "—"}</Td>
-                      <Td className="text-ink-3">
-                        {c.connectedOn ? dateFmt.format(c.connectedOn) : "—"}
+                      <Td>
+                        <InferredCell
+                          value={c.industry}
+                          confidence={c.industryConfidence}
+                        />
                       </Td>
                       <Td>
-                        <TagBadge
-                          label={c.enrichedAt ? "enriched" : "un-enriched"}
-                          tone={c.enrichedAt ? "teal" : "slate"}
+                        <InferredCell
+                          value={c.seniority}
+                          confidence={c.seniorityConfidence}
+                        />
+                      </Td>
+                      <Td>
+                        <InferredCell
+                          value={c.jobFunction}
+                          confidence={c.jobFunctionConfidence}
                         />
                       </Td>
                     </Tr>

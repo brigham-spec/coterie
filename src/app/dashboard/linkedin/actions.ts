@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireOrgContext } from "@/lib/auth";
+import { inngest } from "@/lib/inngest";
 import { withOrg } from "@/lib/tenant";
 import {
   parseLinkedinCsv,
@@ -228,5 +229,47 @@ export async function commitImport(
 
   revalidatePath("/dashboard/linkedin");
 
+  // Kick off background enrichment so the freshly-landed rows fill their inferred
+  // dimensions without blocking this response. Best-effort: a failed enqueue must
+  // not fail the import — the operator can always re-run enrichment by hand, and a
+  // later import re-triggers it anyway.
+  try {
+    await inngest.send({
+      name: "coterie/linkedin.enrich",
+      data: { orgId: ctx.orgId },
+    });
+  } catch (err) {
+    console.error("failed to enqueue linkedin enrichment after import:", err);
+  }
+
   return { status: "ok", ...result };
+}
+
+export type TriggerEnrichmentState =
+  | { status: "idle" }
+  | { status: "error"; message: string }
+  | { status: "queued" };
+
+/// Manually (re-)start the background enrichment pass for this tenant's
+/// un-enriched connections. Admin-only, mirroring the importer's in-action gate so
+/// the result surfaces cleanly through useActionState. The Inngest job self-bounds
+/// to enrichedAt:null rows, so triggering it when nothing is pending is a harmless
+/// no-op.
+export async function triggerEnrichment(
+  _prev: TriggerEnrichmentState,
+  _formData: FormData,
+): Promise<TriggerEnrichmentState> {
+  const ctx = await requireOrgContext();
+  if (ctx.role !== "admin")
+    return { status: "error", message: "Only admins can run enrichment." };
+
+  try {
+    await inngest.send({
+      name: "coterie/linkedin.enrich",
+      data: { orgId: ctx.orgId },
+    });
+  } catch {
+    return { status: "error", message: "Couldn't start enrichment. Try again." };
+  }
+  return { status: "queued" };
 }
