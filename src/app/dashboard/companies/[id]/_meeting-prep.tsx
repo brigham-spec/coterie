@@ -167,6 +167,13 @@ export function MeetingPrep({ companyId }: { companyId: string }) {
             value delivered so far.
           </p>
         )}
+
+        <Link
+          href={`/dashboard/companies/${companyId}/meeting-brief`}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          Open printable brief &rarr;
+        </Link>
       </div>
     </CollapsibleCard>
   );

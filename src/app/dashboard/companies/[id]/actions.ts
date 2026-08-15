@@ -35,17 +35,17 @@ import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { generateCompanyBrief } from "@/lib/anthropic";
 import {
   generateMeetingPrep,
-  MAX_CANDIDATES,
-  type PrepCommitment,
-  type PrepCandidate,
   type PrepValueSnapshot,
   type MeetingPrepBrief,
 } from "@/lib/meeting-prep";
+import { summarizeValueDelivered } from "@/lib/value-delivered";
 import {
-  deriveValueEntries,
-  summarizeValueDelivered,
-} from "@/lib/value-delivered";
-import { RSVP_CONFIRMED, RSVP_ATTENDED } from "@/lib/event-stages";
+  loadMeetingBriefData,
+  briefCommitments,
+  briefValueEntries,
+  briefCandidates,
+  buildMeetingPrepInput,
+} from "@/lib/meeting-brief-data";
 import {
   generateProfileEnrichment,
   type EnrichMeeting,
@@ -369,10 +369,6 @@ export type MeetingPrepState =
   | { status: "ok"; brief: MeetingPrepBrief; sections: PrepSections }
   | { status: "error"; message: string };
 
-// Cap the news headlines folded into the brief so a heavily-covered company still
-// yields a bounded prompt; freshest first, so the most relevant coverage survives.
-const PREP_NEWS_LIMIT = 5;
-
 export async function generateMeetingPrepAction(
   _prev: MeetingPrepState,
   formData: FormData,
@@ -382,221 +378,28 @@ export async function generateMeetingPrepAction(
 
   const { orgId, userName } = await requireOrgContext();
 
-  const data = await withOrg(orgId, async (tx) => {
-    // Sequential reads only — one pooled connection per withOrg tx.
-    const company = await tx.company.findUnique({
-      where: { id: companyId },
-      include: {
-        contacts: {
-          select: { id: true, name: true, title: true },
-          orderBy: { name: "asc" },
-        },
-        projectLinks: {
-          orderBy: { role: "asc" },
-          include: { project: { select: { name: true, stage: true } } },
-        },
-      },
-    });
-    if (company == null) return null;
-
-    // Meetings this company's people attended — the freshest first — plus the
-    // open commitments recorded on those meetings. Both are scoped to this
-    // company's contacts, so the prep is grounded in this relationship only.
-    const contactIds = company.contacts.map((c) => c.id);
-    const attendances = contactIds.length
-      ? await tx.meetingAttendee.findMany({
-          where: { contactId: { in: contactIds } },
-          select: { meetingId: true },
-        })
-      : [];
-    const meetingIds = [...new Set(attendances.map((a) => a.meetingId))];
-
-    const recentMeetings = meetingIds.length
-      ? await tx.meeting.findMany({
-          where: { id: { in: meetingIds } },
-          orderBy: { heldAt: "desc" },
-          take: 3,
-          select: { title: true, heldAt: true, summary: true },
-        })
-      : [];
-
-    const openCommitments = meetingIds.length
-      ? await tx.actionItem.findMany({
-          where: { status: "open", meetingId: { in: meetingIds } },
-          orderBy: { createdAt: "desc" },
-          take: 8,
-          select: { text: true, ownerUserId: true, ownerContactId: true },
-        })
-      : [];
-
-    // Recent coverage worth mentioning — the same NewsItem ledger the profile's
-    // Saved Coverage card shows, scoped to this company, freshest first.
-    const newsItems = await tx.newsItem.findMany({
-      where: { companyId },
-      orderBy: { capturedAt: "desc" },
-      take: PREP_NEWS_LIMIT,
-      select: { headline: true, url: true, capturedAt: true },
-    });
-
-    // Value-delivered inputs — the manual ledger plus the network activity the
-    // profile derives value from (realized intros, attended events, project
-    // collaborations). Mirrors the profile's Value Delivered card so the snapshot
-    // is the same honest figure, never a bare "$0" when the network has worked.
-    const valueDelivered = await tx.valueDelivered.findMany({
-      where: { companyId },
-      select: { amount: true, kind: true, introductionId: true },
-    });
-    const introductions = await tx.introduction.findMany({
-      where: {
-        OR: [{ partyA: { companyId } }, { partyB: { companyId } }],
-      },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        status: true,
-        headline: true,
-        outcome: true,
-        madeOn: true,
-        createdAt: true,
-        partyA: {
-          select: { name: true, company: { select: { id: true, name: true } } },
-        },
-        partyB: {
-          select: { name: true, company: { select: { id: true, name: true } } },
-        },
-      },
-    });
-    const eventInvites = contactIds.length
-      ? await tx.eventInvitee.findMany({
-          where: {
-            contactId: { in: contactIds },
-            rsvp: { in: [RSVP_CONFIRMED, RSVP_ATTENDED] },
-          },
-          select: {
-            id: true,
-            rsvp: true,
-            event: { select: { name: true, date: true, createdAt: true } },
-          },
-        })
-      : [];
-
-    // Companies already introduced to the focus (either direction) — excluded
-    // from the candidate pool below.
-    const excluded = new Set<string>();
-    for (const i of introductions) {
-      if (i.partyA.company?.id) excluded.add(i.partyA.company.id);
-      if (i.partyB.company?.id) excluded.add(i.partyB.company.id);
-    }
-
-    // Candidate pool for grounded intro recommendations: the tenant's network
-    // companies, minus the focus and anyone it's already been introduced to. The
-    // model may only recommend from this pool. Bound the fetch — the prompt only
-    // reads the first MAX_CANDIDATES, so pulling the whole network is wasted work;
-    // the margin covers the focus + excluded rows that get filtered out.
-    const poolCompanies = await tx.company.findMany({
-      where: { status: { in: [...NETWORK_STATUSES] } },
-      orderBy: { name: "asc" },
-      take: MAX_CANDIDATES + excluded.size + 1,
-      select: {
-        id: true,
-        name: true,
-        industry: true,
-        lookingFor: true,
-        canOffer: true,
-      },
-    });
-
-    return {
-      company,
-      recentMeetings,
-      openCommitments,
-      newsItems,
-      valueDelivered,
-      introductions,
-      eventInvites,
-      poolCompanies,
-      excluded,
-    };
-  });
+  const data = await withOrg(orgId, (tx) =>
+    loadMeetingBriefData(tx, companyId),
+  );
 
   if (data == null)
     return { status: "error", message: "company not found in this organization" };
 
-  const commitments: PrepCommitment[] = data.openCommitments.map((c) => ({
-    text: c.text,
-    // Staff-owned ("we owe") vs contact-owned ("they owe"); the owner-XOR CHECK
-    // guarantees exactly one is set, so a null ownerUserId means the contact owns it.
-    owedBy: c.ownerUserId != null ? "us" : "them",
-  }));
+  const commitments = briefCommitments(data);
 
   // Value snapshot: the manual ledger folded together with derived network value
   // (the same computation the profile card does), summarized to the totals the
   // brief reminds the company of.
-  const derivedValue = deriveValueEntries({
-    intros: data.introductions.map((i) => {
-      const other =
-        i.partyA.company?.id === companyId ? i.partyB : i.partyA;
-      return {
-        introId: i.id,
-        status: i.status,
-        headline: i.headline,
-        outcome: i.outcome,
-        madeOn: i.madeOn,
-        createdAt: i.createdAt,
-        partyAName: i.partyA.name,
-        partyBName: i.partyB.name,
-        counterpartCompany:
-          other.company?.id === companyId ? null : (other.company?.name ?? null),
-      };
-    }),
-    events: data.eventInvites.map((iv) => ({
-      inviteeId: iv.id,
-      eventName: iv.event.name,
-      rsvp: iv.rsvp,
-      occurredAt: iv.event.date ?? iv.event.createdAt,
-    })),
-    collaborations: data.company.projectLinks.map((l) => ({
-      projectId: l.projectId,
-      projectName: l.project.name,
-      role: l.role,
-      occurredAt: l.createdAt,
-    })),
-    ledgerIntroIds: new Set(
-      data.valueDelivered
-        .map((v) => v.introductionId)
-        .filter((x): x is string => x != null),
-    ),
-  });
-  const manualEntries = data.valueDelivered.map((v) => ({
-    kind: v.kind,
-    amount: v.amount == null ? null : Number(v.amount),
-  }));
-  const { totalAmount, entryCount, monetaryCount } = summarizeValueDelivered([
-    ...manualEntries,
-    ...derivedValue,
-  ]);
+  const { totalAmount, entryCount, monetaryCount } = summarizeValueDelivered(
+    briefValueEntries(data, companyId),
+  );
   const valueSnapshot: PrepValueSnapshot = {
     totalAmount,
     entryCount,
     monetaryCount,
   };
 
-  const eligible = new Set(
-    eligibleCandidateIds(
-      companyId,
-      data.poolCompanies.map((c) => c.id),
-      data.excluded,
-    ),
-  );
-  const candidates: PrepCandidate[] = data.poolCompanies
-    .filter((c) => eligible.has(c.id))
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      industry: c.industry,
-      lookingFor: c.lookingFor,
-      canOffer: c.canOffer,
-    }));
+  const candidates = briefCandidates(data, companyId);
 
   const sections: PrepSections = {
     lastMeeting: data.recentMeetings[0]
@@ -616,39 +419,14 @@ export async function generateMeetingPrepAction(
 
   try {
     await enforceAiRateLimit(orgId);
-    const brief = await generateMeetingPrep({
-      userName,
-      company: {
-        name: data.company.name,
-        status: data.company.status,
-        industry: data.company.industry,
-        tier: data.company.tier,
-        lookingFor: data.company.lookingFor,
-        canOffer: data.company.canOffer,
-        notes: data.company.notes,
-        contacts: data.company.contacts.map((c) => ({
-          name: c.name,
-          title: c.title,
-        })),
-        projects: data.company.projectLinks.map((l) => ({
-          name: l.project.name,
-          stage: l.project.stage,
-          role: l.role,
-        })),
-      },
-      recentMeetings: data.recentMeetings.map((m) => ({
-        title: m.title,
-        heldAt: m.heldAt.toISOString().slice(0, 10),
-        summary: m.summary,
-      })),
-      openCommitments: commitments,
-      recentNews: data.newsItems.map((n) => ({
-        headline: n.headline,
-        capturedAt: n.capturedAt.toISOString().slice(0, 10),
-      })),
-      valueSnapshot,
-      candidates,
-    });
+    const brief = await generateMeetingPrep(
+      buildMeetingPrepInput(data, {
+        userName,
+        commitments,
+        valueSnapshot,
+        candidates,
+      }),
+    );
     return { status: "ok", brief, sections };
   } catch (err) {
     console.error("meeting prep failed", err);

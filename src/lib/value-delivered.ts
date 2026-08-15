@@ -242,3 +242,51 @@ export function buildValueReport(entries: ValueDeliveredEntry[]): ValueReport {
 
   return { summary, firstAt, lastAt, sections };
 }
+
+export type IntroValueSplit = {
+  /// The introductions themselves — the network connection made (non-monetary).
+  introsMade: ValueDeliveredEntry[];
+  /// Monetary wins attributed BACK to an introduction (the contract/grant the
+  /// member won because of a connection we made). These carry both an amount and
+  /// the introLabel of the introduction they trace to.
+  winsFromIntros: ValueDeliveredEntry[];
+  /// Everything else — value delivered that isn't an intro and isn't traced to one.
+  otherValue: ValueDeliveredEntry[];
+  /// Sum of the wins-from-intros amounts (the dollars the network directly returned).
+  winsTotal: number;
+};
+
+/// Split a company's value entries into the three-part story the meeting brief
+/// leads with: the introductions we MADE, the monetary wins the member landed
+/// FROM those introductions (a contract traced to an intro via introductionId →
+/// introLabel), and any other value. PURE — each list is ordered newest-first so
+/// the printed brief is stable. An intro that itself carries a dollar figure stays
+/// in introsMade (kind wins); only downstream, intro-linked monetary rows count as
+/// "wins from intros" so the two figures never double-count.
+export function splitIntroValue(
+  entries: readonly ValueDeliveredEntry[],
+): IntroValueSplit {
+  const introsMade: ValueDeliveredEntry[] = [];
+  const winsFromIntros: ValueDeliveredEntry[] = [];
+  const otherValue: ValueDeliveredEntry[] = [];
+  let winsTotal = 0;
+
+  for (const e of entries) {
+    if (e.kind === "introduction") {
+      introsMade.push(e);
+    } else if (e.introLabel != null && e.amount != null) {
+      winsFromIntros.push(e);
+      winsTotal += e.amount;
+    } else {
+      otherValue.push(e);
+    }
+  }
+
+  const newestFirst = (a: ValueDeliveredEntry, b: ValueDeliveredEntry) =>
+    b.occurredAt.getTime() - a.occurredAt.getTime();
+  introsMade.sort(newestFirst);
+  winsFromIntros.sort(newestFirst);
+  otherValue.sort(newestFirst);
+
+  return { introsMade, winsFromIntros, otherValue, winsTotal };
+}

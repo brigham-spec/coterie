@@ -4,6 +4,7 @@ import {
   buildValueReport,
   deriveValueEntries,
   roiMultiplier,
+  splitIntroValue,
   summarizeValueDelivered,
   type DerivedIntro,
   type DerivedEvent,
@@ -231,6 +232,65 @@ describe("deriveValueEntries", () => {
       summary: "Collaborating on Riverside",
       outcome: "Role: equity partner",
     });
+  });
+});
+
+describe("splitIntroValue", () => {
+  test("empty entries split into three empty lists", () => {
+    expect(splitIntroValue([])).toEqual({
+      introsMade: [],
+      winsFromIntros: [],
+      otherValue: [],
+      winsTotal: 0,
+    });
+  });
+
+  test("introductions go to introsMade regardless of amount", () => {
+    const s = splitIntroValue([
+      entry({ kind: "introduction", amount: null, introLabel: "Alice \u2194 Bob" }),
+      entry({ kind: "introduction", amount: 5000 }),
+    ]);
+    expect(s.introsMade).toHaveLength(2);
+    expect(s.winsFromIntros).toHaveLength(0);
+    expect(s.winsTotal).toBe(0);
+  });
+
+  test("intro-linked monetary rows are wins-from-intros and sum into winsTotal", () => {
+    const s = splitIntroValue([
+      entry({ kind: "service", amount: 120000, introLabel: "Alice \u2194 Bob" }),
+      entry({ kind: "grant", amount: 30000, introLabel: "Alice \u2194 Carol" }),
+    ]);
+    expect(s.winsFromIntros).toHaveLength(2);
+    expect(s.winsTotal).toBe(150000);
+    expect(s.otherValue).toHaveLength(0);
+  });
+
+  test("non-intro value and intro-linked-but-non-monetary rows fall to otherValue", () => {
+    const s = splitIntroValue([
+      entry({ kind: "grant", amount: 40000, introLabel: null }),
+      entry({ kind: "event", amount: null, introLabel: null }),
+      entry({ kind: "service", amount: null, introLabel: "Alice \u2194 Bob" }),
+    ]);
+    expect(s.otherValue).toHaveLength(3);
+    expect(s.winsFromIntros).toHaveLength(0);
+    expect(s.introsMade).toHaveLength(0);
+  });
+
+  test("each list is ordered newest first", () => {
+    const oldWin = entry({
+      kind: "service",
+      amount: 1000,
+      introLabel: "A \u2194 B",
+      occurredAt: new Date("2026-01-01"),
+    });
+    const newWin = entry({
+      kind: "service",
+      amount: 2000,
+      introLabel: "A \u2194 C",
+      occurredAt: new Date("2026-05-01"),
+    });
+    const s = splitIntroValue([oldWin, newWin]);
+    expect(s.winsFromIntros.map((e) => e.id)).toEqual([newWin.id, oldWin.id]);
   });
 });
 
