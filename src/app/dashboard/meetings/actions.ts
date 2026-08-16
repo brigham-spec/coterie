@@ -366,7 +366,7 @@ export async function saveActionItems(formData: FormData): Promise<void> {
       if (typeof row !== "object" || row === null) continue;
       const r = row as Record<string, unknown>;
       const text = typeof r.text === "string" ? r.text.trim() : "";
-      const ownerKind = r.ownerKind;
+      const ownerKind = typeof r.ownerKind === "string" ? r.ownerKind : "";
       const ownerId = typeof r.ownerId === "string" ? r.ownerId : "";
       if (text === "") continue;
       if (ownerKind === "staff" && staffIds.has(ownerId))

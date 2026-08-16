@@ -68,6 +68,27 @@ describe("buildInvoiceGrid", () => {
     expect(grid.rows[0].cells[1].status).toBe("paid");
   });
 
+  test("a due date equal to today is open, not yet overdue (strict boundary)", () => {
+    const grid = buildInvoiceGrid(
+      [inv({ dueOn: new Date(Date.UTC(2026, 5, 15)), status: "sent" })], // June 15 == today
+      2026,
+      today,
+    );
+    expect(grid.rows[0].cells[5].status).toBe("open");
+  });
+
+  test("open dominates paid when a month mixes them with nothing overdue", () => {
+    const grid = buildInvoiceGrid(
+      [
+        inv({ dueOn: new Date(Date.UTC(2026, 8, 5)), status: "paid" }), // Sep, settled
+        inv({ dueOn: new Date(Date.UTC(2026, 8, 25)), status: "sent" }), // Sep, future/open
+      ],
+      2026,
+      today,
+    );
+    expect(grid.rows[0].cells[8].status).toBe("open");
+  });
+
   test("overdue dominates when a month mixes a late and a settled invoice", () => {
     const grid = buildInvoiceGrid(
       [
