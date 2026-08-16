@@ -26,6 +26,7 @@ export type ModuleKey =
   | "network_search"
   | "prospect_finder"
   | "linkedin"
+  | "sop_assistant"
   | "news"
   | "email"
   | "events"
@@ -58,6 +59,7 @@ export const MODULES: readonly ModuleDef[] = [
   { key: "network_search", label: "Network Search", href: "/dashboard/network-search", core: false },
   { key: "prospect_finder", label: "Prospect Finder", href: "/dashboard/prospect-finder", core: false },
   { key: "linkedin", label: "LinkedIn", href: "/dashboard/linkedin", core: false },
+  { key: "sop_assistant", label: "SOP Assistant", href: "/dashboard/sop-assistant", core: false },
   { key: "news", label: "News", href: "/dashboard/news", core: false },
   { key: "email", label: "Email", href: "/dashboard/email", core: false },
   { key: "events", label: "Events", href: "/dashboard/events", core: false },

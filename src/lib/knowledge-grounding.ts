@@ -5,6 +5,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import {
   KNOWLEDGE_KIND_LABELS,
   isKnowledgeKind,
+  type KnowledgeKind,
 } from "@/lib/knowledge-docs";
 
 // Grounding = the tenant's own collateral (KnowledgeDoc.content) folded into a
@@ -28,12 +29,16 @@ export const MAX_GROUNDING_DOCS = 12;
 
 /**
  * Load the tenant's collateral for grounding, newest first. Runs inside a withOrg
- * transaction (RLS-scoped). Returns only the fields the builder needs.
+ * transaction (RLS-scoped). Returns only the fields the builder needs. Pass a
+ * `kind` to restrict to one collateral type (e.g. "sop" for the SOP assistant),
+ * which is served cheaply by the @@index([orgId, kind]) on knowledge_docs.
  */
 export async function loadKnowledgeGrounding(
   tx: Prisma.TransactionClient,
+  kind?: KnowledgeKind,
 ): Promise<GroundingDoc[]> {
   const docs = await tx.knowledgeDoc.findMany({
+    where: kind ? { kind } : undefined,
     orderBy: { createdAt: "desc" },
     take: MAX_GROUNDING_DOCS,
     select: { kind: true, title: true, content: true },

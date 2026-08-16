@@ -83,6 +83,14 @@ const NAV_ICONS: Record<NavIcon, ReactNode> = {
       <path d="M7.6 8.4c0-.9.7-1.6 1.6-1.6s1.6.7 1.6 1.6v2.2" />
     </>
   ),
+  "sop-assistant": (
+    <>
+      <path d="M4 2.5h5l3 3v8H4z" />
+      <path d="M9 2.5v3h3" />
+      <path d="M6.7 8.4c0-.8.6-1.3 1.3-1.3s1.3.5 1.3 1.2c0 .9-1.3.9-1.3 1.8" />
+      <path d="M8 12v.01" />
+    </>
+  ),
   news: (
     <>
       <rect x="2.5" y="3.5" width="11" height="9" rx="1" />

@@ -18,6 +18,7 @@ export type NavIcon =
   | "network-search"
   | "prospect-finder"
   | "linkedin"
+  | "sop-assistant"
   | "news"
   | "email"
   | "events"
@@ -70,6 +71,11 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: "prospect-finder",
       },
       { label: "LinkedIn", href: "/dashboard/linkedin", icon: "linkedin" },
+      {
+        label: "SOP Assistant",
+        href: "/dashboard/sop-assistant",
+        icon: "sop-assistant",
+      },
       { label: "News", href: "/dashboard/news", icon: "news" },
       { label: "Email", href: "/dashboard/email", icon: "email" },
     ],
