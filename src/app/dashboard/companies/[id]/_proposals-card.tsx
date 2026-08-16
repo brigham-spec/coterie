@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 import {
   Button,
@@ -90,6 +91,15 @@ export function ProposalsCard({
           ))}
         </ul>
       )}
+
+      <div className="border-t border-line px-4 py-3">
+        <Link
+          href={`/dashboard/companies/${companyId}/proposal`}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          Generate a printable proposal &rarr;
+        </Link>
+      </div>
     </CollapsibleCard>
   );
 }
