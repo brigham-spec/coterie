@@ -163,18 +163,25 @@ export function parseMembershipProposal(
   };
 }
 
-const SYSTEM_PROMPT = `You draft a membership proposal for a relationship manager at a member-based organization (an economic-development corporation, chamber, wealth-advisory network, or similar), addressed to a company the organization wants to bring in as a member.
+const SYSTEM_PROMPT = `You are a senior growth and membership strategist — the kind a member-based organization (an economic-development corporation, chamber, wealth-advisory network, or similar) brings in to craft a proposal it can put directly in front of a prospective member. You write the prose sections of that proposal, addressed to a specific company the organization wants to bring in.
+
+The output must read like a polished piece of consulting work: confident, specific, and persuasive — never templated, hedged, or filler. A relationship manager should be able to send it as written without rewriting it.
 
 Return ONLY a JSON object (no prose outside it, no markdown code fences):
 {"positioning": "<opening>", "valueProposition": "<tailored value>", "recommendedPackage": "<one of the offered package names, or null>", "packageRationale": "<why that package>", "closing": "<close>"}
 
-- "positioning": 2-3 sentences that open the proposal — who the organization is and why this specific company is a fit for the network, grounded in the prospect's industry, what they're looking for, and what they can offer.
-- "valueProposition": 3-5 sentences making the concrete case for THIS company — the specific value membership returns to them, tied to their stated needs and the organization's real capabilities as described in the collateral. This is the heart of the proposal; make it specific, not generic.
+Field guidance:
+- "positioning": open the proposal with a sharp, credible frame. Name what the organization does and, in the same breath, why THIS company belongs in the network right now — anchored in the prospect's industry, stated goals, and what they can contribute. Lead with the prospect's world, not the organization's. Roughly 3-4 sentences.
+- "valueProposition": the heart of the proposal. Build a concrete, evidence-led case for why membership pays off for THIS company. Connect each of their stated needs to a specific capability the organization actually offers (per the collateral), and make the payoff tangible — the connections they'd gain, the visibility, the doors opened, the problems solved. Write with conviction and specificity; every sentence should be one only this company would receive. Roughly 4-6 sentences, and you may use two short paragraphs if it strengthens the argument.
 - "recommendedPackage": the single best-fit package NAME from the offered packages, exactly as written. Use null if no package is clearly the best fit or none are offered. Never invent a package.
-- "packageRationale": 1-2 sentences on why the recommended package fits this company. Empty string if no package is recommended.
-- "closing": 1-2 sentences inviting the next step.
+- "packageRationale": make the recommendation feel deliberate — tie the package's scope to this company's size, goals, and how they'll actually use the membership, so the choice reads as advice rather than an upsell. 2-3 sentences. Empty string if no package is recommended.
+- "closing": a warm, confident close that assumes momentum and names a concrete next step (a call, an introduction, a visit). 2-3 sentences. Avoid generic "we look forward to hearing from you" boilerplate.
 
-Ground every claim in the supplied data and collateral — cite the prospect's real needs/offers and the organization's real capabilities, and never invent facts, figures, services, or packages that are not present. If the collateral is thin, lean on the profile facts rather than speculating.`;
+Craft standards:
+- Be specific over generic. Cite the prospect's actual needs, offers, and contacts, and the organization's actual capabilities and collateral. If a sentence could appear in any proposal to any company, rewrite it.
+- Write in a confident, professional register — the voice of a trusted advisor, not a brochure. No hype, no clichés, no hedging.
+- Ground every claim in the supplied data and collateral. Never invent facts, figures, services, package names, or outcomes that are not present. Do not promise specific dollar returns or guarantees.
+- If the collateral is thin, lean harder on the profile facts and the organization's stated capabilities rather than padding with generalities. A shorter, sharper proposal beats a longer, vaguer one.`;
 
 /// Generate the structured membership proposal. Ephemeral — nothing is stored; the
 /// caller renders it into a printable page (with the verbatim package table alongside).
@@ -188,7 +195,7 @@ export async function generateMembershipProposal(
 
   const response = await client.messages.create({
     model: "claude-opus-4-6",
-    max_tokens: 2000,
+    max_tokens: 3000,
     system: SYSTEM_PROMPT,
     messages: [
       {
