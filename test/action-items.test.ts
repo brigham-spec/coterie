@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   parseActionItemCandidates,
+  extractionNotes,
   type OwnerCandidate,
 } from "@/lib/action-items";
 
@@ -90,5 +91,74 @@ describe("parseActionItemCandidates", () => {
     expect(parseActionItemCandidates("not json", staff, contacts)).toEqual([]);
     expect(parseActionItemCandidates("{}", staff, contacts)).toEqual([]);
     expect(parseActionItemCandidates('{"text":"x"}', staff, contacts)).toEqual([]);
+  });
+
+  it("loosely resolves a first name to a unique full-name candidate", () => {
+    const raw = JSON.stringify([
+      { text: "Send the draft", owner: "Brigham" },
+      { text: "Introduce the CFO", owner: "Jane" },
+    ]);
+    const out = parseActionItemCandidates(raw, staff, contacts);
+    expect(out[0].ownerKind).toBe("staff");
+    expect(out[0].ownerId).toBe("u1");
+    expect(out[1].ownerKind).toBe("contact");
+    expect(out[1].ownerId).toBe("c2");
+  });
+
+  it("leaves an ambiguous partial name unknown rather than guessing", () => {
+    // Two staff share the first token "Sam" — a partial match must not pick one.
+    const ambiguousStaff: OwnerCandidate[] = [
+      { id: "u1", name: "Sam Adams" },
+      { id: "u2", name: "Sam Brooks" },
+    ];
+    const raw = JSON.stringify([{ text: "Circle back", owner: "Sam" }]);
+    const [c] = parseActionItemCandidates(raw, ambiguousStaff, contacts);
+    expect(c.ownerKind).toBe("unknown");
+    expect(c.ownerId).toBeNull();
+  });
+
+  it("prefers staff over contacts on a loose match tie", () => {
+    const staffAndContactShareFirstName: OwnerCandidate[] = [
+      { id: "u9", name: "Alex Green" },
+    ];
+    const contactSameFirst: OwnerCandidate[] = [{ id: "c9", name: "Alex Stone" }];
+    const raw = JSON.stringify([{ text: "Task", owner: "Alex" }]);
+    const [c] = parseActionItemCandidates(
+      raw,
+      staffAndContactShareFirstName,
+      contactSameFirst,
+    );
+    expect(c.ownerKind).toBe("staff");
+    expect(c.ownerId).toBe("u9");
+  });
+});
+
+describe("extractionNotes", () => {
+  it("prefers the structured action_items text when long enough", () => {
+    const notes = extractionNotes({
+      actionItemsText: "Sarah to send the IDA application draft by Friday.",
+      summary: "The meeting covered onboarding and next steps.",
+    });
+    expect(notes).toBe("Sarah to send the IDA application draft by Friday.");
+  });
+
+  it("falls back to the summary when action_items is too short or absent", () => {
+    expect(
+      extractionNotes({
+        actionItemsText: "N/A",
+        summary: "A thorough overview of the strategic discussion held.",
+      }),
+    ).toBe("A thorough overview of the strategic discussion held.");
+    expect(
+      extractionNotes({
+        actionItemsText: null,
+        summary: "A thorough overview of the strategic discussion held.",
+      }),
+    ).toBe("A thorough overview of the strategic discussion held.");
+  });
+
+  it("returns an empty string when neither field is usable", () => {
+    expect(extractionNotes({ actionItemsText: null, summary: null })).toBe("");
+    expect(extractionNotes({ actionItemsText: "  ", summary: "  " })).toBe("");
   });
 });

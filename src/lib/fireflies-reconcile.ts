@@ -77,6 +77,10 @@ export async function reconcileTranscripts(
       transcript.date != null ? new Date(transcript.date) : new Date();
     const title = (transcript.title ?? "").trim() || "Untitled meeting";
     const summary = transcript.summary?.overview ?? null;
+    // Fireflies' structured action-items text (real commitments, often with
+    // owners) — stored separately from the narrative overview so extraction has
+    // something to lift from. null when absent.
+    const actionItemsText = transcript.summary?.action_items?.trim() || null;
     // Rendered as a clickable href on the meetings page — only http(s) links
     // survive so a non-http scheme can't become a stored-XSS vector.
     const transcriptUrl = httpUrlOrNull(transcript.transcript_url);
@@ -90,9 +94,10 @@ export async function reconcileTranscripts(
           title,
           heldAt,
           summary,
+          actionItemsText,
           transcriptUrl,
         },
-        update: { title, heldAt, summary, transcriptUrl },
+        update: { title, heldAt, summary, actionItemsText, transcriptUrl },
         select: { id: true, createdAt: true, updatedAt: true },
       }),
     );

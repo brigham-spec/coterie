@@ -19,6 +19,8 @@ import { inngest } from "@/lib/inngest";
 import {
   generateActionItems,
   ownerColumns,
+  extractionNotes,
+  MIN_EXTRACTION_LENGTH,
   type ActionItemCandidate,
 } from "@/lib/action-items";
 import { loadStaffOwners, loadAttendeeOwners } from "@/lib/action-item-owners";
@@ -278,12 +280,13 @@ export async function extractActionItems(
   const meeting = await withOrg(orgId, (tx) =>
     tx.meeting.findUnique({
       where: { id: meetingId },
-      select: { summary: true },
+      select: { summary: true, actionItemsText: true },
     }),
   );
-  const summary = meeting?.summary?.trim() ?? "";
+  // Prefer Fireflies' structured action_items text over the thematic overview.
+  const notes = meeting ? extractionNotes(meeting) : "";
   // Mirror the prototype's guard: too little text to extract anything useful.
-  if (summary.length < 20)
+  if (notes.length < MIN_EXTRACTION_LENGTH)
     return {
       status: "error",
       message: "This meeting has no notes to extract from.",
@@ -296,7 +299,7 @@ export async function extractActionItems(
 
   try {
     await enforceAiRateLimit(orgId);
-    const candidates = await generateActionItems(summary, staff, contacts);
+    const candidates = await generateActionItems(notes, staff, contacts);
     return { status: "ok", candidates };
   } catch (err) {
     if (err instanceof AiRateLimitError)

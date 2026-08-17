@@ -18,6 +18,23 @@ import { extractJsonArray } from "@/lib/json-extract";
 // before anything persists (see the meetings surface). Auto-committing a guessed
 // owner would violate the project's "never silently assume" rule.
 
+// Minimum length of usable meeting notes. Below this the notes are too thin to
+// extract from — the caller short-circuits without a model call.
+export const MIN_EXTRACTION_LENGTH = 20;
+
+/// PURE: choose the best text to extract action items from. Fireflies delivers a
+/// structured action_items text (real commitments, often owner-attributed) that
+/// beats the thematic overview summary; prefer it when present and long enough,
+/// otherwise fall back to the summary. Returns "" when neither is usable.
+export function extractionNotes(m: {
+  actionItemsText: string | null;
+  summary: string | null;
+}): string {
+  const items = (m.actionItemsText ?? "").trim();
+  if (items.length >= MIN_EXTRACTION_LENGTH) return items;
+  return (m.summary ?? "").trim();
+}
+
 // A person who could own an action item. Both lists are supplied by the caller,
 // already org-scoped (staff = org members, contacts = this meeting's attendees).
 export type OwnerCandidate = { id: string; name: string };
@@ -46,22 +63,60 @@ export function ownerColumns(
   };
 }
 
+// Split a name into lowercase word tokens for loose matching.
+function nameTokens(name: string): string[] {
+  return name
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+// The one candidate in a pool whose name tokens are a superset of the needle's
+// tokens (e.g. "john" matches "John Smith"; "john s" matches "John Smith"). Null
+// when nothing matches OR when more than one candidate matches — an ambiguous
+// partial ("john" with two Johns) is never guessed, it's left for a human.
+function uniqueTokenMatch(
+  needleTokens: readonly string[],
+  pool: readonly OwnerCandidate[],
+): OwnerCandidate | null {
+  let hit: OwnerCandidate | null = null;
+  for (const cand of pool) {
+    const tokens = new Set(nameTokens(cand.name));
+    if (needleTokens.every((t) => tokens.has(t))) {
+      if (hit) return null; // ambiguous — more than one candidate matches
+      hit = cand;
+    }
+  }
+  return hit;
+}
+
 // Resolve a model-supplied owner name to a real candidate. Staff take precedence
 // over contacts on a tie (a staff member logging their own follow-up is the more
-// common case), matching case-insensitively on the trimmed full name.
+// common case). First an exact case-insensitive full-name match; failing that, a
+// loose match where the supplied name's tokens are a subset of a candidate's
+// (e.g. a first name resolving to a full name), but only when that partial match
+// is UNIQUE within the pool — an ambiguous partial stays unknown for a human.
 function resolveOwner(
   ownerName: string,
   staff: readonly OwnerCandidate[],
   contacts: readonly OwnerCandidate[],
 ): { ownerKind: ActionItemCandidate["ownerKind"]; ownerId: string | null } {
   const needle = ownerName.trim().toLowerCase();
-  if (needle !== "") {
-    const staffHit = staff.find((s) => s.name.trim().toLowerCase() === needle);
-    if (staffHit) return { ownerKind: "staff", ownerId: staffHit.id };
-    const contactHit = contacts.find(
-      (c) => c.name.trim().toLowerCase() === needle,
-    );
-    if (contactHit) return { ownerKind: "contact", ownerId: contactHit.id };
+  if (needle === "") return { ownerKind: "unknown", ownerId: null };
+
+  const staffExact = staff.find((s) => s.name.trim().toLowerCase() === needle);
+  if (staffExact) return { ownerKind: "staff", ownerId: staffExact.id };
+  const contactExact = contacts.find(
+    (c) => c.name.trim().toLowerCase() === needle,
+  );
+  if (contactExact) return { ownerKind: "contact", ownerId: contactExact.id };
+
+  const tokens = nameTokens(ownerName);
+  if (tokens.length > 0) {
+    const staffLoose = uniqueTokenMatch(tokens, staff);
+    if (staffLoose) return { ownerKind: "staff", ownerId: staffLoose.id };
+    const contactLoose = uniqueTokenMatch(tokens, contacts);
+    if (contactLoose) return { ownerKind: "contact", ownerId: contactLoose.id };
   }
   return { ownerKind: "unknown", ownerId: null };
 }

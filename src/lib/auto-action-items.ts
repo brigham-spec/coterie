@@ -1,6 +1,11 @@
 import "server-only";
 
-import { generateActionItems, ownerColumns } from "@/lib/action-items";
+import {
+  generateActionItems,
+  ownerColumns,
+  extractionNotes,
+  MIN_EXTRACTION_LENGTH,
+} from "@/lib/action-items";
 import { loadStaffOwners, loadAttendeeOwners } from "@/lib/action-item-owners";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { withOrg } from "@/lib/tenant";
@@ -21,11 +26,8 @@ import { withOrg } from "@/lib/tenant";
 //      created, so a periodic re-sync (which updates the same rows) never
 //      re-extracts — no duplicate items, no redundant model calls.
 //
-// A meeting whose Fireflies summary hasn't populated yet (or is too short) is
+// A meeting whose Fireflies notes haven't populated yet (or are too short) is
 // skipped; the manual button covers it once notes arrive on a later view.
-
-// Mirror the manual extractor's guard: too little text to extract anything.
-const MIN_SUMMARY_LENGTH = 20;
 
 /// Auto-extract and persist owner-resolved action items for the given meetings.
 /// Best-effort per meeting: an extraction failure on one meeting is swallowed so
@@ -46,18 +48,19 @@ export async function autoExtractActionItems(
     const meeting = await withOrg(orgId, (tx) =>
       tx.meeting.findUnique({
         where: { id: meetingId },
-        select: { summary: true },
+        select: { summary: true, actionItemsText: true },
       }),
     );
-    const summary = meeting?.summary?.trim() ?? "";
-    if (summary.length < MIN_SUMMARY_LENGTH) continue;
+    // Prefer Fireflies' structured action_items text over the thematic overview.
+    const notes = meeting ? extractionNotes(meeting) : "";
+    if (notes.length < MIN_EXTRACTION_LENGTH) continue;
 
     const contacts = await loadAttendeeOwners(orgId, meetingId);
 
     let candidates;
     try {
       await enforceAiRateLimit(orgId);
-      candidates = await generateActionItems(summary, staff, contacts);
+      candidates = await generateActionItems(notes, staff, contacts);
     } catch (err) {
       // Over the org's AI cap: stop here rather than burning retries — the
       // remaining meetings are left for manual extraction.

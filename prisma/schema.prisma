@@ -606,6 +606,10 @@ model Meeting {
   title         String
   heldAt        DateTime @map("held_at") @db.Timestamptz(6)
   summary       String?
+  /// Fireflies' structured action_items text, kept separate from the narrative
+  /// summary so the meeting card stays clean and extraction reads real
+  /// commitments (with owners) instead of the thematic overview.
+  actionItemsText String? @map("action_items_text") @db.Text
   transcriptUrl String?  @map("transcript_url")
   /// Manual-log only (item 11); Fireflies-synced meetings leave these null.
   durationMinutes Int?   @map("duration_minutes") @db.SmallInt
