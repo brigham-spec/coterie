@@ -26,7 +26,18 @@ const URGENCIES: { value: string; label: string }[] = [
   { value: "soon", label: "Due soon" },
 ];
 
-export function CommitmentFilters({ owners }: { owners: OwnerFacet[] }) {
+const SCOPES: { value: string; label: string }[] = [
+  { value: "everyone", label: "Everyone" },
+  { value: "mine", label: "Mine" },
+];
+
+export function CommitmentFilters({
+  owners,
+  scope,
+}: {
+  owners: OwnerFacet[];
+  scope: "mine" | "everyone";
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -81,6 +92,23 @@ export function CommitmentFilters({ owners }: { owners: OwnerFacet[] }) {
             </button>
           ))}
         </div>
+        <div className="flex rounded-sm border border-line-2 bg-surface p-0.5 text-[11px]">
+          {SCOPES.map((s) => (
+            <button
+              key={s.value}
+              type="button"
+              onClick={() =>
+                push({ scope: s.value === "everyone" ? "" : s.value, owner: "" })
+              }
+              className={cn(
+                "rounded-sm px-2.5 py-1 font-medium transition-colors",
+                scope === s.value ? "bg-ink text-white" : "text-ink-3 hover:text-ink",
+              )}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
         <input
           key={q}
           type="search"
@@ -104,20 +132,22 @@ export function CommitmentFilters({ owners }: { owners: OwnerFacet[] }) {
               {u.label}
             </button>
           ))}
-          {owners.length > 0 ? (
-            <span className="mx-1 h-4 w-px bg-line-2" aria-hidden />
+          {scope === "everyone" && owners.length > 0 ? (
+            <>
+              <span className="mx-1 h-4 w-px bg-line-2" aria-hidden />
+              {owners.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => push({ owner: owner === o.id ? "" : o.id })}
+                  className={chip(owner === o.id)}
+                >
+                  {o.name}
+                  <span className="ml-1 text-ink-3">{o.count}</span>
+                </button>
+              ))}
+            </>
           ) : null}
-          {owners.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              onClick={() => push({ owner: owner === o.id ? "" : o.id })}
-              className={chip(owner === o.id)}
-            >
-              {o.name}
-              <span className="ml-1 text-ink-3">{o.count}</span>
-            </button>
-          ))}
         </div>
       ) : null}
     </div>

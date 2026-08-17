@@ -60,6 +60,10 @@ export default async function CommitmentsPage({
   const sp = await searchParams;
   const rawView = one(sp.view);
   const view = rawView === "board" || rawView === "completed" ? rawView : "list";
+  // Scope (additive, default "everyone" so the shared workspace is unchanged):
+  // "mine" narrows to the items this user personally owns — including undated
+  // ones — so anyone can pull up their own outstanding follow-ups.
+  const scope = one(sp.scope) === "mine" ? "mine" : "everyone";
   const rawUrgency = one(sp.urgency);
   const filters: CommitmentFilters = {
     q: one(sp.q),
@@ -125,8 +129,13 @@ export default async function CommitmentsPage({
   const staffRows = await staffPromise;
 
   const now = new Date();
-  const open = shapeCommitments(openRows, now);
-  const completed = shapeCommitments(completedRows, now);
+  // "Mine" = items I personally own (we-owe, ownerId === my user id). They-owe
+  // items have no staff owner, so a mine view naturally drops them.
+  const mine = (c: Commitment) => c.side === "we_owe" && c.ownerId === ctx.userId;
+  const openAll = shapeCommitments(openRows, now);
+  const completedAll = shapeCommitments(completedRows, now);
+  const open = scope === "mine" ? openAll.filter(mine) : openAll;
+  const completed = scope === "mine" ? completedAll.filter(mine) : completedAll;
 
   const openCount = open.length;
   const overdueCount = open.filter((c) => c.urgency === "overdue").length;
@@ -164,7 +173,7 @@ export default async function CommitmentsPage({
 
       <LogCommitment staff={staff} contacts={contacts} />
 
-      <FilterBar owners={owners} />
+      <FilterBar owners={owners} scope={scope} />
 
       {view === "list" && toScan.length > 0 ? (
         <Card>
@@ -209,17 +218,23 @@ export default async function CommitmentsPage({
       ) : (
         <>
           <CommitmentList
-            title="We owe"
+            title={scope === "mine" ? "My commitments" : "We owe"}
             rows={weOwe.map(toRow)}
-            emptyLabel="Nothing outstanding on our side."
+            emptyLabel={
+              scope === "mine"
+                ? "Nothing outstanding assigned to you."
+                : "Nothing outstanding on our side."
+            }
             selectable
           />
-          <CommitmentList
-            title="They owe"
-            rows={theyOwe.map(toRow)}
-            emptyLabel="No open commitments from the network."
-            selectable
-          />
+          {scope === "everyone" ? (
+            <CommitmentList
+              title="They owe"
+              rows={theyOwe.map(toRow)}
+              emptyLabel="No open commitments from the network."
+              selectable
+            />
+          ) : null}
         </>
       )}
     </div>
