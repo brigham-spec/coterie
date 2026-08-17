@@ -679,7 +679,12 @@ export default async function CompanyDetailPage({
           industry: company.industry,
           annualValue: Number(company.annualValue),
           website: company.website,
+          linkedin: company.linkedin,
           emailDomain: company.emailDomain,
+          primaryEmail:
+            company.contacts.find((c) => c.isPrimary)?.email ??
+            company.contacts.find((c) => c.email)?.email ??
+            null,
           source: company.source,
           memberSince: company.memberSince,
           dealSize: company.dealSize,

@@ -144,6 +144,8 @@ model Company {
   /// Standardized on dollars (not thousands) — spec §2, conventions.
   annualValue Decimal @map("annual_value") @db.Decimal(14, 2)
   website     String?
+  /// Company LinkedIn page URL (optional), linkable from the profile.
+  linkedin    String?
   /// Drives Fireflies attendee -> company matching.
   emailDomain String? @map("email_domain")
   /// How the relationship originated (demo's `src`).

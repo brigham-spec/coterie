@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Button, Field, SelectField, Textarea } from "@/components/ui";
+import { Button, Field, SelectField, Textarea, fieldControl } from "@/components/ui";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
 import { autoAssignTier, type MemberTier } from "@/lib/member-tiers";
@@ -38,7 +38,9 @@ export type DetailsCompany = {
   industry: string;
   annualValue: number;
   website: string | null;
+  linkedin: string | null;
   emailDomain: string | null;
+  primaryEmail: string | null;
   source: string | null;
   memberSince: number | null;
   dealSize: string | null;
@@ -123,8 +125,10 @@ function ReadView({
     { label: "Referred by", value: referredBy },
     { label: "Consulting", value: company.consulting },
     { label: "Source", value: company.source },
+    { label: "Email", value: company.primaryEmail },
     { label: "Email domain", value: company.emailDomain },
     { label: "Website", value: company.website },
+    { label: "LinkedIn", value: company.linkedin },
   ];
 
   const narrative: Array<{ label: string; value: string | null }> = [
@@ -327,26 +331,43 @@ function EditForm({
             defaultValue={company.industry}
             required
           />
-          {autoTier ? (
-            <div>
-              <span className="mb-1.5 block text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase">
+          <div>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase">
                 Tier
               </span>
-              <div className="rounded border border-line px-2 py-1.5 text-xs text-ink">
-                {previewTier ?? "—"}
-                <span className="ml-1.5 text-[10px] text-ink-3">auto</span>
-              </div>
+              {status === "member" ? (
+                <button
+                  type="button"
+                  onClick={() => setLocked((v) => !v)}
+                  className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+                >
+                  {locked ? "Use auto" : "Set manually"}
+                </button>
+              ) : null}
             </div>
-          ) : (
-            <SelectField name="tier" label="Tier" defaultValue={company.tier ?? ""}>
-              <option value="">—</option>
-              {tierOptions.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </SelectField>
-          )}
+            {autoTier ? (
+              <div className={fieldControl}>
+                {previewTier ?? "—"}
+                <span className="ml-1.5 text-[10px] text-ink-3">
+                  auto from annual value
+                </span>
+              </div>
+            ) : (
+              <select
+                name="tier"
+                defaultValue={company.tier ?? ""}
+                className={fieldControl}
+              >
+                <option value="">—</option>
+                {tierOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
           <SelectField
             name="ownerUserId"
             label="Owner"
@@ -433,6 +454,11 @@ function EditForm({
             defaultValue={company.website ?? ""}
           />
           <Field
+            name="linkedin"
+            label="LinkedIn URL"
+            defaultValue={company.linkedin ?? ""}
+          />
+          <Field
             name="counties"
             label="Counties (comma-separated)"
             defaultValue={company.counties.join(", ")}
@@ -440,21 +466,10 @@ function EditForm({
           />
         </div>
 
-        {status === "member" ? (
-          <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-ink-2">
-            <input
-              type="checkbox"
-              name="tierLocked"
-              checked={locked}
-              onChange={(e) => setLocked(e.currentTarget.checked)}
-            />
-            Lock tier manually (otherwise auto-assigned from annual value)
-          </label>
-        ) : locked ? (
-          // Preserve a set lock on non-member statuses (the checkbox only shows
-          // for members). Absent = unlocked, so only emit the field when locked.
-          <input type="hidden" name="tierLocked" value="on" />
-        ) : null}
+        {/* Tier lock is driven by the inline "Set manually / Use auto" toggle at
+            the Tier field above; only members auto-assign, so a set lock on a
+            non-member status is preserved here. Absent = unlocked. */}
+        {locked ? <input type="hidden" name="tierLocked" value="on" /> : null}
 
         <Textarea
           name="lookingFor"

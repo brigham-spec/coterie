@@ -1536,6 +1536,7 @@ export async function updateCompany(formData: FormData): Promise<void> {
     consulting,
     temperature,
     website: optionalText(formData, "website"),
+    linkedin: optionalText(formData, "linkedin"),
     emailDomain: optionalText(formData, "emailDomain"),
     source: optionalText(formData, "source"),
     memberSince: optionalInt(formData, "memberSince"),
