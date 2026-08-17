@@ -4,11 +4,12 @@ import { resolveScope } from "@/lib/dashboard-scope";
 
 // Pure-logic tests for the dashboard scope clamp. The single guarantee that
 // matters for tenant safety: a non-admin can never resolve to "everyone", no
-// matter what they request; an admin honors the request and defaults to org-wide.
+// matter what they request; an admin defaults to their own work and opts into
+// org-wide.
 
 describe("resolveScope", () => {
-  test("admin with no request defaults to everyone", () => {
-    expect(resolveScope(true, undefined)).toBe("everyone");
+  test("admin with no request defaults to mine", () => {
+    expect(resolveScope(true, undefined)).toBe("mine");
   });
 
   test("admin honors an explicit mine request", () => {
@@ -19,8 +20,8 @@ describe("resolveScope", () => {
     expect(resolveScope(true, "everyone")).toBe("everyone");
   });
 
-  test("admin with an unknown value falls back to everyone", () => {
-    expect(resolveScope(true, "bogus")).toBe("everyone");
+  test("admin with an unknown value falls back to mine", () => {
+    expect(resolveScope(true, "bogus")).toBe("mine");
   });
 
   test("staff is pinned to mine regardless of request", () => {

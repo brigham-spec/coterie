@@ -69,8 +69,9 @@ export default async function DashboardPage({
   const ctx = await requireOrgContext();
   const isAdmin = ctx.role === "admin";
   // Personal-vs-org scoping for the tailored cards. Staff are pinned to "mine";
-  // admins honor the ?scope param and default to "everyone". The clamp lives in
-  // resolveScope so a staff user can't widen their view by tampering the URL.
+  // admins default to "mine" and opt into "everyone" via the ?scope param. The
+  // clamp lives in resolveScope so a staff user can't widen their view by
+  // tampering the URL.
   const scope = resolveScope(isAdmin, (await searchParams).scope);
   const now = new Date();
   // dueOn is a @db.Date at UTC midnight, so these revenue-bucket boundaries are
@@ -697,7 +698,7 @@ function ScopeToggle({ scope }: { scope: DashboardScope }) {
         return (
           <Link
             key={o.key}
-            href={o.key === "everyone" ? "/dashboard" : `/dashboard?scope=${o.key}`}
+            href={o.key === "mine" ? "/dashboard" : `/dashboard?scope=${o.key}`}
             className={cn(
               "px-3 py-1.5 text-[11px] font-medium transition-colors",
               active
