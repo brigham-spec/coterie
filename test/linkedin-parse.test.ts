@@ -100,4 +100,45 @@ describe("buildLinkedInPrompt", () => {
     expect(prompt).not.toContain("x".repeat(6001));
     expect(prompt).toContain("x".repeat(6000));
   });
+
+  test("with no categories, leaves the industry slot open for a free-text label", () => {
+    const prompt = buildLinkedInPrompt("Alice Mason");
+    expect(prompt).toContain('"industry":""');
+    expect(prompt).toContain("a short 1-3 word industry label");
+  });
+
+  test("embeds the tenant's own industries as the pipe-separated hint plus Other", () => {
+    const prompt = buildLinkedInPrompt("Alice Mason", [
+      "Manufacturing",
+      "Life Sciences",
+    ]);
+    expect(prompt).toContain('"industry":"Manufacturing|Life Sciences|Other"');
+    expect(prompt).toContain("choose the single closest category");
+  });
+
+  test("trims, drops blanks, and de-dupes categories case-insensitively", () => {
+    const prompt = buildLinkedInPrompt("Alice Mason", [
+      " Manufacturing ",
+      "",
+      "manufacturing",
+      "Finance",
+    ]);
+    expect(prompt).toContain('"industry":"Manufacturing|Finance|Other"');
+  });
+
+  test("strips prompt-breaking characters from free-text industry values", () => {
+    const prompt = buildLinkedInPrompt("Alice Mason", [
+      'Manu"facturing',
+      "Life | Sciences",
+      "Ag\nTech",
+    ]);
+    expect(prompt).toContain('"industry":"Manu facturing|Life Sciences|Ag Tech|Other"');
+  });
+
+  test("caps the industry hints so a large network can't bloat the prompt", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `Ind${i}`);
+    const prompt = buildLinkedInPrompt("Alice Mason", many);
+    expect(prompt).toContain("Ind29");
+    expect(prompt).not.toContain("Ind30");
+  });
 });

@@ -74,18 +74,54 @@ export function parseLinkedInProfile(raw: string): LinkedInProfile | null {
   return profile;
 }
 
+// Cap the per-tenant industry hints so a large network can't bloat the prompt.
+const MAX_INDUSTRY_HINTS = 30;
+
+/// PURE: sanitize, trim, drop blanks, and de-dupe case-insensitively (first
+/// wins) the tenant's industry categories, capped so the hint stays bounded.
+/// Industries are operator/CSV/AI free text, so strip the characters that would
+/// corrupt the prompt's JSON skeleton or the pipe-separated list (`"`, `|`,
+/// newlines) and bound each hint's length.
+function cleanIndustryHints(categories: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of categories) {
+    const c = raw.replace(/["|\r\n]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+    if (c === "") continue;
+    const key = c.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(c);
+    if (out.length >= MAX_INDUSTRY_HINTS) break;
+  }
+  return out;
+}
+
 /// PURE: the user prompt handed to the model. Asks for a single JSON object with
-/// the exact keys we consume, embeds the enum hint for industry, and appends the
-/// pasted profile (bounded — a pasted page is often long and mostly boilerplate).
-export function buildLinkedInPrompt(profileText: string): string {
+/// the exact keys we consume, and appends the pasted profile (bounded — a pasted
+/// page is often long and mostly boilerplate). The industry hint is PER-TENANT:
+/// when the caller supplies this network's existing industries, the model picks
+/// the closest one (or "Other"); with none on file (a fresh network) it falls
+/// back to a free-text label rather than a hardcoded, org-specific enum.
+export function buildLinkedInPrompt(
+  profileText: string,
+  categories: readonly string[] = [],
+): string {
+  const hints = cleanIndustryHints(categories);
+  const industryValue = hints.length > 0 ? [...hints, "Other"].join("|") : "";
+  const industryRule =
+    hints.length > 0
+      ? `- industry: choose the single closest category from the pipe-separated list in the "industry" slot above; use "Other" only if none fit.`
+      : `- industry: a short 1-3 word industry label for this person's company.`;
+
   return `Parse this LinkedIn profile and return ONLY a valid JSON object — no markdown, no prose.
 
 Structure (use "" for anything not present):
-{"name":"","org":"","title":"","industry":"Developer|Lender|Architect|Attorney|Contractor|Consultant|Broker|Government|Nonprofit|Other","email":"","phone":"","linkedin":"","website":"","location":"","lookingFor":"","canOffer":"","notes":"2-3 sentence summary of who they are and what they do"}
+{"name":"","org":"","title":"","industry":"${industryValue}","email":"","phone":"","linkedin":"","website":"","location":"","lookingFor":"","canOffer":"","notes":"2-3 sentence summary of who they are and what they do"}
 
 Rules:
 - name is the person; org is their current company/employer.
-- industry: choose the single closest category from the list above.
+${industryRule}
 - lookingFor / canOffer: infer what this person or org is seeking and what they bring, only if the profile supports it — otherwise "".
 - Do NOT invent contact details, projects, or facts not present in the text.
 
@@ -100,13 +136,16 @@ const SYSTEM_PROMPT = `You extract structured profile fields from pasted LinkedI
 /// nothing usable.
 export async function generateLinkedInProfile(
   profileText: string,
+  categories: readonly string[] = [],
 ): Promise<LinkedInProfile | null> {
   const client = new Anthropic();
   const response = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1000,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildLinkedInPrompt(profileText) }],
+    messages: [
+      { role: "user", content: buildLinkedInPrompt(profileText, categories) },
+    ],
   });
 
   const text = response.content

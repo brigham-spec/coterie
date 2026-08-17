@@ -40,7 +40,20 @@ export async function parseLinkedInProfileAction(
     const { orgId } = await requireOrgContext();
     await enforceAiRateLimit(orgId);
 
-    const profile = await generateLinkedInProfile(text);
+    // Per-tenant industry hint: this network's own company industries, busiest
+    // first, so the model picks from categories the operator already uses rather
+    // than a hardcoded, org-specific enum. A fresh network yields none → the
+    // prompt falls back to a free-text label.
+    const industryRows = await withOrg(orgId, (tx) =>
+      tx.company.groupBy({
+        by: ["industry"],
+        _count: { industry: true },
+        orderBy: { _count: { industry: "desc" } },
+      }),
+    );
+    const categories = industryRows.map((row) => row.industry);
+
+    const profile = await generateLinkedInProfile(text, categories);
     if (profile == null)
       return {
         status: "error",
