@@ -262,9 +262,16 @@ export default async function DashboardPage({
   // Meeting count + which members were touched, for the sync bar's pills.
   const recentSync = summarizeRecentSync(recentSyncedMeetings);
 
+  // Companies narrowed to the current scope: "mine" = this user's owned rows,
+  // "everyone" = the whole org. Drives the owner-scoped surfaces below so the
+  // enrichment nudge and Members/Prospects tiles match "Needs a Call".
+  const scopedCompanies = companies.filter(
+    (c) => scope === "everyone" || c.ownerUserId === ctx.userId,
+  );
+
   // Enrichment nudge — in-network members whose network-facing fields are blank.
   const enrichmentNudges = buildEnrichmentNudges(
-    companies.map((c) => ({
+    scopedCompanies.map((c) => ({
       id: c.id,
       name: c.name,
       status: c.status,
@@ -289,8 +296,12 @@ export default async function DashboardPage({
   const referralLeaderboard = buildReferralLeaderboard(companies);
 
   // ── KPI pill counts ────────────────────────────────────────────────────────
-  const memberCount = companies.filter((c) => c.status === "member").length;
-  const prospectCount = companies.filter((c) => c.status === "prospect").length;
+  const memberCount = scopedCompanies.filter(
+    (c) => c.status === "member",
+  ).length;
+  const prospectCount = scopedCompanies.filter(
+    (c) => c.status === "prospect",
+  ).length;
   const introsThisMonth = intros.filter((i) => i.createdAt >= d30).length;
 
   const proposalCompanies = new Set(
@@ -312,9 +323,8 @@ export default async function DashboardPage({
 
   // ── Needs a Call — members past their tier's cold threshold ─────────────────
   // In "mine" scope this narrows to members this user owns; "everyone" is org-wide.
-  const coldMembers = companies
+  const coldMembers = scopedCompanies
     .filter((c) => c.status === "member")
-    .filter((c) => scope === "everyone" || c.ownerUserId === ctx.userId)
     .map((c) => {
       const days = c.lastContactAt
         ? Math.floor((now.getTime() - c.lastContactAt.getTime()) / DAY)
