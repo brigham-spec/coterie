@@ -8,8 +8,9 @@ import {
 } from "@/lib/daily-focus";
 
 // Pure-logic tests for the Daily Focus shaping: horizon windowing (overdue always
-// in, future bounded by the horizon edge), undated-commitment exclusion, past-event
-// exclusion, events-before-commitments ordering, and the numbered context block.
+// in, future bounded by the horizon edge), undated-commitment inclusion at the
+// lowest rank (backlog), past-event exclusion, events-before-commitments ordering,
+// and the numbered context block.
 
 // Fixed "now" = 2026-07-09. Both `now` and the item dates are built on the UTC
 // calendar so dueInDays = (day - 9) is deterministic in EVERY timezone —
@@ -40,7 +41,7 @@ function event(over: Partial<FocusEvent>): FocusEvent {
 }
 
 describe("buildFocusItems", () => {
-  test("today horizon: overdue + due-today only, undated excluded", () => {
+  test("today horizon: overdue + due-today, then undated as backlog; future windowed out", () => {
     const items = buildFocusItems(
       {
         commitments: [
@@ -54,7 +55,26 @@ describe("buildFocusItems", () => {
       "today",
       now,
     );
-    expect(items.map((i) => i.id)).toEqual(["overdue", "today"]);
+    // Dated items sort by urgency first; the undated commitment always surfaces but
+    // settles last as backlog. The future-dated one is past today's edge → dropped.
+    expect(items.map((i) => i.id)).toEqual(["overdue", "today", "undated"]);
+    const undated = items.find((i) => i.id === "undated")!;
+    expect(undated.timing).toBe("no due date");
+    expect(undated.overdue).toBe(false);
+  });
+
+  test("undated commitments surface in every horizon at the bottom", () => {
+    const input = {
+      commitments: [
+        commitment({ id: "dated", dueDate: on(9) }),
+        commitment({ id: "undated", dueDate: null }),
+      ],
+      events: [],
+    };
+    for (const horizon of ["today", "week", "month"] as const) {
+      const items = buildFocusItems(input, horizon, now);
+      expect(items.map((i) => i.id)).toEqual(["dated", "undated"]);
+    }
   });
 
   test("week horizon reaches 7 days out; month reaches 30", () => {

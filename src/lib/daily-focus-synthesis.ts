@@ -33,6 +33,8 @@ function systemPrompt(userName: string, horizon: FocusHorizon): string {
 
 ${HORIZON_BRIEF[horizon]}
 
+Lead with the dated items — anything overdue or due soon is the priority. Items marked "(no due date)" are open commitments with no deadline; treat them as backlog to work through, mentioning them only after the time-bound items and never ahead of them.
+
 Cite specific names, companies, events, and tasks from the supplied items — never invent facts, figures, or history that is not present. Be direct: no filler, no headers, no bullet points, no preamble like "Here is your briefing". Write in plain prose addressed to the reader.`;
 }
 

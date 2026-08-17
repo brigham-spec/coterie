@@ -22,10 +22,15 @@ const HORIZON_DAYS: Record<FocusHorizon, number> = {
   month: 30,
 };
 
+// Sort rank for undated commitments — larger than any real dueInDays so they
+// settle below every dated item. Finite (not Infinity) so FocusItem stays
+// JSON-serialisable when the action hands it to the client card.
+const UNDATED_RANK = Number.MAX_SAFE_INTEGER;
+
 // An open commitment (action item), already org-scoped by the caller. `side` is
 // which way the follow-up runs: staff-owned ("we owe") vs contact-owned
-// ("they owe"). Undated commitments carry no urgency signal so they are omitted
-// from the focus (they still live on the Commitments board).
+// ("they owe"). Undated commitments carry no urgency signal, so they surface at
+// the bottom of every horizon as backlog — dated items always sort ahead.
 export interface FocusCommitment {
   id: string;
   text: string;
@@ -85,11 +90,13 @@ function timingLabel(dueInDays: number): string {
 }
 
 /// PURE: bucket the org's commitments and events into the prioritised list for a
-/// horizon. A commitment is in if it is dated and its due day is on or before the
-/// horizon's far edge (so overdue items surface in every horizon). An event is in
-/// if it is dated and falls between today and the horizon edge (upcoming only —
-/// past events are never a focus). Events sort ahead of commitments; within each
-/// group the soonest/most-overdue come first, ties broken by text. Capped at 8.
+/// horizon. A dated commitment is in if its due day is on or before the horizon's
+/// far edge (so overdue items surface in every horizon). An UNDATED commitment is
+/// always in — it has no urgency signal, so it lands at the bottom as backlog. An
+/// event is in if it is dated and falls between today and the horizon edge
+/// (upcoming only — past events are never a focus). Events sort ahead of
+/// commitments; within each group the soonest/most-overdue come first (undated
+/// last), ties broken by text. Capped at 8, so dated items are never crowded out.
 export function buildFocusItems(
   input: FocusInput,
   horizon: FocusHorizon,
@@ -99,20 +106,37 @@ export function buildFocusItems(
   const items: FocusItem[] = [];
 
   for (const c of input.commitments) {
-    if (c.dueDate == null) continue;
-    const dueInDays = daysBetween(now, c.dueDate);
-    if (dueInDays > windowDays) continue;
     const owner = c.side === "we_owe" ? "We owe" : "They owe";
     const who = c.companyName ? `${c.ownerName} · ${c.companyName}` : c.ownerName;
+    const detail = `${owner} · ${who}`;
+    const source = c.meetingTitle ?? "Commitment";
+    if (c.dueDate == null) {
+      // Undated: no due day to window against, so include it in every horizon at
+      // the lowest rank. The operator still needs to work these; they just fall
+      // below anything with a real date.
+      items.push({
+        id: c.id,
+        kind: "commitment",
+        text: c.text,
+        detail,
+        timing: "no due date",
+        dueInDays: UNDATED_RANK,
+        overdue: false,
+        source,
+      });
+      continue;
+    }
+    const dueInDays = daysBetween(now, c.dueDate);
+    if (dueInDays > windowDays) continue;
     items.push({
       id: c.id,
       kind: "commitment",
       text: c.text,
-      detail: `${owner} · ${who}`,
+      detail,
       timing: timingLabel(dueInDays),
       dueInDays,
       overdue: dueInDays < 0,
-      source: c.meetingTitle ?? "Commitment",
+      source,
     });
   }
 
