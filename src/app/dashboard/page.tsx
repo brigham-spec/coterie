@@ -16,16 +16,14 @@ import {
   type SyncStatus,
   type RecentSyncSummary,
 } from "@/lib/sync-status";
-import {
-  buildEnrichmentNudges,
-  type EnrichmentNudge as EnrichmentNudgeItem,
-} from "@/lib/enrichment-nudge";
+import { buildEnrichmentNudges } from "@/lib/enrichment-nudge";
 import { buildReferralLeaderboard } from "@/lib/referral-leaderboard";
 import { resolveScope, type DashboardScope } from "@/lib/dashboard-scope";
 import { cn, StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
 import { DailyFocus } from "./_daily-focus";
+import { EnrichmentNudges } from "./_enrichment-nudges";
 import { IntroScan } from "./_intro-scan";
 import { NewConnections } from "./_new-connections";
 import { QuickCapture } from "./_quick-capture";
@@ -203,15 +201,14 @@ export default async function DashboardPage({
         meetingIds: true,
       },
     });
-    // Meetings the current user was on (staff attendance from Fireflies). Only
-    // needed to filter New Connections down to "mine"; skip the query otherwise.
-    const myMeetingIds =
-      scope === "mine"
-        ? await tx.meetingStaffAttendee.findMany({
-            where: { userId: ctx.userId },
-            select: { meetingId: true },
-          })
-        : [];
+    // Meetings the current user was on (staff attendance from Fireflies). New
+    // Connections is always scoped to the current user's own calls — regardless
+    // of the mine/everyone toggle — so each person only reviews strangers they
+    // personally met, never the whole tenant's backlog.
+    const myMeetingIds = await tx.meetingStaffAttendee.findMany({
+      where: { userId: ctx.userId },
+      select: { meetingId: true },
+    });
     // Fireflies-evidenced intro-stage advances awaiting confirmation.
     const pendingIntros = await loadPendingIntroDetections(tx);
     // Fireflies connection + last-sync clock for the sync-status card. RLS
@@ -278,13 +275,12 @@ export default async function DashboardPage({
   );
 
   // New Connections Detected — cluster unmatched meeting attendees by domain.
-  // Under "mine" the list is narrowed to strangers seen in the current user's
-  // own meetings; admins viewing "everyone" see the whole tenant's backlog.
+  // Always narrowed to strangers seen in the current user's own meetings so each
+  // person reviews only the people they personally met on a Fireflies call.
   const mineMeetingSet = new Set(myMeetingIds.map((m) => m.meetingId));
-  const scopedUnmatched =
-    scope === "mine"
-      ? unmatched.filter((u) => u.meetingIds.some((id) => mineMeetingSet.has(id)))
-      : unmatched;
+  const scopedUnmatched = unmatched.filter((u) =>
+    u.meetingIds.some((id) => mineMeetingSet.has(id)),
+  );
   const connectionGroups = groupConnections(scopedUnmatched);
   const companyOptions = companies.map((c) => ({ id: c.id, name: c.name }));
 
@@ -411,7 +407,7 @@ export default async function DashboardPage({
       ) : null}
 
       {/* Enrichment nudge — members with thin profiles the operator can fill */}
-      <EnrichmentNudge nudges={enrichmentNudges} />
+      <EnrichmentNudges nudges={enrichmentNudges} />
 
       {/* Pending Introductions — meetings evidence an intro advanced; confirm on
           the company profile or the ledger before the stage moves. */}
@@ -945,47 +941,6 @@ function SyncStatusBar({
           ) : null}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-// Enrichment nudge card (gap-audit cluster B, prototype Coterie.html:3066).
-// Chips link straight to each thin profile so the operator can fill the gaps the
-// intro engine and AI briefs depend on. Naturally clears as profiles fill in —
-// no dismiss state to persist.
-function EnrichmentNudge({ nudges }: { nudges: EnrichmentNudgeItem[] }) {
-  if (nudges.length === 0) return null;
-  const shown = nudges.slice(0, 8);
-  const extra = nudges.length - shown.length;
-  return (
-    <div className="mb-4 rounded-md border border-teal-line bg-teal-bg/40 px-4 py-3">
-      <div className="mb-1 text-[10px] font-medium tracking-[0.07em] text-teal-ink uppercase">
-        Profile Enrichment Available
-      </div>
-      <p className="mb-2.5 text-[11px] text-teal-ink/80">
-        {nudges.length} member{nudges.length === 1 ? " has" : "s have"} thin
-        profiles that weaken introductions and briefs
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        {shown.map((n) => (
-          <Link
-            key={n.id}
-            href={`/dashboard/companies/${n.id}`}
-            className="rounded-full border border-teal-line bg-surface px-2.5 py-1 text-[10px] text-teal-ink transition-colors hover:bg-teal-bg"
-          >
-            <span className="font-semibold">{n.name}</span>
-            <span className="text-teal-ink/70">
-              {" \u00b7 missing: "}
-              {n.missingFields.join(", ")}
-            </span>
-          </Link>
-        ))}
-        {extra > 0 ? (
-          <span className="self-center px-1 text-[10px] text-teal-ink/70">
-            +{extra} more
-          </span>
-        ) : null}
-      </div>
     </div>
   );
 }
