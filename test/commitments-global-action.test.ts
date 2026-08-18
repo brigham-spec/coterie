@@ -216,6 +216,29 @@ describe("editCommitment / updateCommitment", () => {
     expect(row!.status).toBe("done");
   });
 
+  test("captures a completion note on done and clears it on reopen", async () => {
+    const id = randomUUID();
+    await withOrg(orgA.id, (tx) =>
+      tx.actionItem.create({
+        data: { id, orgId: orgA.id, text: "Resolve", status: "open", ownerUserId: staffUser.id },
+      }),
+    );
+
+    // Done with a note persists the note alongside the status.
+    await updateCommitment(fd({ id, status: "done", note: "  Sent the signed docs.  " }));
+    let row = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({ where: { id }, select: { status: true, completionNote: true } }),
+    );
+    expect(row).toMatchObject({ status: "done", completionNote: "Sent the signed docs." });
+
+    // Reopening (or any non-done transition) clears the stale note.
+    await updateCommitment(fd({ id, status: "open", note: "ignored on reopen" }));
+    row = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findUnique({ where: { id }, select: { status: true, completionNote: true } }),
+    );
+    expect(row).toMatchObject({ status: "open", completionNote: null });
+  });
+
   test("a foreign item id matches no row and leaves the other tenant untouched", async () => {
     await editCommitment(fd({ id: commitmentBId, text: "hijacked" }));
     await updateCommitment(fd({ id: commitmentBId, status: "dropped" }));

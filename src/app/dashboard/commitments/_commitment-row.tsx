@@ -33,6 +33,9 @@ export interface CommitmentRowData {
   // Only "they owe" items carry a contact to nudge; a we-owe item has no
   // recipient, so the "Draft nudge" toggle is hidden for those.
   canNudge: boolean;
+  // Reviewable note left when the item was marked done; null otherwise. Shown
+  // under the row on the completed ledger.
+  completionNote: string | null;
 }
 
 const initialNudge: NudgeEmailState = { status: "idle" };
@@ -49,11 +52,49 @@ export function CommitmentRow({
   selection?: { checked: boolean; onToggle: () => void };
 }) {
   const [editing, setEditing] = useState(false);
+  const [noting, setNoting] = useState(false);
   const [nudging, setNudging] = useState(false);
   const [nudge, nudgeAction, nudgePending] = useActionState(
     draftNudgeEmail,
     initialNudge,
   );
+
+  // Marking done opens an optional completion-note step (parity: reviewable
+  // resolution) — the note rides along on the same updateCommitment write, so
+  // the reviewer sees how the follow-up was closed on the completed ledger.
+  if (noting) {
+    return (
+      <li className="border-b border-line px-4 py-3 last:border-b-0">
+        <form
+          action={async (fd) => {
+            await updateCommitment(fd);
+            setNoting(false);
+          }}
+          className="flex flex-col gap-2"
+        >
+          <input type="hidden" name="id" value={c.id} />
+          <input type="hidden" name="status" value="done" />
+          <div className="text-[13px] text-ink">{c.text}</div>
+          <textarea
+            name="note"
+            rows={2}
+            maxLength={1000}
+            placeholder="Add a note about how this was resolved (optional)"
+            aria-label="Completion note"
+            className="w-full rounded-sm border border-line-2 bg-surface px-2.5 py-1.5 text-xs text-ink outline-none focus:border-gold-line"
+          />
+          <div className="flex gap-2">
+            <Button type="submit" variant="primary">
+              Complete
+            </Button>
+            <Button type="button" onClick={() => setNoting(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </li>
+    );
+  }
 
   if (editing) {
     return (
@@ -108,6 +149,11 @@ export function CommitmentRow({
           {c.text}
         </div>
         <div className="mt-0.5 text-[10px] text-ink-3">{c.meta}</div>
+        {completed && c.completionNote ? (
+          <p className="mt-1.5 rounded-md border border-line bg-surface-2 p-2.5 text-[11px] leading-relaxed whitespace-pre-wrap text-ink-2">
+            {c.completionNote}
+          </p>
+        ) : null}
         {!completed && !selection ? (
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
             <CrossLink href={c.searchHref}>Search network</CrossLink>
@@ -168,13 +214,13 @@ export function CommitmentRow({
             </form>
           ) : (
             <>
-              <form action={updateCommitment}>
-                <input type="hidden" name="id" value={c.id} />
-                <input type="hidden" name="status" value="done" />
-                <Button type="submit" variant="primary">
-                  Done
-                </Button>
-              </form>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setNoting(true)}
+              >
+                Done
+              </Button>
               <form action={updateCommitment}>
                 <input type="hidden" name="id" value={c.id} />
                 <input type="hidden" name="status" value="dropped" />

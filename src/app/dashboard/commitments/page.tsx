@@ -76,6 +76,7 @@ export default async function CommitmentsPage({
     text: true,
     status: true,
     dueDate: true,
+    completionNote: true,
     ownerUser: { select: { id: true, name: true } },
     ownerContact: {
       select: {
@@ -288,6 +289,7 @@ function toRow(c: Commitment): CommitmentRowData {
     // Only "they owe" items carry a contact to nudge; a we-owe item (staff owns
     // it) has no recipient. Same gate as logIntroHref.
     canNudge: c.contactId !== null,
+    completionNote: c.completionNote,
   };
 }
 

@@ -28,8 +28,17 @@ export async function updateCommitment(formData: FormData): Promise<void> {
   if (!(COMMITMENT_STATUSES as string[]).includes(status))
     throw new Error("invalid status");
 
+  // An optional completion note rides along only when resolving the item as done;
+  // any other transition (reopen, dismiss) clears a stale note so a reopened item
+  // never carries a resolution it no longer has.
+  const note = String(formData.get("note") ?? "")
+    .trim()
+    .slice(0, 1000);
+  const completionNote =
+    status === "done" ? (note === "" ? null : note) : null;
+
   await withOrg(orgId, (tx) =>
-    tx.actionItem.updateMany({ where: { id }, data: { status } }),
+    tx.actionItem.updateMany({ where: { id }, data: { status, completionNote } }),
   );
   revalidateActionItemSurfaces();
 }

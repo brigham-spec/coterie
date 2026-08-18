@@ -40,6 +40,9 @@ export interface RawCommitment {
   text: string;
   status: string;
   dueDate: Date | null;
+  /// Optional (a fresh row has none). Reviewable note left when the item was
+  /// marked done.
+  completionNote?: string | null;
   ownerUser: { id: string; name: string } | null;
   ownerContact: { id: string; name: string; company: { id: string; name: string } } | null;
   meeting: { title: string } | null;
@@ -70,6 +73,9 @@ export interface Commitment {
   dueInDays: number | null;
   urgency: CommitmentUrgency;
   status: CommitmentStatus;
+  /// Reviewable note left when the item was marked done; null otherwise. Shown on
+  /// the completed ledger.
+  completionNote: string | null;
 }
 
 /// The workspace filter state, mirrored to the URL query string.
@@ -153,6 +159,7 @@ export function shapeCommitments(rows: RawCommitment[], now: Date): Commitment[]
       dueInDays: days,
       urgency: urgencyOf(days),
       status: toStatus(row.status),
+      completionNote: row.completionNote ?? null,
     };
     if (row.ownerUser !== null) {
       out.push({

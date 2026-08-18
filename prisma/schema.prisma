@@ -705,6 +705,9 @@ model ActionItem {
   /// open, done, dropped
   status         String    @default("open")
   dueDate        DateTime? @map("due_date") @db.Date
+  /// Optional note captured when the item is marked done — a reviewable record of
+  /// how the follow-up was resolved. Cleared when the item is reopened.
+  completionNote String?   @map("completion_note")
   /// Staff-owned ("we owe").
   ownerUserId    String?   @map("owner_user_id") @db.Uuid
   /// Network-owned ("they owe").
