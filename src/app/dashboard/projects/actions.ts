@@ -21,6 +21,7 @@ import {
   type RoleCandidate,
 } from "@/lib/open-roles-engine";
 import { isProjectStage } from "@/lib/project-stages";
+import { isProjectLinkRole } from "@/lib/project-roles";
 import { isTeamRole } from "@/lib/team-roles";
 import { isFundingCategory, isFundingStatus } from "@/lib/funding";
 import {
@@ -157,6 +158,7 @@ export async function linkCompany(formData: FormData): Promise<void> {
 
   if (!projectId || !companyId || !role)
     throw new Error("project, company, and role are required");
+  if (!isProjectLinkRole(role)) throw new Error("invalid project role");
 
   await withOrg(orgId, (tx) =>
     tx.projectLink.create({ data: { orgId, projectId, companyId, role } }),

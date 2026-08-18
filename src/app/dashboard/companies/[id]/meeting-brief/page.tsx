@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { getStageDef } from "@/lib/project-stages";
+import { projectLinkRoleLabel } from "@/lib/project-roles";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import {
   splitIntroValue,
@@ -329,7 +330,7 @@ export default async function MeetingBriefPage({
                       </span>
                       <span className="text-xs text-ink-3">
                         {" \u00b7 "}
-                        {l.role.replace(/_/g, " ")}
+                        {projectLinkRoleLabel(l.role)}
                       </span>
                     </div>
                     <span className="shrink-0 text-[11px] tracking-[0.04em] text-ink-2 uppercase">

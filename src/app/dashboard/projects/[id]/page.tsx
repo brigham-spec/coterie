@@ -43,7 +43,10 @@ import { EconomicImpactCard } from "./_economic-impact";
 import { HvServicesCard } from "./_hv-services";
 import { AssistanceCard } from "./_assistance";
 
-import { PROJECT_LINK_ROLES } from "@/lib/project-roles";
+import {
+  PROJECT_LINK_ROLE_GROUPS,
+  projectLinkRoleLabel,
+} from "@/lib/project-roles";
 import { parseAssistanceKeys } from "@/lib/project-assistance";
 
 // Project detail — the seat of company participation. project_links carries
@@ -71,8 +74,6 @@ const stageDateFmt = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
 });
 
-// developer, lender, site_host, agency, advisor, … (schema §3.7).
-const roleOptions = PROJECT_LINK_ROLES;
 
 // The open-role scan (scanOpenRole) runs an opus pass; give its server action
 // headroom past Vercel's short default so it can finish instead of timing out.
@@ -477,7 +478,7 @@ export default async function ProjectDetailPage({
             {project.projectLinks.map((l) => (
               <Tr key={l.companyId}>
                 <Td className="font-medium">{l.company.name}</Td>
-                <Td className="capitalize">{l.role.replace(/_/g, " ")}</Td>
+                <Td>{projectLinkRoleLabel(l.role)}</Td>
                 <Td>
                   <StatusBadge status={l.company.status} />
                 </Td>
@@ -609,10 +610,14 @@ export default async function ProjectDetailPage({
               <option value="" disabled>
                 Select a role…
               </option>
-              {roleOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
+              {PROJECT_LINK_ROLE_GROUPS.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.options.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </SelectField>
             <div className="col-span-2 flex justify-end">

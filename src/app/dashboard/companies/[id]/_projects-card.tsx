@@ -5,7 +5,10 @@ import { useState } from "react";
 
 import { Button, StatusBadge, Table, Td, Th, Tr } from "@/components/ui";
 import { CollapsibleCard } from "@/components/collapsible-card";
-import { PROJECT_LINK_ROLES } from "@/lib/project-roles";
+import {
+  PROJECT_LINK_ROLE_GROUPS,
+  projectLinkRoleLabel,
+} from "@/lib/project-roles";
 
 import { linkCompany, unlinkCompany } from "../../projects/actions";
 
@@ -90,10 +93,14 @@ export function ProjectsCard({
                 <option value="" disabled>
                   Select a role…
                 </option>
-                {PROJECT_LINK_ROLES.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
+                {PROJECT_LINK_ROLE_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </label>
@@ -129,7 +136,7 @@ export function ProjectsCard({
                   {l.projectName}
                 </Link>
               </Td>
-              <Td className="capitalize">{l.role.replace(/_/g, " ")}</Td>
+              <Td>{projectLinkRoleLabel(l.role)}</Td>
               <Td>
                 <StatusBadge status={l.projectStage} />
               </Td>
