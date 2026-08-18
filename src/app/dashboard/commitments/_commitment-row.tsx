@@ -1,11 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 
 import { Button } from "@/components/ui";
 
-import { editCommitment, updateCommitment } from "./actions";
+import {
+  draftNudgeEmail,
+  editCommitment,
+  updateCommitment,
+  type NudgeEmailState,
+} from "./actions";
 
 // One commitment line. Open items get Done / Dismiss plus an inline text+due edit
 // (parity: inline edit 13099); completed items get a single Reopen. The card is a
@@ -25,7 +30,12 @@ export interface CommitmentRowData {
   searchHref: string;
   connectHref: string | null;
   logIntroHref: string | null;
+  // Only "they owe" items carry a contact to nudge; a we-owe item has no
+  // recipient, so the "Draft nudge" toggle is hidden for those.
+  canNudge: boolean;
 }
+
+const initialNudge: NudgeEmailState = { status: "idle" };
 
 export function CommitmentRow({
   c,
@@ -39,6 +49,11 @@ export function CommitmentRow({
   selection?: { checked: boolean; onToggle: () => void };
 }) {
   const [editing, setEditing] = useState(false);
+  const [nudging, setNudging] = useState(false);
+  const [nudge, nudgeAction, nudgePending] = useActionState(
+    draftNudgeEmail,
+    initialNudge,
+  );
 
   if (editing) {
     return (
@@ -101,6 +116,36 @@ export function CommitmentRow({
             ) : null}
             {c.logIntroHref ? (
               <CrossLink href={c.logIntroHref}>Log intro</CrossLink>
+            ) : null}
+            {c.canNudge ? (
+              <button
+                type="button"
+                onClick={() => setNudging((v) => !v)}
+                className="text-[10px] font-medium text-ink-3 underline-offset-2 hover:text-gold-ink hover:underline"
+              >
+                {nudging ? "Hide nudge" : "Draft nudge"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {!completed && !selection && c.canNudge && nudging ? (
+          <div className="mt-2">
+            <form action={nudgeAction}>
+              <input type="hidden" name="id" value={c.id} />
+              <Button type="submit" variant="gold" disabled={nudgePending}>
+                {nudgePending
+                  ? "Drafting…"
+                  : nudge.status === "ok"
+                    ? "Redraft nudge"
+                    : "Draft nudge email"}
+              </Button>
+            </form>
+            {nudge.status === "error" ? (
+              <p className="mt-2 text-[11px] text-red-ink">{nudge.message}</p>
+            ) : nudge.status === "ok" ? (
+              <p className="mt-2 rounded-md border border-line bg-surface-2 p-3.5 text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink-2">
+                {nudge.draft.body}
+              </p>
             ) : null}
           </div>
         ) : null}

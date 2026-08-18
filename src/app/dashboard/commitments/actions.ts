@@ -1,11 +1,18 @@
 "use server";
 
+import Anthropic from "@anthropic-ai/sdk";
+
 import { requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { optionalDate } from "@/lib/form-fields";
 import { COMMITMENT_STATUSES } from "@/lib/commitments";
 import { revalidateActionItemSurfaces } from "@/lib/revalidate";
+import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
+import {
+  generateNudgeEmail,
+  type NudgeEmailDraft,
+} from "@/lib/nudge-email";
 
 // Commitments surface actions. A commitment is an action_item; advancing it just
 // moves its status. Bounded to the three valid states; RLS scopes the id to the
@@ -130,4 +137,93 @@ export async function logCommitment(formData: FormData): Promise<void> {
   });
 
   revalidateActionItemSurfaces();
+}
+
+// Nudge-email draft (ported from the prototype, Coterie.html:6032). Drafts the
+// short, warm follow-up the host sends to a network contact about an item they
+// owe. The commitment is re-loaded withOrg-scoped from the id in the form (never
+// trusting a client payload), so a foreign id resolves null → we never draft
+// using another tenant's row. Only they-owe items have a contact to nudge; a
+// we-owe item (staff owns it) has no recipient and is refused. The Anthropic call
+// runs server-side in @/lib/nudge-email; the key never reaches the browser.
+// Ephemeral — nothing is persisted.
+//
+// This is a useActionState action: it returns state rather than throwing, so
+// model/network failures render inline instead of tripping the error boundary.
+
+export type NudgeEmailState =
+  | { status: "idle" }
+  | { status: "ok"; draft: NudgeEmailDraft }
+  | { status: "error"; message: string };
+
+const DAY = 86_400_000;
+
+// Whole-day overdue count from a @db.Date due date (UTC-midnight), read on the
+// UTC calendar so the delta never skews a day in non-UTC zones. null when the
+// item has no due date or is not yet past due.
+function overdueDaysOf(dueDate: Date | null, now: Date): number | null {
+  if (dueDate == null) return null;
+  const startNow = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const startDue = Date.UTC(
+    dueDate.getUTCFullYear(),
+    dueDate.getUTCMonth(),
+    dueDate.getUTCDate(),
+  );
+  const days = Math.round((startNow - startDue) / DAY);
+  return days > 0 ? days : null;
+}
+
+export async function draftNudgeEmail(
+  _prev: NudgeEmailState,
+  formData: FormData,
+): Promise<NudgeEmailState> {
+  const id = String(formData.get("id") ?? "").trim();
+  if (id === "") return { status: "error", message: "Select a commitment." };
+
+  const { orgId, orgName, userName } = await requireOrgContext();
+
+  const item = await withOrg(orgId, (tx) =>
+    tx.actionItem.findUnique({
+      where: { id },
+      select: {
+        text: true,
+        dueDate: true,
+        ownerContact: { select: { name: true, company: { select: { name: true } } } },
+        meeting: { select: { title: true } },
+      },
+    }),
+  );
+
+  if (item == null)
+    return { status: "error", message: "commitment not found in this organization" };
+  if (item.ownerContact == null)
+    return {
+      status: "error",
+      message: "Only items a contact owes can be nudged.",
+    };
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const draft = await generateNudgeEmail({
+      orgName,
+      host: userName,
+      contactName: item.ownerContact.name,
+      companyName: item.ownerContact.company?.name ?? null,
+      commitment: item.text,
+      meetingTitle: item.meeting?.title ?? null,
+      overdueDays: overdueDaysOf(item.dueDate, new Date()),
+    });
+    if (draft == null)
+      return { status: "error", message: "Could not draft an email. Try again." };
+    return { status: "ok", draft };
+  } catch (err) {
+    console.error("nudge email draft failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not draft an email. Try again." };
+  }
 }
