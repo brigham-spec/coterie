@@ -38,6 +38,7 @@ import {
   normalizeFeeStatus,
   normalizeServiceStatus,
 } from "@/lib/hv-services";
+import { isAssistanceKey } from "@/lib/project-assistance";
 
 // Projects and their company participants (build item 4). org_id is stamped from
 // context on every write (RLS WITH CHECK backstops it).
@@ -989,4 +990,40 @@ export async function updateHvServices(formData: FormData): Promise<void> {
 
   revalidatePath(`/dashboard/projects/${projectId}`);
   revalidatePath("/dashboard/revenue");
+}
+
+// ── Assistance requested ──────────────────────────────────────────────────────
+// What the project is asking the org to help with (equity sourcing, CFA, IDA
+// navigation, grants, entitlements, …). An intake/needs signal stored as a flat
+// list of vocabulary keys on assistance_requested. The whole set is written at
+// once from the edit form; unknown keys are dropped at this write boundary.
+export async function updateProjectAssistance(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!projectId) throw new Error("project is required");
+
+  const selected = Array.from(
+    new Set(
+      formData
+        .getAll("assistance")
+        .map((v) => String(v).trim())
+        .filter(isAssistanceKey),
+    ),
+  );
+
+  await withOrg(orgId, async (tx) => {
+    const project = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (!project) throw new Error("project not found in this organization");
+    await tx.project.update({
+      where: { id: projectId },
+      data: { assistanceRequested: selected },
+    });
+  });
+
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  revalidatePath("/dashboard/projects");
 }

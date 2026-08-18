@@ -429,6 +429,9 @@ model Project {
   hvServices     Json     @default("{}") @map("hv_services")
   /// [{ stage, date }] — stage transitions (Activity is company-scoped, not project).
   stageHistory   Json     @default("[]") @map("stage_history")
+  /// What the project is asking the org to help with (@/lib/project-assistance
+  /// keys) — an intake/needs signal distinct from hvServices (delivered lines).
+  assistanceRequested String[] @default([]) @map("assistance_requested")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

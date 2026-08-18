@@ -41,8 +41,10 @@ import { TeamCard, type TeamMemberRow } from "./_team";
 import { FundingCard, type FundingRow } from "./_funding";
 import { EconomicImpactCard } from "./_economic-impact";
 import { HvServicesCard } from "./_hv-services";
+import { AssistanceCard } from "./_assistance";
 
 import { PROJECT_LINK_ROLES } from "@/lib/project-roles";
+import { parseAssistanceKeys } from "@/lib/project-assistance";
 
 // Project detail — the seat of company participation. project_links carries
 // composite FKs to projects(id, org_id) and companies(id, org_id), so a link can
@@ -231,6 +233,10 @@ export default async function ProjectDetailPage({
   // Created and Revenue reporting. Parsed to the raw form shape for the cards.
   const impact = parseImpactForm(project.economicImpact);
   const services = parseHvServices(project.hvServices);
+
+  // What the project is asking the org to help with (equity, CFA, IDA, grants,
+  // entitlements, …) — an intake/needs signal distinct from the delivered services.
+  const assistance = parseAssistanceKeys(project.assistanceRequested);
 
   // Companies eligible as the developer/lead (any in the tenant).
   const developerId = project.developerMemberId ?? "";
@@ -507,6 +513,8 @@ export default async function ProjectDetailPage({
       />
 
       <FundingCard projectId={project.id} sources={fundingRows} />
+
+      <AssistanceCard projectId={project.id} selected={assistance} />
 
       <EconomicImpactCard projectId={project.id} impact={impact} />
 
