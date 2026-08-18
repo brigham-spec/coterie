@@ -791,11 +791,29 @@ export async function updateProjectDetails(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();
 
   const projectId = String(formData.get("projectId") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const type = String(formData.get("type") ?? "").trim();
   const industry = String(formData.get("industry") ?? "").trim().slice(0, 200);
+  const county = String(formData.get("county") ?? "").trim();
+  const unitsRaw = String(formData.get("units") ?? "").trim();
+  const sqftRaw = String(formData.get("sqft") ?? "").trim();
   const prospectLead = String(formData.get("prospectLead") ?? "").trim().slice(0, 200);
   const developerMemberId = String(formData.get("developerMemberId") ?? "").trim();
+  const targetDate = optionalDate(formData, "targetDate");
+  const valueRaw = String(formData.get("value") ?? "").trim();
+  const realizedValueRaw = String(formData.get("realizedValue") ?? "").trim();
 
   if (!projectId) throw new Error("project is required");
+  if (!name) throw new Error("name is required");
+  if (valueRaw !== "" && Number.isNaN(Number(valueRaw)))
+    throw new Error("value must be a number");
+  if (realizedValueRaw !== "" && Number.isNaN(Number(realizedValueRaw)))
+    throw new Error("realized value must be a number");
+  if (unitsRaw !== "" && !Number.isInteger(Number(unitsRaw)))
+    throw new Error("units must be a whole number");
+  if (sqftRaw !== "" && !Number.isInteger(Number(sqftRaw)))
+    throw new Error("square footage must be a whole number");
 
   await withOrg(orgId, async (tx) => {
     const project = await tx.project.findUnique({
@@ -809,9 +827,18 @@ export async function updateProjectDetails(formData: FormData): Promise<void> {
     await tx.project.update({
       where: { id: projectId },
       data: {
+        name,
+        description,
+        type: type === "" ? null : type,
         industry: industry === "" ? null : industry,
+        county: county === "" ? null : county,
+        units: unitsRaw === "" ? null : Number(unitsRaw),
+        sqft: sqftRaw === "" ? null : Number(sqftRaw),
         prospectLead: prospectLead === "" ? null : prospectLead,
         developerMemberId: developerId,
+        targetDate,
+        value: valueRaw === "" ? null : valueRaw,
+        realizedValue: realizedValueRaw === "" ? null : realizedValueRaw,
       },
     });
   });

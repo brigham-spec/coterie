@@ -327,10 +327,76 @@ export default async function ProjectDetailPage({
           >
             <input type="hidden" name="projectId" value={project.id} />
             <Field
+              name="name"
+              label="Name"
+              defaultValue={project.name}
+              required
+              className="col-span-2"
+            />
+            <Field
+              name="description"
+              label="Description"
+              defaultValue={project.description}
+              placeholder="Short summary"
+              className="col-span-2"
+            />
+            <Field
+              name="type"
+              label="Type"
+              defaultValue={project.type ?? ""}
+              placeholder="Mixed-use"
+            />
+            <Field
               name="industry"
               label="Industry"
               defaultValue={project.industry ?? ""}
               placeholder="Hospitality"
+            />
+            <Field
+              name="county"
+              label="County"
+              defaultValue={project.county ?? ""}
+              placeholder="Dutchess"
+            />
+            <Field
+              name="units"
+              label="Units / keys"
+              inputMode="numeric"
+              defaultValue={project.units == null ? "" : String(project.units)}
+              placeholder="0"
+            />
+            <Field
+              name="sqft"
+              label="Sq ft"
+              inputMode="numeric"
+              defaultValue={project.sqft == null ? "" : String(project.sqft)}
+              placeholder="0"
+            />
+            <Field
+              name="value"
+              label="Value (USD)"
+              inputMode="numeric"
+              defaultValue={project.value == null ? "" : String(project.value)}
+              placeholder="0"
+            />
+            <Field
+              name="realizedValue"
+              label="Realized value (USD)"
+              inputMode="numeric"
+              defaultValue={
+                project.realizedValue == null ? "" : String(project.realizedValue)
+              }
+              placeholder="0"
+            />
+            <Field
+              name="targetDate"
+              label="Target date"
+              type="date"
+              defaultValue={
+                project.targetDate == null
+                  ? ""
+                  : project.targetDate.toISOString().slice(0, 10)
+              }
             />
             <SelectField
               name="developerMemberId"

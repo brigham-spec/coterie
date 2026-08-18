@@ -110,12 +110,21 @@ describe("createProject developer link", () => {
 });
 
 describe("updateProjectDetails", () => {
-  test("sets industry, prospectLead, and the developer link", async () => {
-    const { id } = await makeProject();
+  test("edits every core detail field and the developer link", async () => {
+    const { id, name } = await makeProject();
     await updateProjectDetails(
       fd({
         projectId: id,
+        name: `${name} (renamed)`,
+        description: "Reworked scope",
+        type: "Mixed-use",
         industry: "Manufacturing",
+        county: "Dutchess",
+        units: "120",
+        sqft: "45000",
+        value: "9000000",
+        realizedValue: "3000000",
+        targetDate: "2027-06-01",
         prospectLead: "Off-network Dev LLC",
         developerMemberId: devCompanyId,
       }),
@@ -123,24 +132,58 @@ describe("updateProjectDetails", () => {
     const updated = await withOrg(orgA.id, (tx) =>
       tx.project.findUnique({
         where: { id },
-        select: { industry: true, prospectLead: true, developerMemberId: true },
+        select: {
+          name: true,
+          description: true,
+          type: true,
+          industry: true,
+          county: true,
+          units: true,
+          sqft: true,
+          value: true,
+          realizedValue: true,
+          targetDate: true,
+          prospectLead: true,
+          developerMemberId: true,
+        },
       }),
     );
+    expect(updated!.name).toBe(`${name} (renamed)`);
+    expect(updated!.description).toBe("Reworked scope");
+    expect(updated!.type).toBe("Mixed-use");
     expect(updated!.industry).toBe("Manufacturing");
+    expect(updated!.county).toBe("Dutchess");
+    expect(updated!.units).toBe(120);
+    expect(updated!.sqft).toBe(45000);
+    expect(Number(updated!.value)).toBe(9_000_000);
+    expect(Number(updated!.realizedValue)).toBe(3_000_000);
+    expect(updated!.targetDate?.toISOString().slice(0, 10)).toBe("2027-06-01");
     expect(updated!.prospectLead).toBe("Off-network Dev LLC");
     expect(updated!.developerMemberId).toBe(devCompanyId);
   });
 
-  test("clears the developer link when blank", async () => {
-    const { id } = await makeProject();
+  test("clears optional fields and the developer link when blank", async () => {
+    const { id, name } = await makeProject();
     await updateProjectDetails(
-      fd({ projectId: id, developerMemberId: devCompanyId }),
+      fd({ projectId: id, name, industry: "Retail", developerMemberId: devCompanyId }),
     );
-    await updateProjectDetails(fd({ projectId: id, developerMemberId: "" }));
+    await updateProjectDetails(fd({ projectId: id, name }));
     const updated = await withOrg(orgA.id, (tx) =>
-      tx.project.findUnique({ where: { id }, select: { developerMemberId: true } }),
+      tx.project.findUnique({
+        where: { id },
+        select: { industry: true, value: true, developerMemberId: true },
+      }),
     );
+    expect(updated!.industry).toBeNull();
+    expect(updated!.value).toBeNull();
     expect(updated!.developerMemberId).toBeNull();
+  });
+
+  test("rejects a blank name", async () => {
+    const { id } = await makeProject();
+    await expect(
+      updateProjectDetails(fd({ projectId: id, name: "" })),
+    ).rejects.toThrow("name is required");
   });
 });
 
