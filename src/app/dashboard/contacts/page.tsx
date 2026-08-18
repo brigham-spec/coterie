@@ -3,19 +3,16 @@ import Link from "next/link";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import {
-  Button,
   Card,
   CardHeader,
-  Field,
   PageTitle,
-  SelectField,
   Table,
   Td,
   Th,
   Tr,
 } from "@/components/ui";
 
-import { createContact } from "./actions";
+import { AddContactForm } from "./_add-contact-form";
 
 // Contacts — people at the tenant's companies (build item 4). A contact must
 // belong to a company, so the create form is a company-scoped select. Both the
@@ -61,43 +58,16 @@ export default async function ContactsPage() {
       ) : (
         <Card>
           <CardHeader title="Add contact" />
-          <form action={createContact} className="grid grid-cols-2 gap-4 p-4">
-            <SelectField
-              name="companyId"
-              label="Company"
-              defaultValue=""
-              required
-              className="col-span-2"
-            >
-              <option value="" disabled>
-                Select a company…
-              </option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </SelectField>
-            <Field
-              name="name"
-              label="Name"
-              placeholder="Jane Doe"
-              required
-            />
-            <Field name="title" label="Title" placeholder="VP, Operations" />
-            <Field
-              name="email"
-              label="Email"
-              type="email"
-              placeholder="jane@acme.com"
-            />
-            <Field name="phone" label="Phone" placeholder="(555) 010-0100" />
-            <div className="col-span-2 flex justify-end">
-              <Button type="submit" variant="primary">
-                Add contact
-              </Button>
-            </div>
-          </form>
+          <AddContactForm
+            companies={companies}
+            existing={contacts.map((c) => ({
+              id: c.id,
+              name: c.name,
+              companyId: c.companyId,
+              email: c.email,
+              companyName: c.company.name,
+            }))}
+          />
         </Card>
       )}
 

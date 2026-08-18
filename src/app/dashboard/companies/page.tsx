@@ -4,7 +4,6 @@ import { requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
-import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
 import { ACTIVE_COMMITMENT_STATUSES } from "@/lib/commitments";
 import { readMemberTiers } from "@/lib/member-tiers";
 import {
@@ -18,9 +17,7 @@ import {
   Button,
   Card,
   CardHeader,
-  Field,
   PageTitle,
-  SelectField,
   StatusBadge,
   Table,
   Td,
@@ -29,7 +26,7 @@ import {
   cn,
 } from "@/components/ui";
 
-import { createCompany } from "./actions";
+import { AddCompanyForm } from "./_add-company-form";
 import { CompanyFilters } from "./_filters";
 import { LinkedInParse } from "./_linkedin-parse";
 import { BatchSynth } from "./_batch-synth";
@@ -47,8 +44,6 @@ const currency = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
-
-const statusOptions = COMPANY_STATUS_DEFS;
 
 type Segment = { key: string; label: string; match: (status: string) => boolean };
 
@@ -276,42 +271,9 @@ export default async function CompaniesPage({
       <Card>
         <CardHeader title="Add company" />
         <AddDisclosure label="+ Add a company">
-          <form
-            action={createCompany}
-            className="grid grid-cols-2 gap-4 border-t border-line p-4"
-          >
-            <Field
-              name="name"
-              label="Company name"
-              placeholder="Acme Corp"
-              required
-              className="col-span-2"
-            />
-            <SelectField name="status" label="Status" defaultValue="prospect">
-              {statusOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </SelectField>
-            <Field
-              name="industry"
-              label="Industry"
-              placeholder="Manufacturing"
-              required
-            />
-            <Field
-              name="annualValue"
-              label="Annual value (USD)"
-              placeholder="0"
-              inputMode="decimal"
-            />
-            <div className="col-span-2 flex justify-end">
-              <Button type="submit" variant="primary">
-                Add company
-              </Button>
-            </div>
-          </form>
+          <AddCompanyForm
+            existing={companies.map((c) => ({ id: c.id, name: c.name }))}
+          />
         </AddDisclosure>
       </Card>
 
