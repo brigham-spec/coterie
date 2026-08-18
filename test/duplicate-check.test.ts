@@ -34,6 +34,24 @@ describe("findCompanyDuplicate", () => {
     expect(findCompanyDuplicate("Initech", existing)).toBeNull();
   });
 
+  it("matches a longer qualified variant of an existing name", () => {
+    const dbi: ExistingCompany[] = [
+      { id: "d", name: "DBI" },
+      { id: "p", name: "DBI Projects" },
+    ];
+    // "DBI Projects Test" contains the words of both — flags the first match.
+    expect(findCompanyDuplicate("DBI Projects Test", dbi)).not.toBeNull();
+  });
+
+  it("matches when the new name is a shorter subset of an existing one", () => {
+    const dbi: ExistingCompany[] = [{ id: "p", name: "DBI Projects Test" }];
+    expect(findCompanyDuplicate("DBI", dbi)?.id).toBe("p");
+  });
+
+  it("does not match on a merely overlapping but non-subset name", () => {
+    expect(findCompanyDuplicate("Acme Global", existing)).toBeNull();
+  });
+
   it("returns null for a blank name", () => {
     expect(findCompanyDuplicate("   ", existing)).toBeNull();
   });
@@ -79,6 +97,14 @@ describe("findContactDuplicate", () => {
       existing,
     );
     expect(match).toBeNull();
+  });
+
+  it("matches a qualified variant of a name at the same company", () => {
+    const match = findContactDuplicate(
+      { name: "John Smith Test", companyId: "globex", email: null },
+      existing,
+    );
+    expect(match?.id).toBe("2");
   });
 
   it("returns null for a blank name with no email", () => {

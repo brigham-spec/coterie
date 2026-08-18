@@ -9,17 +9,37 @@ export function normalizeName(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function tokensOf(s: string): string[] {
+  const norm = normalizeName(s);
+  return norm === "" ? [] : norm.split(" ");
+}
+
+// Advisory "these look like the same thing" test. True when the two names are
+// equal OR one's words are a full subset of the other's, so "DBI",
+// "DBI Projects", and "DBI Projects Test" all flag against each other without
+// needing an exact match. Blank names never match. This is intentionally loose
+// (it only powers a non-blocking warning), catching the common case where a
+// duplicate is entered as a longer/qualified version of an existing name.
+export function namesLikelyMatch(a: string, b: string): boolean {
+  const ta = tokensOf(a);
+  const tb = tokensOf(b);
+  if (ta.length === 0 || tb.length === 0) return false;
+  const [small, large] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  const largeSet = new Set(large);
+  return small.every((t) => largeSet.has(t));
+}
+
 export type ExistingCompany = { id: string; name: string };
 
-// A company duplicate is another company in the org with the same normalized
-// name. Blank names never match.
+// A company duplicate is another company in the org whose name looks like the
+// same thing (equal, or one name's words contained in the other's). Blank
+// names never match.
 export function findCompanyDuplicate(
   name: string,
   existing: readonly ExistingCompany[],
 ): ExistingCompany | null {
-  const norm = normalizeName(name);
-  if (norm === "") return null;
-  return existing.find((c) => normalizeName(c.name) === norm) ?? null;
+  if (normalizeName(name) === "") return null;
+  return existing.find((c) => namesLikelyMatch(c.name, name)) ?? null;
 }
 
 export type ExistingContact = {
@@ -32,8 +52,9 @@ export type ExistingContact = {
 
 // A contact duplicate is: an existing contact with the same email anywhere in
 // the org (the strongest signal — email is a person's identity), or, failing
-// that, the same normalized name at the same company. Blank email skips the
-// email check; blank name skips the name check.
+// that, a name that looks like the same person at the same company (equal, or
+// one name's words contained in the other's). Blank email skips the email
+// check; blank name skips the name check.
 export function findContactDuplicate(
   candidate: { name: string; companyId: string; email: string | null },
   existing: readonly ExistingContact[],
@@ -46,11 +67,12 @@ export function findContactDuplicate(
     if (byEmail) return byEmail;
   }
 
-  const norm = normalizeName(candidate.name);
-  if (norm === "") return null;
+  if (normalizeName(candidate.name) === "") return null;
   return (
     existing.find(
-      (c) => c.companyId === candidate.companyId && normalizeName(c.name) === norm,
+      (c) =>
+        c.companyId === candidate.companyId &&
+        namesLikelyMatch(c.name, candidate.name),
     ) ?? null
   );
 }
