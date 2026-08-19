@@ -13,6 +13,7 @@ import {
   setPrimaryContact,
 } from "@/app/dashboard/contacts/actions";
 import { ContactForm, type ContactRow } from "@/app/dashboard/contacts/_contact-form";
+import type { ExistingContact } from "@/lib/duplicate-check";
 
 // Editable Contacts card (profile-parity P2). The company detail page was
 // read-only; this owns the add/edit/remove/set-primary surface for the firm's
@@ -25,9 +26,11 @@ import { ContactForm, type ContactRow } from "@/app/dashboard/contacts/_contact-
 export function ContactsCard({
   companyId,
   contacts,
+  existing,
 }: {
   companyId: string;
   contacts: ContactRow[];
+  existing: ExistingContact[];
 }) {
   const [adding, setAdding] = useState(false);
 
@@ -52,6 +55,7 @@ export function ContactsCard({
             hidden={{ companyId }}
             submitLabel="Add contact"
             onDone={() => setAdding(false)}
+            existing={existing}
           />
         </div>
       ) : null}

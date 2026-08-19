@@ -315,7 +315,13 @@ export default async function CompanyDetailPage({
       // surfaces on their own profile). Carries the company for the picker label.
       const networkContacts = await tx.contact.findMany({
         orderBy: { name: "asc" },
-        select: { id: true, name: true, company: { select: { name: true } } },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          companyId: true,
+          company: { select: { name: true } },
+        },
       });
       // Lifecycle transitions for the relationship timeline (P1). Ordered here
       // for the query; buildRelationshipTimeline re-sorts the merged set.
@@ -465,6 +471,15 @@ export default async function CompanyDetailPage({
     id: c.id,
     name: c.name,
     company: c.company.name,
+  }));
+  // Advisory dup-warning pool for the profile Contacts "Add" form (same
+  // non-blocking check as the standalone add page).
+  const existingContacts = networkContacts.map((c) => ({
+    id: c.id,
+    name: c.name,
+    companyId: c.companyId,
+    email: c.email,
+    companyName: c.company.name,
   }));
 
   // Shape correspondence for the interactive card (manual rows — keyed manual:… —
@@ -743,6 +758,7 @@ export default async function CompanyDetailPage({
 
       <ContactsCard
         companyId={company.id}
+        existing={existingContacts}
         contacts={company.contacts.map((c) => ({
           id: c.id,
           name: c.name,

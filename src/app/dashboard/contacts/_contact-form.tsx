@@ -1,6 +1,13 @@
 "use client";
 
+import { useRef, useState } from "react";
+
 import { Button, Field, Textarea } from "@/components/ui";
+import {
+  findContactDuplicate,
+  normalizeName,
+  type ExistingContact,
+} from "@/lib/duplicate-check";
 import { CONTACT_TAGS } from "@/lib/tags";
 
 // Shared contact editor (add / edit). Extracted so both the company-profile
@@ -10,6 +17,17 @@ import { CONTACT_TAGS } from "@/lib/tags";
 // action, the hidden keys (companyId for create, contactId for update), the
 // row's current values (defaults) for an edit, and an onDone that runs after a
 // successful save so the caller can close the editor.
+//
+// When `existing` is supplied (the add path only), the form shows the same
+// lightweight, non-blocking duplicate warning as the standalone add page: the
+// first submit of a likely-duplicate is intercepted and a second submit lets it
+// through. Edit callers omit `existing`, so there's no warning on edit.
+
+// Signature that identifies "the same submission we already warned about". Keyed
+// on the three fields the dup rule reads, so editing any of them re-arms.
+function signatureOf(name: string, companyId: string, email: string): string {
+  return `${normalizeName(name)}|${companyId}|${email.trim().toLowerCase()}`;
+}
 
 export type ContactRow = {
   id: string;
@@ -30,17 +48,42 @@ export function ContactForm({
   defaults,
   submitLabel,
   onDone,
+  existing,
 }: {
   action: (formData: FormData) => Promise<void>;
   hidden: Record<string, string>;
   defaults?: ContactRow;
   submitLabel: string;
   onDone: () => void;
+  existing?: ExistingContact[];
 }) {
   const tagSet = new Set(defaults?.tags ?? []);
+  const [duplicate, setDuplicate] = useState<ExistingContact | null>(null);
+  const acknowledged = useRef<string | null>(null);
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    if (!existing) return;
+    const data = new FormData(e.currentTarget);
+    const name = String(data.get("name") ?? "");
+    const companyId = hidden.companyId ?? "";
+    const email = String(data.get("email") ?? "");
+    const sig = signatureOf(name, companyId, email);
+    const match = findContactDuplicate(
+      { name, companyId, email: email.trim() === "" ? null : email },
+      existing,
+    );
+    if (match && acknowledged.current !== sig) {
+      e.preventDefault();
+      acknowledged.current = sig;
+      setDuplicate(match);
+      return;
+    }
+    setDuplicate(null);
+  }
 
   return (
     <form
+      onSubmit={handleSubmit}
       action={async (fd) => {
         await action(fd);
         onDone();
@@ -100,6 +143,16 @@ export function ContactForm({
           ))}
         </div>
       </div>
+
+      {duplicate ? (
+        <p className="rounded-sm border border-gold-line bg-gold-bg px-3 py-2 text-[11px] text-gold-ink">
+          {duplicate.email
+            ? `A contact with that email (${duplicate.email}) is already in your network`
+            : `A contact named “${duplicate.name}” is already at this company`}
+          {duplicate.companyName ? ` — ${duplicate.companyName}` : ""}. Submit
+          again to add this one anyway.
+        </p>
+      ) : null}
 
       <div className="flex justify-end gap-2">
         <Button type="button" onClick={onDone}>
