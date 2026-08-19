@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireAdmin, requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
+import { softDeleteContact } from "@/lib/soft-delete";
 import { optionalUrl } from "@/lib/form-fields";
 import { CONTACT_TAGS } from "@/lib/tags";
 
@@ -125,20 +126,18 @@ export async function updateContact(formData: FormData): Promise<void> {
 }
 
 export async function removeContact(formData: FormData): Promise<void> {
-  const { orgId } = await requireAdmin();
+  const { orgId, userId } = await requireAdmin();
 
   const contactId = String(formData.get("contactId") ?? "").trim();
   if (!contactId) throw new Error("missing contact");
 
-  const companyId = await withOrg(orgId, async (tx) => {
-    const contact = await tx.contact.findUnique({
-      where: { id: contactId },
-      select: { companyId: true },
-    });
-    if (contact == null) return null;
-    await tx.contact.delete({ where: { id: contactId } });
-    return contact.companyId;
-  });
+  // Snapshot the contact's subgraph into deleted_records (recoverable), then
+  // hard-delete. softDeleteContact also pre-deletes the contact's RESTRICT
+  // children (party intros, owned action items) — a plain contact.delete would
+  // fail on those FKs.
+  const companyId = await withOrg(orgId, (tx) =>
+    softDeleteContact(tx, contactId, userId),
+  );
 
   if (companyId == null) throw new Error("contact not found in this organization");
   // No per-contact bust: the row is gone, so /dashboard/contacts/{id} 404s.

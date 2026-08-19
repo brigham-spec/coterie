@@ -79,6 +79,7 @@ model Organization {
   linkedinImports        LinkedinImport[]
   linkedinContacts       LinkedinContact[]
   knowledgeDocs          KnowledgeDoc[]
+  deletedRecords         DeletedRecord[]
 
   @@map("organizations")
 }
@@ -1393,4 +1394,34 @@ model ProactiveScanCache {
 
   @@id([orgId, scope])
   @@map("proactive_scan_caches")
+}
+
+/// Archival trash for recoverable hard-deletes. The two permanent-delete surfaces
+/// (a company and its whole entangled subgraph, or a single contact) snapshot the
+/// destroyed rows here as JSON *before* the live rows are physically removed, so an
+/// admin can restore the full subgraph with original ids in FK order. We snapshot +
+/// hard-delete rather than hide rows in place because RLS filters nested reads: a
+/// row-hiding soft-delete would make a required `company` relation resolve to null
+/// and break org-wide reads. Tenant-scoped: org_id + RLS. Ephemeral by nature —
+/// entries are consumed (deleted) on restore and can be pruned.
+model DeletedRecord {
+  id       String @id @default(uuid()) @db.Uuid
+  orgId    String @map("org_id") @db.Uuid
+  /// company | contact — which delete surface produced this snapshot.
+  kind     String
+  /// The primary record's original id (the company/contact that was deleted).
+  recordId String @map("record_id") @db.Uuid
+  /// Human label for the recover list (e.g. the company or contact name).
+  label    String
+  /// The destroyed subgraph exactly as read before deletion; restored verbatim.
+  snapshot Json   @db.JsonB
+
+  deletedByUserId String?  @map("deleted_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@map("deleted_records")
 }

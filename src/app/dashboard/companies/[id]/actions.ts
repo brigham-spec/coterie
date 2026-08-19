@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin, requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
+import { softDeleteCompany } from "@/lib/soft-delete";
 import { getCredential } from "@/lib/integrations";
 import {
   getTranscript,
@@ -2383,35 +2384,16 @@ export async function changeCompanyStatus(formData: FormData): Promise<void> {
 // The confirm gate lives in the UI; here we only re-check the company is ours
 // (RLS) before deleting.
 export async function deleteCompany(formData: FormData): Promise<void> {
-  const { orgId } = await requireAdmin();
+  const { orgId, userId } = await requireAdmin();
 
   const companyId = String(formData.get("companyId") ?? "").trim();
   if (!companyId) throw new Error("missing company");
 
-  const ok = await withOrg(orgId, async (tx) => {
-    // findUnique doubles as the not-found / RLS guard (a foreign id resolves to
-    // null under the org GUC), matching the boolean idiom the other writers use.
-    const company = await tx.company.findUnique({
-      where: { id: companyId },
-      select: { id: true },
-    });
-    if (company == null) return false;
-
-    // Clear the RESTRICT introductions and contact-owned action items first (both
-    // deleteMany 0 rows when the firm has none), via a relation filter on the
-    // party / owner contacts' companyId — no need to fan out through contact ids.
-    await tx.introduction.deleteMany({
-      where: {
-        OR: [{ partyA: { companyId } }, { partyB: { companyId } }],
-      },
-    });
-    await tx.actionItem.deleteMany({
-      where: { ownerContact: { companyId } },
-    });
-
-    await tx.company.delete({ where: { id: companyId } });
-    return true;
-  });
+  // Snapshot the company's full subgraph into deleted_records (recoverable),
+  // then hard-delete. softDeleteCompany clears the RESTRICT introductions and
+  // contact-owned action items before the company cascade, and returns false
+  // when the id isn't visible in this org (RLS not-found guard).
+  const ok = await withOrg(orgId, (tx) => softDeleteCompany(tx, companyId, userId));
 
   if (!ok) throw new Error("company not found in this organization");
 

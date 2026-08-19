@@ -230,6 +230,25 @@ export default async function SettingsPage() {
       {isAdmin && (
         <Card className="mt-6">
           <CardHeader
+            title="Recently deleted"
+            action={
+              <Link href="/dashboard/settings/deleted">
+                <Button>View trash</Button>
+              </Link>
+            }
+          />
+          <div className="p-4">
+            <p className="text-xs text-ink-2">
+              Companies and contacts you remove are archived here with their full
+              history, so an accidental delete can be recovered. Admin only.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card className="mt-6">
+          <CardHeader
             title="Data export"
             action={
               <a href="/dashboard/settings/export">
