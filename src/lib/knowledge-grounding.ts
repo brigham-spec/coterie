@@ -17,9 +17,12 @@ export type GroundingDoc = {
 };
 
 // Cap each doc and the whole block so a big collateral library can't blow the
-// prompt budget. A proposal only needs the org's positioning, not every word.
-export const MAX_DOC_CHARS = 8_000;
-export const MAX_GROUNDING_CHARS = 24_000;
+// prompt budget. Sized to fit a full member deck (a real one runs ~14k chars):
+// the Document Assistant answers factual questions and must see the WHOLE doc —
+// a tier table late in the deck matters just as much as the positioning up top,
+// so an 8k per-doc cap silently dropping ~40% of a deck would hide real answers.
+export const MAX_DOC_CHARS = 20_000;
+export const MAX_GROUNDING_CHARS = 40_000;
 // Never pull more than this many docs into one prompt (newest first).
 export const MAX_GROUNDING_DOCS = 12;
 
