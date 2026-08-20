@@ -28,6 +28,12 @@
 # and out of Vercel deploys; see .vercelignore)
 /New Folder With Items/
 
+# local tenant collateral / brand assets dropped at the repo root for testing —
+# HVEDC decks + value props are tenant instance data (upload via the app, never
+# commit); coterie-logo source lives in public/ once processed.
+/HVEDC_*.pdf
+/coterie-logo.jpeg
+
 # debug
 npm-debug.log*
 yarn-debug.log*
