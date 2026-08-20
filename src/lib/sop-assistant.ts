@@ -104,7 +104,8 @@ Return ONLY a JSON object (no prose outside it, no markdown code fences):
 Rules:
 - Answer ONLY from the supplied documents. Never use outside knowledge, never invent a fact, figure, name, or policy that is not in the material.
 - If the documents do not cover the question, set "answered" to false and let "answer" say plainly that the organization's documents on file do not cover this, so the staff member should check with a colleague — do not guess.
-- Cite by exact document title only; never cite a title that was not supplied.`;
+- Cite by exact document title only; never cite a title that was not supplied.
+- If a term in the question refers to two or more DISTINCT things in the documents (for example a membership tier literally named "Executive Board" versus an "executive forums" benefit section), briefly name each interpretation and answer for each, rather than silently choosing one. Only do this when the term genuinely maps to different things in the material — when the question is unambiguous, answer it directly and do not hedge, speculate about other meanings, or list alternatives.`;
 
 /// Generate the grounded document answer. Ephemeral — nothing is stored. Validates
 /// the cited titles against the supplied documents so a hallucinated source can
