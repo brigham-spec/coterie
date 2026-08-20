@@ -11,11 +11,9 @@ import { openRoles } from "@/lib/disciplines";
 import { parseImpactForm } from "@/lib/value-created";
 import { parseHvServices } from "@/lib/hv-services";
 import {
-  AddDisclosure,
   Button,
   Card,
   CardHeader,
-  Field,
   PageTitle,
   SelectField,
   StatusBadge,
@@ -25,13 +23,9 @@ import {
   Tr,
 } from "@/components/ui";
 
-import {
-  linkCompany,
-  unlinkCompany,
-  updateProjectDetails,
-  updateStage,
-} from "../actions";
+import { linkCompany, unlinkCompany, updateStage } from "../actions";
 import { DeleteProject } from "./_delete-project";
+import { EditDetails } from "./_edit-details";
 import { OpenRoles } from "./_open-roles";
 import {
   DeliverablesCard,
@@ -42,6 +36,7 @@ import { FundingCard, type FundingRow } from "./_funding";
 import { EconomicImpactCard } from "./_economic-impact";
 import { HvServicesCard } from "./_hv-services";
 import { AssistanceCard } from "./_assistance";
+import { ProjectNewsScanner } from "./_news-scanner";
 
 import {
   PROJECT_LINK_ROLE_GROUPS,
@@ -327,110 +322,28 @@ export default async function ProjectDetailPage({
           </SelectField>
           <Button type="submit">Update stage</Button>
         </form>
-        <AddDisclosure label="Edit details" className="border-t border-line">
-          <form
-            action={updateProjectDetails}
-            className="grid grid-cols-2 gap-4 border-t border-line p-4"
-          >
-            <input type="hidden" name="projectId" value={project.id} />
-            <Field
-              name="name"
-              label="Name"
-              defaultValue={project.name}
-              required
-              className="col-span-2"
-            />
-            <Field
-              name="description"
-              label="Description"
-              defaultValue={project.description}
-              placeholder="Short summary"
-              className="col-span-2"
-            />
-            <Field
-              name="type"
-              label="Type"
-              defaultValue={project.type ?? ""}
-              placeholder="Mixed-use"
-            />
-            <Field
-              name="industry"
-              label="Industry"
-              defaultValue={project.industry ?? ""}
-              placeholder="Hospitality"
-            />
-            <Field
-              name="county"
-              label="County"
-              defaultValue={project.county ?? ""}
-              placeholder="Dutchess"
-            />
-            <Field
-              name="units"
-              label="Units / keys"
-              inputMode="numeric"
-              defaultValue={project.units == null ? "" : String(project.units)}
-              placeholder="0"
-            />
-            <Field
-              name="sqft"
-              label="Sq ft"
-              inputMode="numeric"
-              defaultValue={project.sqft == null ? "" : String(project.sqft)}
-              placeholder="0"
-            />
-            <Field
-              name="value"
-              label="Value (USD)"
-              inputMode="numeric"
-              defaultValue={project.value == null ? "" : String(project.value)}
-              placeholder="0"
-            />
-            <Field
-              name="realizedValue"
-              label="Realized value (USD)"
-              inputMode="numeric"
-              defaultValue={
-                project.realizedValue == null ? "" : String(project.realizedValue)
-              }
-              placeholder="0"
-            />
-            <Field
-              name="targetDate"
-              label="Target date"
-              type="date"
-              defaultValue={
-                project.targetDate == null
-                  ? ""
-                  : project.targetDate.toISOString().slice(0, 10)
-              }
-            />
-            <SelectField
-              name="developerMemberId"
-              label="Developer (member)"
-              defaultValue={developerId}
-            >
-              <option value="">None</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </SelectField>
-            <Field
-              name="prospectLead"
-              label="Developer / lead (off-network)"
-              defaultValue={project.prospectLead ?? ""}
-              placeholder="Lead org or developer"
-              className="col-span-2"
-            />
-            <div className="col-span-2 flex justify-end">
-              <Button type="submit" variant="primary">
-                Save details
-              </Button>
-            </div>
-          </form>
-        </AddDisclosure>
+        <EditDetails
+          project={{
+            id: project.id,
+            name: project.name,
+            description: project.description,
+            type: project.type,
+            industry: project.industry,
+            county: project.county,
+            units: project.units,
+            sqft: project.sqft,
+            value: project.value == null ? null : String(project.value),
+            realizedValue:
+              project.realizedValue == null ? null : String(project.realizedValue),
+            targetDate:
+              project.targetDate == null
+                ? null
+                : project.targetDate.toISOString().slice(0, 10),
+            prospectLead: project.prospectLead,
+          }}
+          developerId={developerId}
+          companies={companies}
+        />
       </Card>
 
       {timeline.length > 0 ? (
@@ -521,59 +434,58 @@ export default async function ProjectDetailPage({
 
       <HvServicesCard projectId={project.id} services={services} />
 
-      {project.projectLinks.length > 0 || newsItems.length > 0 ? (
-        <Card>
-          <CardHeader title="Press & News" />
-          {newsItems.length === 0 ? (
-            <p className="px-4 py-6 text-xs text-ink-3">
-              No saved news for the participant companies yet. Capture coverage on{" "}
-              <Link href="/dashboard/news" className="text-gold underline">
-                News
-              </Link>
-              .
-            </p>
-          ) : (
-            <ul className="divide-y divide-line">
-              {/* Articles cross-linked to THIS project (item 5) lead, then the
-                  company-derived coverage — a stable sort keeps capturedAt-desc
-                  within each group. */}
-              {[...newsItems]
-                .sort(
-                  (a, b) =>
-                    Number(b.projectId === project.id) -
-                    Number(a.projectId === project.id),
-                )
-                .map((n) => (
-                  <li key={n.id} className="flex flex-col gap-1 px-4 py-3">
-                    <a
-                      href={n.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[12.5px] font-medium text-ink hover:text-gold hover:underline"
-                    >
-                      {n.headline}
-                    </a>
-                    {n.summary ? (
-                      <p className="line-clamp-2 text-[10.5px] text-ink-3">
-                        {n.summary}
-                      </p>
+      <Card>
+        <CardHeader title="Press & News" />
+        {newsItems.length === 0 ? (
+          <p className="px-4 py-6 text-xs text-ink-3">
+            No saved news for the participant companies yet. Capture coverage on{" "}
+            <Link href="/dashboard/news" className="text-gold underline">
+              News
+            </Link>
+            , or scan the web below.
+          </p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {/* Articles cross-linked to THIS project (item 5) lead, then the
+                company-derived coverage — a stable sort keeps capturedAt-desc
+                within each group. */}
+            {[...newsItems]
+              .sort(
+                (a, b) =>
+                  Number(b.projectId === project.id) -
+                  Number(a.projectId === project.id),
+              )
+              .map((n) => (
+                <li key={n.id} className="flex flex-col gap-1 px-4 py-3">
+                  <a
+                    href={n.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[12.5px] font-medium text-ink hover:text-gold hover:underline"
+                  >
+                    {n.headline}
+                  </a>
+                  {n.summary ? (
+                    <p className="line-clamp-2 text-[10.5px] text-ink-3">
+                      {n.summary}
+                    </p>
+                  ) : null}
+                  <div className="flex items-center gap-2 text-[10px] text-ink-3">
+                    {n.projectId === project.id ? (
+                      <span className="rounded-sm bg-gold-bg px-1.5 py-0.5 font-medium text-gold-ink">
+                        Linked
+                      </span>
                     ) : null}
-                    <div className="flex items-center gap-2 text-[10px] text-ink-3">
-                      {n.projectId === project.id ? (
-                        <span className="rounded-sm bg-gold-bg px-1.5 py-0.5 font-medium text-gold-ink">
-                          Linked
-                        </span>
-                      ) : null}
-                      <span>{n.company.name}</span>
-                      <span>·</span>
-                      <span>{dateFmt.format(n.capturedAt)}</span>
-                    </div>
-                  </li>
-                ))}
-            </ul>
-          )}
-        </Card>
-      ) : null}
+                    <span>{n.company.name}</span>
+                    <span>·</span>
+                    <span>{dateFmt.format(n.capturedAt)}</span>
+                  </div>
+                </li>
+              ))}
+          </ul>
+        )}
+        <ProjectNewsScanner projectId={project.id} />
+      </Card>
 
       {isActive && unfilledRoles.length > 0 ? (
         <OpenRoles projectId={project.id} roles={unfilledRoles} />

@@ -790,7 +790,17 @@ function readIntFromNumber(raw: string): number {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
 }
 
-export async function updateProjectDetails(formData: FormData): Promise<void> {
+// Result of the Edit-details form, surfaced inline via useActionState so the
+// user gets a "Saved" confirmation without scrolling back up the page.
+export type UpdateDetailsState =
+  | { status: "idle" }
+  | { status: "saved" }
+  | { status: "error"; message: string };
+
+export async function updateProjectDetails(
+  _prev: UpdateDetailsState,
+  formData: FormData,
+): Promise<UpdateDetailsState> {
   const { orgId } = await requireOrgContext();
 
   const projectId = String(formData.get("projectId") ?? "").trim();
@@ -807,47 +817,55 @@ export async function updateProjectDetails(formData: FormData): Promise<void> {
   const valueRaw = String(formData.get("value") ?? "").trim();
   const realizedValueRaw = String(formData.get("realizedValue") ?? "").trim();
 
-  if (!projectId) throw new Error("project is required");
-  if (!name) throw new Error("name is required");
+  if (!projectId) return { status: "error", message: "project is required" };
+  if (!name) return { status: "error", message: "name is required" };
   if (valueRaw !== "" && Number.isNaN(Number(valueRaw)))
-    throw new Error("value must be a number");
+    return { status: "error", message: "value must be a number" };
   if (realizedValueRaw !== "" && Number.isNaN(Number(realizedValueRaw)))
-    throw new Error("realized value must be a number");
+    return { status: "error", message: "realized value must be a number" };
   if (unitsRaw !== "" && !Number.isInteger(Number(unitsRaw)))
-    throw new Error("units must be a whole number");
+    return { status: "error", message: "units must be a whole number" };
   if (sqftRaw !== "" && !Number.isInteger(Number(sqftRaw)))
-    throw new Error("square footage must be a whole number");
+    return { status: "error", message: "square footage must be a whole number" };
 
-  await withOrg(orgId, async (tx) => {
-    const project = await tx.project.findUnique({
-      where: { id: projectId },
-      select: { id: true },
+  try {
+    await withOrg(orgId, async (tx) => {
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { id: true },
+      });
+      if (!project) throw new Error("project not found in this organization");
+
+      const developerId = await resolveLinkedCompany(tx, developerMemberId);
+
+      await tx.project.update({
+        where: { id: projectId },
+        data: {
+          name,
+          description,
+          type: type === "" ? null : type,
+          industry: industry === "" ? null : industry,
+          county: county === "" ? null : county,
+          units: unitsRaw === "" ? null : Number(unitsRaw),
+          sqft: sqftRaw === "" ? null : Number(sqftRaw),
+          prospectLead: prospectLead === "" ? null : prospectLead,
+          developerMemberId: developerId,
+          targetDate,
+          value: valueRaw === "" ? null : valueRaw,
+          realizedValue: realizedValueRaw === "" ? null : realizedValueRaw,
+        },
+      });
     });
-    if (!project) throw new Error("project not found in this organization");
-
-    const developerId = await resolveLinkedCompany(tx, developerMemberId);
-
-    await tx.project.update({
-      where: { id: projectId },
-      data: {
-        name,
-        description,
-        type: type === "" ? null : type,
-        industry: industry === "" ? null : industry,
-        county: county === "" ? null : county,
-        units: unitsRaw === "" ? null : Number(unitsRaw),
-        sqft: sqftRaw === "" ? null : Number(sqftRaw),
-        prospectLead: prospectLead === "" ? null : prospectLead,
-        developerMemberId: developerId,
-        targetDate,
-        value: valueRaw === "" ? null : valueRaw,
-        realizedValue: realizedValueRaw === "" ? null : realizedValueRaw,
-      },
-    });
-  });
+  } catch (err) {
+    return {
+      status: "error",
+      message: err instanceof Error ? err.message : "Could not save details.",
+    };
+  }
 
   revalidatePath(`/dashboard/projects/${projectId}`);
   revalidatePath("/dashboard/projects");
+  return { status: "saved" };
 }
 
 // ── Economic impact (projects-module parity, ported from the prototype's

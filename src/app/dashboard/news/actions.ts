@@ -100,6 +100,115 @@ export async function scanNews(
   }
 }
 
+// Project-scoped news scan (companion to scanNews). Same web-search engine, but
+// grounded in ONE project: the subject company is the project's developer (or,
+// lacking one, its first participant), and the single project is passed through
+// so buildPrompt blends the project name into the search terms. Returns the
+// resolved attach company id so the scan card can save an article against a real
+// company (news_items.company_id is required) and link it to the project.
+export type ProjectNewsScanState =
+  | { status: "idle" }
+  | {
+      status: "ok";
+      projectId: string;
+      projectName: string;
+      attachCompanyId: string | null;
+      articles: NewsArticle[];
+    }
+  | { status: "error"; message: string };
+
+export async function scanProjectNews(
+  _prev: ProjectNewsScanState,
+  formData: FormData,
+): Promise<ProjectNewsScanState> {
+  const { orgId, orgName } = await requireOrgContext();
+
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (projectId === "")
+    return { status: "error", message: "Select a project to scan." };
+
+  // RLS scopes the read; a foreign/unknown id resolves to no project.
+  const project = await withOrg(orgId, (tx) =>
+    tx.project.findUnique({
+      where: { id: projectId },
+      select: {
+        id: true,
+        name: true,
+        stage: true,
+        county: true,
+        industry: true,
+        prospectLead: true,
+        developer: {
+          select: {
+            id: true,
+            name: true,
+            industry: true,
+            counties: true,
+            website: true,
+          },
+        },
+        projectLinks: {
+          orderBy: { role: "asc" },
+          take: 1,
+          select: {
+            company: {
+              select: {
+                id: true,
+                name: true,
+                industry: true,
+                counties: true,
+                website: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+  );
+
+  if (project === null)
+    return { status: "error", message: "Project not found in this organization." };
+
+  // Ground the search in the project's developer, falling back to its first
+  // participant. Saved articles attach to this company (or none if the project
+  // has no associated company — the scan can still surface results ephemerally).
+  const subject = project.developer ?? project.projectLinks[0]?.company ?? null;
+  const attachCompanyId = subject?.id ?? null;
+  const companyName = subject?.name ?? project.prospectLead ?? project.name;
+  const counties = subject?.counties ?? (project.county ? [project.county] : []);
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const articles = await scanCompanyNews({
+      orgName,
+      companyName,
+      contactName: "",
+      industry: subject?.industry ?? project.industry ?? "",
+      counties,
+      website: subject?.website ?? null,
+      projects: [
+        { name: project.name, stage: project.stage, county: project.county ?? "" },
+      ],
+    });
+    return {
+      status: "ok",
+      projectId: project.id,
+      projectName: project.name,
+      attachCompanyId,
+      articles,
+    };
+  } catch (err) {
+    console.error("project news scan failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not scan for news. Try again." };
+  }
+}
+
 export type SaveNewsResult =
   | { status: "saved" }
   | { status: "exists" }
@@ -138,6 +247,9 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
   const headline = String(formData.get("headline") ?? "").trim();
   const url = String(formData.get("url") ?? "").trim();
   const summary = String(formData.get("summary") ?? "").trim();
+  // Optional: when saving from a project scan, link the new item to that project
+  // in the same write (news_items.project_id is a plain FK, re-verified below).
+  const projectId = String(formData.get("projectId") ?? "").trim();
   // The scan card ships the article's AI-extracted facts as a JSON array; a bad
   // or absent value just persists no facts (they're display-only chips).
   const keyFacts = parseKeyFacts(formData.get("keyFacts"));
@@ -157,16 +269,37 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
       if (company === null)
         return { status: "error" as const, message: "Company not found." };
 
+      // Re-verify the project belongs to THIS org before pinning it (plain FK,
+      // mirrors linkNewsToProject) so a crafted request can't cross-link.
+      if (projectId !== "") {
+        const project = await tx.project.findUnique({
+          where: { id: projectId },
+          select: { id: true },
+        });
+        if (project === null)
+          return { status: "error" as const, message: "Project not found." };
+      }
+
       const existing = await tx.newsItem.findFirst({
         where: { companyId, url },
-        select: { id: true },
+        select: { id: true, projectId: true },
       });
-      if (existing) return { status: "exists" as const };
+      if (existing) {
+        // Already saved for this company; if this save came from a project scan
+        // and the item isn't linked to that project yet, pin it now.
+        if (projectId !== "" && existing.projectId !== projectId)
+          await tx.newsItem.updateMany({
+            where: { id: existing.id },
+            data: { projectId },
+          });
+        return { status: "exists" as const };
+      }
 
       await tx.newsItem.create({
         data: {
           orgId,
           companyId,
+          projectId: projectId === "" ? null : projectId,
           headline,
           url,
           summary: summary || null,
@@ -183,6 +316,8 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
     revalidatePath("/dashboard/news");
     // The company profile's Saved Articles card reads the same ledger.
     revalidatePath(`/dashboard/companies/${companyId}`);
+    // A project scan saves against the project's Press & News card too.
+    if (projectId !== "") revalidatePath(`/dashboard/projects/${projectId}`);
   }
 }
 

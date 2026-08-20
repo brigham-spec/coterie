@@ -112,7 +112,8 @@ describe("createProject developer link", () => {
 describe("updateProjectDetails", () => {
   test("edits every core detail field and the developer link", async () => {
     const { id, name } = await makeProject();
-    await updateProjectDetails(
+    const result = await updateProjectDetails(
+      { status: "idle" },
       fd({
         projectId: id,
         name: `${name} (renamed)`,
@@ -129,6 +130,7 @@ describe("updateProjectDetails", () => {
         developerMemberId: devCompanyId,
       }),
     );
+    expect(result.status).toBe("saved");
     const updated = await withOrg(orgA.id, (tx) =>
       tx.project.findUnique({
         where: { id },
@@ -165,9 +167,10 @@ describe("updateProjectDetails", () => {
   test("clears optional fields and the developer link when blank", async () => {
     const { id, name } = await makeProject();
     await updateProjectDetails(
+      { status: "idle" },
       fd({ projectId: id, name, industry: "Retail", developerMemberId: devCompanyId }),
     );
-    await updateProjectDetails(fd({ projectId: id, name }));
+    await updateProjectDetails({ status: "idle" }, fd({ projectId: id, name }));
     const updated = await withOrg(orgA.id, (tx) =>
       tx.project.findUnique({
         where: { id },
@@ -181,9 +184,11 @@ describe("updateProjectDetails", () => {
 
   test("rejects a blank name", async () => {
     const { id } = await makeProject();
-    await expect(
-      updateProjectDetails(fd({ projectId: id, name: "" })),
-    ).rejects.toThrow("name is required");
+    const result = await updateProjectDetails(
+      { status: "idle" },
+      fd({ projectId: id, name: "" }),
+    );
+    expect(result).toEqual({ status: "error", message: "name is required" });
   });
 });
 
