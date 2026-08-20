@@ -5,12 +5,12 @@ import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import type { SopAnswer, SopAssistantInput } from "@/lib/sop-assistant";
 
-// Action-level integration test for the SOP assistant (knowledge layer, Step 3).
+// Action-level integration test for the Document assistant (knowledge layer).
 // Runs against the real Neon DB, mocking Clerk, Next's revalidatePath (unused by
 // this ephemeral action but harmless), and the Anthropic seam (generateSopAnswer)
-// so no live key is needed. Proves: no SOPs on file short-circuits to "empty"
-// WITHOUT a model call; only sop-kind docs are folded into the grounding (a deck
-// is ignored); and — the cardinal rule — the other tenant's SOPs are never seen.
+// so no live key is needed. Proves: no documents on file short-circuits to "empty"
+// WITHOUT a model call; ALL doc kinds (a deck AND a sop) are folded into the
+// grounding; and — the cardinal rule — the other tenant's documents are never seen.
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
@@ -98,10 +98,8 @@ describe("askSop", () => {
     expect(generateSopAnswer).not.toHaveBeenCalled();
   });
 
-  test("returns empty (no model call) when the org has no SOPs on file", async () => {
-    // orgA has a deck but no sop — the sop-kind grounding is empty.
-    await seedDoc(orgA.id, "deck", "Pitch", "We connect founders to capital.");
-
+  test("returns empty (no model call) when the org has no documents on file", async () => {
+    // orgA has nothing seeded yet — the grounding is empty.
     const result = await askSop(
       { status: "idle" },
       askForm("How do we onboard a new member?"),
@@ -110,7 +108,9 @@ describe("askSop", () => {
     expect(generateSopAnswer).not.toHaveBeenCalled();
   });
 
-  test("grounds only in sop-kind docs and keeps validated citations", async () => {
+  test("grounds in ALL uploaded doc kinds and keeps validated citations", async () => {
+    // A deck AND a sop are both folded in — no kind is filtered out.
+    await seedDoc(orgA.id, "deck", "Pitch", "We connect founders to capital.");
     await seedDoc(
       orgA.id,
       "sop",
@@ -127,22 +127,23 @@ describe("askSop", () => {
     expect(result.answer.answered).toBe(true);
     expect(result.answer.answer).toBe("Start with a welcome call.");
 
-    // The seam was handed the SOP body but NOT the deck (wrong kind).
+    // The seam was handed BOTH the SOP body and the deck body.
     expect(generateSopAnswer).toHaveBeenCalledTimes(1);
     const [input, validCitations] = generateSopAnswer.mock.calls[0];
     expect(input.grounding).toContain("Onboarding");
     expect(input.grounding).toContain("Step 1: welcome call.");
-    expect(input.grounding).not.toContain("connect founders to capital");
-    // Citations are validated against the real SOP titles only.
-    expect([...validCitations]).toEqual(["Onboarding"]);
-    expect(result.answer.citations).toEqual(["Onboarding"]);
+    expect(input.grounding).toContain("Pitch");
+    expect(input.grounding).toContain("connect founders to capital");
+    // Citations are validated against every uploaded document title.
+    expect([...validCitations].sort()).toEqual(["Onboarding", "Pitch"]);
+    expect(result.answer.citations.sort()).toEqual(["Onboarding", "Pitch"]);
   });
 });
 
 describe("tenant isolation", () => {
-  test("orgB never sees orgA's SOPs", async () => {
+  test("orgB never sees orgA's documents", async () => {
     generateSopAnswer.mockClear();
-    // orgA has a sop (seeded above); orgB has none of its own.
+    // orgA has docs (seeded above); orgB has none of its own.
     mockCtx.orgId = orgB.id;
     mockCtx.orgName = orgB.name;
     try {
@@ -150,7 +151,7 @@ describe("tenant isolation", () => {
         { status: "idle" },
         askForm("How do we onboard a new member?"),
       );
-      // No SOPs visible under orgB's RLS view → empty, no model call.
+      // No documents visible under orgB's RLS view → empty, no model call.
       expect(result.status).toBe("empty");
       expect(generateSopAnswer).not.toHaveBeenCalled();
     } finally {

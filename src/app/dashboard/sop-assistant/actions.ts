@@ -9,20 +9,17 @@ import {
   buildGroundingContext,
   loadKnowledgeGrounding,
 } from "@/lib/knowledge-grounding";
-import type { KnowledgeKind } from "@/lib/knowledge-docs";
 import { generateSopAnswer, type SopAnswer } from "@/lib/sop-assistant";
 
-// The SOP assistant grounds only in the org's "sop"-kind collateral.
-const SOP_KIND: KnowledgeKind = "sop";
-
-// SOP assistant action (knowledge layer, Step 3). askSop loads the tenant's own
-// SOP / playbook collateral in ONE withOrg tx (RLS scopes it), grounds the answer
+// Document assistant action (knowledge layer). askSop loads ALL of the tenant's
+// own uploaded collateral (every KnowledgeDoc kind — decks, value props, SOPs,
+// one-pagers, other) in ONE withOrg tx (RLS scopes it), grounds the answer
 // strictly in that material, and returns it. Ephemeral — nothing is stored; the
 // question is answered on demand and rendered inline via useActionState.
 //
-// An org with no SOPs on file short-circuits to a friendly message WITHOUT a paid
-// model call. Citations are validated inside the generator against the real SOP
-// titles so a hallucinated source can never surface.
+// An org with no documents on file short-circuits to a friendly message WITHOUT a
+// paid model call. Citations are validated inside the generator against the real
+// document titles so a hallucinated source can never surface.
 
 export type SopAssistantState =
   | { status: "idle" }
@@ -40,9 +37,7 @@ export async function askSop(
   if (question === "")
     return { status: "error", message: "Ask a question first." };
 
-  const docs = await withOrg(orgId, (tx) =>
-    loadKnowledgeGrounding(tx, SOP_KIND),
-  );
+  const docs = await withOrg(orgId, (tx) => loadKnowledgeGrounding(tx));
   const grounding = buildGroundingContext(docs);
   if (grounding === "") return { status: "empty" };
 

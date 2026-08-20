@@ -72,7 +72,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { label: "LinkedIn", href: "/dashboard/linkedin", icon: "linkedin" },
       {
-        label: "SOP Assistant",
+        label: "Document Assistant",
         href: "/dashboard/sop-assistant",
         icon: "sop-assistant",
       },

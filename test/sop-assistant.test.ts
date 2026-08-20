@@ -20,10 +20,10 @@ const input = (over: Partial<SopAssistantInput> = {}): SopAssistantInput => ({
 });
 
 describe("buildSopContext", () => {
-  it("includes the org name and the SOP grounding block", () => {
+  it("includes the org name and the document grounding block", () => {
     const out = buildSopContext(input());
     expect(out).toContain("ORGANIZATION: Hudson Valley EDC");
-    expect(out).toContain("STANDARD OPERATING PROCEDURES");
+    expect(out).toContain("UPLOADED DOCUMENTS");
     expect(out).toContain("[SOP / playbook] Onboarding");
     expect(out).toContain("Step 1: welcome call.");
   });
