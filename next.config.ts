@@ -12,15 +12,20 @@ import type { NextConfig } from "next";
 //
 // The Clerk origins below cover the development instance (`*.clerk.accounts.dev`)
 // and Clerk's bot-protection (`challenges.cloudflare.com`) + image/telemetry
-// hosts. A production Clerk instance serves its Frontend API from the app's own
-// domain via the `/__clerk` proxy (see src/proxy.ts), so `'self'` already covers
-// it; keep the accounts.dev entries for the dev instance.
+// hosts. The PRODUCTION Clerk instance serves its Frontend API from the CNAME
+// custom domain `clerk.coterienmt.ai` (NOT the app's own origin, and NOT a
+// `/__clerk` proxy), so it must be listed explicitly in script-src/connect-src —
+// `'self'` does not cover it. Keep the accounts.dev entries for the dev instance.
+// Without the prod domain here, flipping this policy to enforcing would hard-block
+// Clerk's SDK + session/org calls (clerk.browser.js, /v1/client, /v1/environment,
+// organization_memberships, …) for every user.
+const clerkProdFapi = "https://clerk.coterienmt.ai";
 const csp = [
   "default-src 'self'",
   // 'unsafe-inline'/'unsafe-eval' are needed by the Next runtime (and dev HMR);
   // report-only keeps them from masking real issues while we tune.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://challenges.cloudflare.com",
-  "connect-src 'self' https://*.clerk.accounts.dev https://clerk-telemetry.com",
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${clerkProdFapi} https://*.clerk.accounts.dev https://challenges.cloudflare.com`,
+  `connect-src 'self' ${clerkProdFapi} https://*.clerk.accounts.dev https://clerk-telemetry.com`,
   "img-src 'self' data: https://img.clerk.com",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
