@@ -19,3 +19,15 @@ export function isProactiveCacheFresh(
   const age = now - generatedAt.getTime();
   return age < PROACTIVE_CACHE_TTL_MS;
 }
+
+/**
+ * Compact human label for how long ago a cached scan was produced ("just now",
+ * "12m ago", "3h ago"). Shared by the introductions panel and the dashboard's
+ * possible-introductions panel so both read a snapshot's age the same way.
+ */
+export function relativeAge(fromMs: number, now: number = Date.now()): string {
+  const mins = Math.max(0, Math.round((now - fromMs) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.round(mins / 60)}h ago`;
+}

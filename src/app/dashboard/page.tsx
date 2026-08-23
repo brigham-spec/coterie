@@ -31,6 +31,8 @@ import {
 } from "./commitments/log-options";
 import { EnrichmentNudges } from "./_enrichment-nudges";
 import { IntroScan } from "./_intro-scan";
+import type { ProactiveCacheSnapshot } from "./introductions/_engine";
+import type { ProactivePairing } from "@/lib/intro-engine";
 import { NewConnections } from "./_new-connections";
 import { QuickCapture } from "./_quick-capture";
 import { SyncNowButtonCompact } from "./meetings/_sync-now";
@@ -117,6 +119,7 @@ export default async function DashboardPage({
     firefliesCred,
     recentSyncedMeetings,
     contactRows,
+    proactiveCache,
   } = await withOrg(ctx.orgId, async (tx) => {
     const companies = await tx.company.findMany({
       select: {
@@ -252,6 +255,17 @@ export default async function DashboardPage({
         },
       },
     });
+    // Last members-scope proactive scan (item 13). The Possible Introductions
+    // panel below hydrates from it instantly instead of forcing a ~1-min AI scan
+    // on every dashboard visit; the operator re-scans on demand.
+    const proactiveCache = await tx.proactiveScanCache.findUnique({
+      where: { orgId_scope: { orgId: ctx.orgId, scope: "members" } },
+      select: {
+        pairings: true,
+        meetingIntelligenceActive: true,
+        generatedAt: true,
+      },
+    });
     return {
       companies,
       projects,
@@ -265,9 +279,22 @@ export default async function DashboardPage({
       firefliesCred,
       recentSyncedMeetings,
       contactRows,
+      proactiveCache,
     };
   });
   const staff = await staffPromise;
+
+  // Hydrate the Possible Introductions panel from the last members-scope scan
+  // (item 13) so it renders instantly; a null snapshot leaves the panel in its
+  // "run a scan" idle state. The operator re-scans on demand — the dashboard
+  // never auto-fires a paid AI scan on load.
+  const proactiveSnapshot: ProactiveCacheSnapshot | null = proactiveCache
+    ? {
+        pairings: proactiveCache.pairings as unknown as ProactivePairing[],
+        generatedAt: proactiveCache.generatedAt.toISOString(),
+        meetingIntelligenceActive: proactiveCache.meetingIntelligenceActive,
+      }
+    : null;
 
   // Owner pickers for the "Log a task" form: staff drive we-owe items, contacts
   // drive they-owe (which auto-link the contact's company). Our owner-XOR schema
@@ -421,7 +448,7 @@ export default async function DashboardPage({
       <LogCommitment staff={staff} contacts={contacts} />
 
       {/* Layer-0 — proactive introduction scanner */}
-      <IntroScan />
+      <IntroScan initial={proactiveSnapshot} />
 
       {/* Quick capture — turn a plain-English note into a reviewable meeting +
           prospects (cluster E micro AI; nothing is stored until Save). */}

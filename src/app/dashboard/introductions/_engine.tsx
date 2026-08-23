@@ -18,6 +18,13 @@ import {
   type ProfileStrength,
 } from "@/lib/intro-profile-strength";
 import type { RoleCandidate } from "@/lib/open-roles-engine";
+import { relativeAge } from "@/lib/proactive-cache";
+
+import {
+  CLUSTER_NOTE_MIN,
+  ClusterNote,
+  UrgencyBanner,
+} from "./_pairing-signals";
 
 import {
   dismissIntro,
@@ -146,13 +153,6 @@ export type ProactiveCacheSnapshot = {
   generatedAt: string; // ISO — when the cached scan was produced
   meetingIntelligenceActive: boolean;
 };
-
-function relativeAge(fromMs: number, now: number): string {
-  const mins = Math.max(0, Math.round((now - fromMs) / 60000));
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  return `${Math.round(mins / 60)}h ago`;
-}
 
 export function UrgentSignalsPanel({
   initial,
@@ -835,48 +835,12 @@ function PairingCard({
   );
 }
 
-// Time-sensitivity banner for a proactive pairing (S6c, item 13 — the prototype's
-// Urgent Signals trigger/window line, Coterie.html:14670). Rendered only when the
-// scan flagged the pair as time-sensitive, so a gold-accented card reads as "act
-// now" while ordinary high-value pairs stay unadorned.
-function UrgencyBanner({
-  trigger,
-  window: timeWindow,
-}: {
-  trigger: string;
-  window: string;
-}) {
-  return (
-    <div className="mt-1.5 rounded-sm border border-gold-line bg-gold-bg/50 px-2 py-1 text-[10px] leading-relaxed text-ink-2">
-      {trigger ? (
-        <span>
-          <span className="font-semibold tracking-[0.04em] text-gold-ink uppercase">
-            Trigger
-          </span>{" "}
-          {trigger}
-        </span>
-      ) : null}
-      {trigger && timeWindow ? <span className="text-ink-3"> · </span> : null}
-      {timeWindow ? (
-        <span>
-          <span className="font-semibold tracking-[0.04em] text-gold-ink uppercase">
-            Window
-          </span>{" "}
-          {timeWindow}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 // ── Connection Clusters (trios) ───────────────────────────────────────────────
 // Secondary panel over the same scan (S6c, item 15 — the prototype's Connection
 // Clusters, Coterie.html:14903). Some pairings carry a clusterNote: a THIRD
 // network company would complete a powerful triad. We surface those here so the
 // operator can see not just the pair but the group opportunity behind it. Derived
 // entirely from the scan already in hand — nothing extra is fetched or stored.
-const CLUSTER_NOTE_MIN = 10;
-
 function ConnectionClusters({
   pairings,
   hostName,
@@ -940,12 +904,7 @@ function ClusterCard({
           {p.headline}
         </p>
       ) : null}
-      <div className="bg-teal-bg/40 px-3.5 py-2.5">
-        <div className="mb-1 text-[9.5px] font-semibold tracking-[0.06em] text-teal-ink uppercase">
-          Complete the cluster
-        </div>
-        <p className="text-[11px] leading-relaxed text-ink-2">{p.clusterNote}</p>
-      </div>
+      <ClusterNote note={p.clusterNote} />
       <div className="flex justify-end px-3.5 py-2">
         <CopyDraftButton
           draft={buildIntroDraft({
