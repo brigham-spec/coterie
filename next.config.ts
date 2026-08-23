@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 // Security review item H1 (docs/security-review.md). The app shipped no HTTP
 // security headers; these add clickjacking/MIME/referrer hardening on every
@@ -25,7 +26,8 @@ const csp = [
   // 'unsafe-inline'/'unsafe-eval' are needed by the Next runtime (and dev HMR);
   // report-only keeps them from masking real issues while we tune.
   `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${clerkProdFapi} https://*.clerk.accounts.dev https://challenges.cloudflare.com`,
-  `connect-src 'self' ${clerkProdFapi} https://*.clerk.accounts.dev https://clerk-telemetry.com`,
+  // *.ingest.us.sentry.io is where the browser SDK POSTs captured errors.
+  `connect-src 'self' ${clerkProdFapi} https://*.clerk.accounts.dev https://clerk-telemetry.com https://*.ingest.us.sentry.io`,
   "img-src 'self' data: https://img.clerk.com",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
@@ -58,4 +60,11 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// withSentryConfig injects the build-time instrumentation Sentry needs. Source-
+// map upload is disabled: it requires a SENTRY_AUTH_TOKEN + org/project slugs we
+// don't set here, and error reporting works without it (stack traces just won't
+// be un-minified). silent keeps the build log clean.
+export default withSentryConfig(nextConfig, {
+  silent: true,
+  sourcemaps: { disable: true },
+});

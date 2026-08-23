@@ -1,4 +1,5 @@
 import { Inngest, NonRetriableError } from "inngest";
+import * as Sentry from "@sentry/nextjs";
 
 import { getCredential } from "@/lib/integrations";
 import { FirefliesError, listTranscripts } from "@/lib/fireflies";
@@ -143,5 +144,40 @@ export const enrichLinkedin = inngest.createFunction(
   },
 );
 
+// Catch-all alerting for background jobs. Inngest's Hobby plan has no dashboard
+// alerting, so a job exhausting its retries would otherwise fail silently. Inngest
+// emits the system event `inngest/function.failed` after a function's final retry
+// fails; we forward it to Sentry (which emails on new issues), giving background
+// failures the same reach as app errors without standing up a separate mailer.
+export const reportFailure = inngest.createFunction(
+  { id: "report-failure", triggers: [{ event: "inngest/function.failed" }] },
+  async ({ event }) => {
+    const data = event.data as {
+      function_id?: unknown;
+      run_id?: unknown;
+      error?: { message?: unknown; name?: unknown };
+    };
+    const functionId =
+      typeof data.function_id === "string" ? data.function_id : "unknown";
+    const message =
+      typeof data.error?.message === "string"
+        ? data.error.message
+        : "Inngest function failed";
+
+    Sentry.captureException(new Error(`Inngest job failed: ${message}`), {
+      tags: { source: "inngest", function_id: functionId },
+      extra: {
+        run_id: typeof data.run_id === "string" ? data.run_id : undefined,
+        error_name:
+          typeof data.error?.name === "string" ? data.error.name : undefined,
+      },
+    });
+    // Background functions are short-lived; flush before returning so the event
+    // isn't dropped when the invocation ends.
+    await Sentry.flush(2000);
+    return { reported: true, functionId };
+  },
+);
+
 // Registered with the serve route (src/app/api/inngest/route.ts).
-export const functions = [ping, syncFireflies, enrichLinkedin];
+export const functions = [ping, syncFireflies, enrichLinkedin, reportFailure];
