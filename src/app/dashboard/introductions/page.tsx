@@ -104,6 +104,11 @@ export default async function IntroductionsPage({
   const rawMember = one(sp.member);
   const rawLogA = one(sp.logA);
   const rawLogText = one(sp.logText);
+  // Dashboard "Possible Introductions" scan produces company↔company pairings (no
+  // contact ids). Logging one deep-links here with the two company ids; we resolve
+  // each to its primary contact below to seed the contact-based log form.
+  const rawLogCompanyA = one(sp.logCompanyA);
+  const rawLogCompanyB = one(sp.logCompanyB);
 
   // Sequential reads: one pooled connection per tx, so no concurrent queries.
   const {
@@ -250,8 +255,19 @@ export default async function IntroductionsPage({
   const initialMemberId = engineMembers.some((m) => m.id === rawMember)
     ? rawMember
     : "";
-  const logPartyA = hasContact(rawLogA) ? rawLogA : "";
-  const logHeadline = logPartyA ? rawLogText.slice(0, 200) : "";
+  // A dashboard scan deep-link carries company ids, not contact ids — resolve each
+  // to its primary contact (loaded above). A direct `logA` contact id still wins;
+  // a company with no primary contact falls back to the placeholder (pick manually).
+  const primaryContactOf = (companyId: string) =>
+    companyId === ""
+      ? ""
+      : (companies.find((c) => c.id === companyId)?.contacts[0]?.id ?? "");
+  const logPartyA = hasContact(rawLogA)
+    ? rawLogA
+    : primaryContactOf(rawLogCompanyA);
+  const resolvedB = primaryContactOf(rawLogCompanyB);
+  const logPartyB = resolvedB !== "" && resolvedB !== logPartyA ? resolvedB : "";
+  const logHeadline = logPartyA || logPartyB ? rawLogText.slice(0, 200) : "";
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -425,7 +441,7 @@ export default async function IntroductionsPage({
             <Card>
               <CardHeader title="Log an introduction" />
               <form
-                key={`${logPartyA}:${logHeadline}`}
+                key={`${logPartyA}:${logPartyB}:${logHeadline}`}
                 action={createIntroduction}
                 className="grid grid-cols-2 gap-4 p-4"
               >
@@ -447,7 +463,7 @@ export default async function IntroductionsPage({
                 <SelectField
                   name="partyBContactId"
                   label="Party B"
-                  defaultValue=""
+                  defaultValue={logPartyB}
                   required
                 >
                   <option value="" disabled>

@@ -24,6 +24,7 @@ import {
 } from "@/lib/new-connections";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { isIntroStage } from "@/lib/intro-stages";
+import { isIntroDismissReason } from "@/lib/intro-dismissal";
 import { getStageDef, TERMINAL_STAGES } from "@/lib/project-stages";
 import { NETWORK_STATUSES, isCompanyStatus } from "@/lib/company-statuses";
 import { autoAssignTier, readMemberTierDefs } from "@/lib/member-tiers";
@@ -308,14 +309,19 @@ export async function suggestIntros(
 // stored directionally (focus → candidate); suggestIntros excludes either
 // orientation on the next scan. Both companies are re-verified withOrg-scoped
 // (RLS → a foreign id resolves null → refused) before writing, and the write is an
-// idempotent upsert on the unique pair so re-dismissing is a no-op.
+// idempotent upsert on the unique pair so re-dismissing is a no-op. The optional
+// reason records WHY (intro-dismissal taxonomy); an out-of-vocabulary/forged value
+// falls back to "not_relevant" at this write boundary.
 export async function dismissIntro(
   focusCompanyId: string,
   candidateCompanyId: string,
+  reason?: string,
 ): Promise<void> {
   const focus = String(focusCompanyId ?? "").trim();
   const candidate = String(candidateCompanyId ?? "").trim();
   if (!focus || !candidate || focus === candidate) return;
+
+  const r = reason && isIntroDismissReason(reason) ? reason : "not_relevant";
 
   const { orgId } = await requireOrgContext();
 
@@ -333,8 +339,13 @@ export async function dismissIntro(
           candidateCompanyId: candidate,
         },
       },
-      create: { orgId, focusCompanyId: focus, candidateCompanyId: candidate },
-      update: {},
+      create: {
+        orgId,
+        focusCompanyId: focus,
+        candidateCompanyId: candidate,
+        reason: r,
+      },
+      update: { reason: r },
     });
   });
 }
