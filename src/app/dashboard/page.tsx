@@ -23,6 +23,12 @@ import { cn, StatusBadge } from "@/components/ui";
 
 import { Greeting } from "./_greeting";
 import { DailyFocus } from "./_daily-focus";
+import { LogCommitment } from "./commitments/_log";
+import {
+  contactOptionsSelect,
+  loadStaffOptions,
+  toContactOptions,
+} from "./commitments/log-options";
 import { EnrichmentNudges } from "./_enrichment-nudges";
 import { IntroScan } from "./_intro-scan";
 import { NewConnections } from "./_new-connections";
@@ -89,6 +95,10 @@ export default async function DashboardPage({
   const d30 = new Date(now.getTime() - 30 * DAY);
   const d60 = new Date(now.getTime() - 60 * DAY);
 
+  // Feeds the "Log a task" form's we-owe owner picker. Kicked off first so it
+  // runs alongside the RLS-scoped withOrg batch below.
+  const staffPromise = loadStaffOptions(ctx.orgId);
+
   // A Prisma interactive transaction holds a SINGLE pooled connection, so its
   // reads must run sequentially: issuing them concurrently (Promise.all) makes
   // pg execute overlapping queries on one client, which serializes under
@@ -106,6 +116,7 @@ export default async function DashboardPage({
     pendingIntros,
     firefliesCred,
     recentSyncedMeetings,
+    contactRows,
   } = await withOrg(ctx.orgId, async (tx) => {
     const companies = await tx.company.findMany({
       select: {
@@ -218,6 +229,11 @@ export default async function DashboardPage({
       where: { provider: "fireflies" },
       select: { lastSyncedAt: true },
     });
+    // Contacts for the "they owe" picker on the log-task form.
+    const contactRows = await tx.contact.findMany({
+      orderBy: { name: "asc" },
+      select: contactOptionsSelect,
+    });
     // Meetings that landed in the recent window feed the sync bar's meeting
     // count + member pills. Bounded by the recency window, and capped so an
     // unusually heavy sync can't bloat the dashboard read.
@@ -248,8 +264,15 @@ export default async function DashboardPage({
       pendingIntros,
       firefliesCred,
       recentSyncedMeetings,
+      contactRows,
     };
   });
+  const staff = await staffPromise;
+
+  // Owner pickers for the "Log a task" form: staff drive we-owe items, contacts
+  // drive they-owe (which auto-link the contact's company). Our owner-XOR schema
+  // has no owner-less task, so a company is reached via one of its contacts.
+  const contacts = toContactOptions(contactRows);
 
   const recentPendingIntros = pendingIntros.slice(0, 5);
 
@@ -390,8 +413,12 @@ export default async function DashboardPage({
       <SyncStatusBar status={syncStatus} recentSync={recentSync} now={now} />
 
       {/* Daily Focus — AI briefing over open commitments + upcoming events,
-          across Today / This Week / This Month horizons (on-demand). */}
+          across Today / This Week / This Month horizons (auto-runs on open). */}
       <DailyFocus scope={scope} />
+
+      {/* Log a task — manually add an action item and assign it to a staff
+          member (we owe) or a network contact (they owe, links their company). */}
+      <LogCommitment staff={staff} contacts={contacts} />
 
       {/* Layer-0 — proactive introduction scanner */}
       <IntroScan />

@@ -2,7 +2,6 @@ import Link from "next/link";
 
 import { requireOrgContext } from "@/lib/auth";
 import { requireModule } from "@/lib/org-modules";
-import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import {
   ACTIVE_COMMITMENT_STATUSES,
@@ -18,7 +17,12 @@ import {
 import { Card, CardHeader, PageTitle } from "@/components/ui";
 
 import { CommitmentFilters as FilterBar } from "./_filters";
-import { LogCommitment, type ContactOption, type StaffOption } from "./_log";
+import { LogCommitment } from "./_log";
+import {
+  contactOptionsSelect,
+  loadStaffOptions,
+  toContactOptions,
+} from "./log-options";
 import { type CommitmentRowData } from "./_commitment-row";
 import { CommitmentList } from "./_commitment-list";
 
@@ -88,13 +92,8 @@ export default async function CommitmentsPage({
     meeting: { select: { title: true } },
   } as const;
 
-  // Org staff = org members (platform table, no RLS — read off bare prisma).
   // Kicked off first so it runs alongside the RLS-scoped withOrg batch below.
-  const staffPromise = prisma.orgMembership.findMany({
-    where: { orgId: ctx.orgId },
-    orderBy: { user: { name: "asc" } },
-    select: { user: { select: { id: true, name: true } } },
-  });
+  const staffPromise = loadStaffOptions(ctx.orgId);
 
   const [openRows, completedRows, contactRows, unscanned] = await withOrg(
     ctx.orgId,
@@ -116,7 +115,7 @@ export default async function CommitmentsPage({
       // Contacts for the "they owe" picker on the log form.
       await tx.contact.findMany({
         orderBy: { name: "asc" },
-        select: { id: true, name: true, company: { select: { name: true } } },
+        select: contactOptionsSelect,
       }),
       // Meetings with notes but no commitments ever pulled — the scan gap.
       await tx.meeting.findMany({
@@ -127,7 +126,7 @@ export default async function CommitmentsPage({
       }),
     ],
   );
-  const staffRows = await staffPromise;
+  const staff = await staffPromise;
 
   const now = new Date();
   // "Mine" = items I personally own (we-owe, ownerId === my user id). They-owe
@@ -146,11 +145,7 @@ export default async function CommitmentsPage({
   const filteredOpen = filterCommitments(open, filters);
   const { weOwe, theyOwe } = splitBySide(filteredOpen);
 
-  const staff: StaffOption[] = staffRows.map((r) => r.user);
-  const contacts: ContactOption[] = contactRows.map((c) => ({
-    id: c.id,
-    label: `${c.name} · ${c.company.name}`,
-  }));
+  const contacts = toContactOptions(contactRows);
 
   const toScan = unscanned.filter(
     (m) => (m.summary ?? "").trim().length >= MIN_NOTES,

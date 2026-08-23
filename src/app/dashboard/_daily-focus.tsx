@@ -2,6 +2,8 @@
 
 import {
   useActionState,
+  useEffect,
+  useRef,
   useState,
   useTransition,
   type ReactNode,
@@ -42,6 +44,21 @@ export function DailyFocus({ scope }: { scope: DashboardScope }) {
     generateDailyFocus,
     initialState,
   );
+
+  // Auto-generate the default "today" briefing once when the dashboard opens, so
+  // the operator's focus is ready without a click. The ref guards against a
+  // second fire (Strict Mode double-mount, re-renders). Refresh and switching
+  // horizons stay manual — those are deliberate, paid AI calls the operator asks
+  // for. Server-side enforceAiRateLimit still caps the cost.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current) return;
+    autoRan.current = true;
+    const fd = new FormData();
+    fd.set("horizon", "today");
+    fd.set("scope", scope);
+    formAction(fd);
+  }, [formAction, scope]);
 
   // Optimistic triage overrides keyed by `${kind}:${id}`, applied over each item's
   // server-loaded state until the next Generate. "clear" undoes a mark.
