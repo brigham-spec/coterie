@@ -19,6 +19,7 @@ import {
 } from "@/lib/intro-profile-strength";
 import type { RoleCandidate } from "@/lib/open-roles-engine";
 import { relativeAge } from "@/lib/proactive-cache";
+import { INTRO_DISMISS_REASONS } from "@/lib/intro-dismissal";
 
 import {
   CLUSTER_NOTE_MIN,
@@ -41,6 +42,8 @@ import { scanOpenRole, type OpenRoleScanState } from "../projects/actions";
 // server actions (suggestIntros / scanOpenRole / scanNetworkIntros), so the
 // Anthropic key never crosses to the browser and every result stays ephemeral —
 // nothing is written until an intro is logged in the ledger below.
+
+const pairKey = (p: ProactivePairing) => `${p.companyAId}|${p.companyBId}`;
 
 export type EngineMember = {
   id: string;
@@ -183,6 +186,7 @@ export function UrgentSignalsPanel({
   const [analyzedAt, setAnalyzedAt] = useState<number | null>(
     initial ? Date.parse(initial.generatedAt) : null,
   );
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const autoFired = useRef(false);
   // Wall clock captured on mount (never during render — that would be impure and
@@ -207,6 +211,9 @@ export function UrgentSignalsPanel({
         setError(null);
         setAnalyzedAt(Date.now());
         setNowMs(Date.now());
+        // The rescan re-queries the DB (already excluding server-side
+        // dismissals), so the optimistic hide set starts clean.
+        setDismissed(new Set());
       } else if (next.status === "error") {
         setError(next.message);
       }
@@ -221,7 +228,9 @@ export function UrgentSignalsPanel({
     run();
   }, [fresh, run]);
 
-  const pairings = snapshot?.pairings ?? [];
+  const pairings = (snapshot?.pairings ?? []).filter(
+    (p) => !dismissed.has(pairKey(p)),
+  );
   const timeSensitive = pairings.filter(
     (p) => p.urgencyTrigger !== "" || p.window !== "",
   ).length;
@@ -264,9 +273,12 @@ export function UrgentSignalsPanel({
           <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {pairings.map((p) => (
               <PairingCard
-                key={`${p.companyAId}|${p.companyBId}`}
+                key={pairKey(p)}
                 p={p}
                 hostName={hostName}
+                onDismiss={(key) =>
+                  setDismissed((prev) => new Set(prev).add(key))
+                }
               />
             ))}
           </ul>
@@ -681,15 +693,24 @@ const SCOPES: { key: NetworkScope; label: string }[] = [
 function NetworkMode({ hostName }: { hostName: string }) {
   const [scope, setScope] = useState<NetworkScope>("members");
   const [result, setResult] = useState<ProactiveScanState>({ status: "idle" });
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [pending, startTransition] = useTransition();
 
   function run() {
     startTransition(async () => {
       const fd = new FormData();
       fd.set("scope", scope);
+      // A fresh scan re-queries the DB (already excluding server-side
+      // dismissals), so the optimistic hide set starts clean.
+      setDismissed(new Set());
       setResult(await scanNetworkIntros({ status: "idle" }, fd));
     });
   }
+
+  const visiblePairings =
+    result.status === "ok"
+      ? result.pairings.filter((p) => !dismissed.has(pairKey(p)))
+      : [];
 
   return (
     <div>
@@ -704,6 +725,7 @@ function NetworkMode({ hostName }: { hostName: string }) {
                 onClick={() => {
                   setScope(sc.key);
                   setResult({ status: "idle" });
+                  setDismissed(new Set());
                 }}
                 className={cn(
                   "rounded-sm px-2.5 py-1 text-[10.5px] font-medium transition-colors",
@@ -740,22 +762,25 @@ function NetworkMode({ hostName }: { hostName: string }) {
       ) : result.status === "error" ? (
         <p className="text-[11px] text-red-ink">{result.message}</p>
       ) : result.status === "ok" ? (
-        result.pairings.length === 0 ? (
+        visiblePairings.length === 0 ? (
           <p className="text-[11px] text-ink-3 italic">
             No new introductions surfaced right now.
           </p>
         ) : (
           <>
             <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              {result.pairings.map((p) => (
+              {visiblePairings.map((p) => (
                 <PairingCard
-                  key={`${p.companyAId}|${p.companyBId}`}
+                  key={pairKey(p)}
                   p={p}
                   hostName={hostName}
+                  onDismiss={(key) =>
+                    setDismissed((prev) => new Set(prev).add(key))
+                  }
                 />
               ))}
             </ul>
-            <ConnectionClusters pairings={result.pairings} hostName={hostName} />
+            <ConnectionClusters pairings={visiblePairings} hostName={hostName} />
           </>
         )
       ) : (
@@ -770,11 +795,25 @@ function NetworkMode({ hostName }: { hostName: string }) {
 function PairingCard({
   p,
   hostName,
+  onDismiss,
 }: {
   p: ProactivePairing;
   hostName: string;
+  onDismiss: (key: string) => void;
 }) {
+  const [isDismissing, startDismiss] = useTransition();
   const timeSensitive = p.urgencyTrigger !== "" || p.window !== "";
+  const logHref = `/dashboard/introductions?logCompanyA=${p.companyAId}&logCompanyB=${p.companyBId}&logText=${encodeURIComponent(p.headline)}#log-intro`;
+
+  function dispose(reason: string) {
+    // Optimistically hide, then persist. A failed write just reappears on the
+    // next rescan (which re-queries the DB and already excludes it).
+    onDismiss(pairKey(p));
+    startDismiss(async () => {
+      await dismissIntro(p.companyAId, p.companyBId, reason);
+    });
+  }
+
   return (
     <li
       className={cn(
@@ -819,17 +858,37 @@ function PairingCard({
           ))}
         </ul>
       ) : null}
-      <div className="mt-2.5 flex justify-end">
-        <CopyDraftButton
-          draft={buildIntroDraft({
-            host: hostName,
-            introduce: p.companyAName,
-            recipient: p.companyBName,
-            headline: p.headline,
-            talkingPoints: p.talkingPoints,
-            whyNow: p.whyNow,
-          })}
-        />
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line pt-2.5">
+        <Link
+          href={logHref}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          Log intro
+        </Link>
+        <span className="text-[9.5px] text-ink-3">Dismiss as</span>
+        {INTRO_DISMISS_REASONS.map((r) => (
+          <button
+            key={r.value}
+            type="button"
+            onClick={() => dispose(r.value)}
+            disabled={isDismissing}
+            className="text-[10px] text-ink-3 hover:text-ink-2 hover:underline disabled:opacity-50"
+          >
+            {r.label}
+          </button>
+        ))}
+        <div className="ml-auto">
+          <CopyDraftButton
+            draft={buildIntroDraft({
+              host: hostName,
+              introduce: p.companyAName,
+              recipient: p.companyBName,
+              headline: p.headline,
+              talkingPoints: p.talkingPoints,
+              whyNow: p.whyNow,
+            })}
+          />
+        </div>
       </div>
     </li>
   );

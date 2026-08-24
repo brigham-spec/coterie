@@ -118,7 +118,7 @@ export function IntroScan({
         ) : null}
 
         {visible.length > 0 ? (
-          <ul className="grid max-h-[28rem] grid-cols-1 gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {visible.map((p) => (
               <PairingCard
                 key={pairKey(p)}
