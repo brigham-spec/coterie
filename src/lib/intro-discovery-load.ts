@@ -66,16 +66,28 @@ export async function loadNewIntroCandidates(
 
   // Any logged introduction between two companies means they're already
   // introduced, so the pair is suppressed regardless of the intro's stage.
+  // Dismissed pairs are suppressed the same way, so an operator's "dismiss"
+  // sticks across reloads (suppression is order-independent, so the directional
+  // focus→candidate row neutralizes either orientation).
   const introRows = await tx.introduction.findMany({
     select: {
       partyA: { select: { companyId: true } },
       partyB: { select: { companyId: true } },
     },
   });
-  const existingPairs: KnownPair[] = introRows.map((i) => ({
-    aCompanyId: i.partyA.companyId,
-    bCompanyId: i.partyB.companyId,
-  }));
+  const dismissalRows = await tx.introDismissal.findMany({
+    select: { focusCompanyId: true, candidateCompanyId: true },
+  });
+  const existingPairs: KnownPair[] = [
+    ...introRows.map((i) => ({
+      aCompanyId: i.partyA.companyId,
+      bCompanyId: i.partyB.companyId,
+    })),
+    ...dismissalRows.map((d) => ({
+      aCompanyId: d.focusCompanyId,
+      bCompanyId: d.candidateCompanyId,
+    })),
+  ];
 
   return detectNewIntroCandidates(meetings, existingPairs);
 }

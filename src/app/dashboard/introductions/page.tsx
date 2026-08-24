@@ -44,6 +44,7 @@ import {
 import { createIntroduction, updateIntroduction } from "./actions";
 import { confirmIntroAdvance } from "../companies/[id]/actions";
 import { IntroEmailDraft } from "./_intro-email";
+import { NewIntroOpportunities } from "./_new-intros";
 import {
   IntroEngine,
   UrgentSignalsPanel,
@@ -292,60 +293,25 @@ export default async function IntroductionsPage({
       ) : null}
 
       {/* Brand-new intro discovery — recent meetings put two member companies in
-          the same room with no introduction on record. Log one in a click; the
-          pair then drops off (a logged intro suppresses it). */}
+          the same room with no introduction on record. Log one in a click (the
+          pair then drops off — a logged intro suppresses it) or dismiss it with a
+          reason (a dismissal suppresses it too). Collapsible: the worklist can run
+          up to a dozen candidates. */}
       {newIntroCandidates.length > 0 ? (
-        <div className="mb-4 overflow-hidden rounded-md border border-gold-line bg-surface shadow-card">
-          <div className="border-b border-line bg-gold-bg/40 px-4 py-2.5">
-            <span className="text-[10px] font-medium tracking-[0.07em] text-gold-ink uppercase">
-              New intro opportunities
-            </span>
-            <span className="ml-2 text-[10px] text-gold-ink/70">
-              {newIntroCandidates.length} from recent meetings
-            </span>
-          </div>
-          <div className="divide-y divide-line">
-            {newIntroCandidates.map((c) => (
-              <div
-                key={`${c.companyAId}:${c.companyBId}`}
-                className="flex items-center justify-between gap-3 px-4 py-2.5"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-[11.5px] text-ink">
-                    {c.contactAName}{" "}
-                    <span className="text-ink-3">({c.companyAName})</span>{" "}
-                    <span className="text-ink-3">&#8596;</span> {c.contactBName}{" "}
-                    <span className="text-ink-3">({c.companyBName})</span>
-                  </div>
-                  <div className="truncate text-[10px] text-ink-3">
-                    Met at {c.meetingTitle} &middot; {relFmt.format(c.meetingDate)}
-                  </div>
-                </div>
-                <form action={createIntroduction} className="flex-shrink-0">
-                  <input
-                    type="hidden"
-                    name="partyAContactId"
-                    value={c.contactAId}
-                  />
-                  <input
-                    type="hidden"
-                    name="partyBContactId"
-                    value={c.contactBId}
-                  />
-                  <input type="hidden" name="status" value="suggested" />
-                  <input
-                    type="hidden"
-                    name="headline"
-                    value={`Met at ${c.meetingTitle}`}
-                  />
-                  <Button type="submit" variant="primary">
-                    Log intro
-                  </Button>
-                </form>
-              </div>
-            ))}
-          </div>
-        </div>
+        <NewIntroOpportunities
+          candidates={newIntroCandidates.map((c) => ({
+            companyAId: c.companyAId,
+            companyAName: c.companyAName,
+            contactAId: c.contactAId,
+            contactAName: c.contactAName,
+            companyBId: c.companyBId,
+            companyBName: c.companyBName,
+            contactBId: c.contactBId,
+            contactBName: c.contactBName,
+            meetingTitle: c.meetingTitle,
+            meetingLabel: relFmt.format(c.meetingDate),
+          }))}
+        />
       ) : null}
 
       {/* Urgent signals — meetings evidence an in-flight intro advanced; confirm
