@@ -132,9 +132,18 @@ function TeamItem({
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-3">
           {member.name && member.org ? <span>{member.org}</span> : null}
           {member.companyName ? (
-            <span className="rounded-full bg-gold-bg px-1.5 py-0.5 text-[9px] text-gold-ink">
-              {member.companyName}
-            </span>
+            member.companyId ? (
+              <Link
+                href={`/dashboard/companies/${member.companyId}`}
+                className="rounded-full bg-gold-bg px-1.5 py-0.5 text-[9px] text-gold-ink hover:underline"
+              >
+                {member.companyName}
+              </Link>
+            ) : (
+              <span className="rounded-full bg-gold-bg px-1.5 py-0.5 text-[9px] text-gold-ink">
+                {member.companyName}
+              </span>
+            )
           ) : null}
           {member.email ? (
             <a href={`mailto:${member.email}`} className="hover:text-gold">
