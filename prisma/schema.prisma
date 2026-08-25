@@ -966,18 +966,25 @@ model Event {
   /// the required org_id, same pattern as projectId.
   venueCompanyId String?  @map("venue_company_id") @db.Uuid
   venueContactId String?  @map("venue_contact_id") @db.Uuid
+  /// Optional "primary guest" — the guest (an EventInvitee on this event's own list)
+  /// that the event is built for / put on at the request of. Plain FK to
+  /// event_invitees.id (SetNull, re-checked inside withOrg on write to confirm the
+  /// invitee belongs to this event) — a composite FK would force SetNull to null the
+  /// required org_id, same pattern as projectId/venueCompanyId.
+  sponsorInviteeId String? @map("sponsor_invitee_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization  Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  project       Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  venueCompany  Company?          @relation("EventVenueCompany", fields: [venueCompanyId], references: [id], onDelete: SetNull)
-  venueContact  Contact?          @relation("EventVenueContact", fields: [venueContactId], references: [id], onDelete: SetNull)
-  invitees      EventInvitee[]
-  conversions   EventConversion[]
-  actionItems   ActionItem[]
-  introductions Introduction[]
+  organization   Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project        Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  venueCompany   Company?          @relation("EventVenueCompany", fields: [venueCompanyId], references: [id], onDelete: SetNull)
+  venueContact   Contact?          @relation("EventVenueContact", fields: [venueContactId], references: [id], onDelete: SetNull)
+  sponsorInvitee EventInvitee?     @relation("EventSponsor", fields: [sponsorInviteeId], references: [id], onDelete: SetNull)
+  invitees       EventInvitee[]    @relation("EventGuests")
+  conversions    EventConversion[]
+  actionItems    ActionItem[]
+  introductions  Introduction[]
 
   // Composite-FK target for event_invitees (id, org_id).
   @@unique([id, orgId])
@@ -986,6 +993,7 @@ model Event {
   @@index([projectId])
   @@index([venueCompanyId])
   @@index([venueContactId])
+  @@index([sponsorInviteeId])
   @@map("events")
 }
 
@@ -1021,8 +1029,10 @@ model EventInvitee {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   // Event is a required parent → composite FK keeps the invitee in the event's org.
-  event        Event        @relation(fields: [eventId, orgId], references: [id, orgId], onDelete: Cascade)
+  event        Event        @relation("EventGuests", fields: [eventId, orgId], references: [id, orgId], onDelete: Cascade)
   contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  // Events for which this invitee is the designated primary guest (SetNull on delete).
+  sponsoredEvents Event[]   @relation("EventSponsor")
 
   @@index([orgId])
   @@index([eventId])

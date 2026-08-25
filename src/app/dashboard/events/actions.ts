@@ -408,6 +408,42 @@ export async function removeInvitee(formData: FormData): Promise<void> {
   if (eventId) revalidatePath(`/dashboard/events/${eventId}`);
 }
 
+// Designate (or clear) the event's primary guest — the guest the event is built for.
+// An empty inviteeId clears it. Otherwise the invitee is re-checked inside withOrg
+// (RLS-scoped → null if foreign) AND confirmed to belong to THIS event, so a guest
+// from another event can never be set as the sponsor.
+export async function setEventSponsor(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const inviteeId = String(formData.get("inviteeId") ?? "").trim();
+  if (!eventId) throw new Error("event is required");
+
+  await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: { id: true },
+    });
+    if (!event) throw new Error("event not found");
+
+    if (inviteeId) {
+      const invitee = await tx.eventInvitee.findUnique({
+        where: { id: inviteeId },
+        select: { eventId: true },
+      });
+      if (!invitee || invitee.eventId !== eventId)
+        throw new Error("guest not found on this event");
+    }
+
+    await tx.event.update({
+      where: { id: eventId },
+      data: { sponsorInviteeId: inviteeId === "" ? null : inviteeId },
+    });
+  });
+
+  revalidatePath(`/dashboard/events/${eventId}`);
+}
+
 // Guest brief (slice 11.7, ported from the prototype's showGuestBriefModal). In ONE
 // withOrg tx (RLS-scoped to this tenant) it loads the event plus its attending
 // guests with their public-facing context, then the engine writes a short bio for

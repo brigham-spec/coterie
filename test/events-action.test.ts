@@ -38,6 +38,7 @@ const {
   addInvitee,
   updateInviteeRsvp,
   removeInvitee,
+  setEventSponsor,
   generateBrief,
   draftOutreach,
   markOutreachSent,
@@ -416,6 +417,44 @@ describe("event + guest-list actions", () => {
       venueCompanyId: null,
       venueContactId: null,
     });
+  });
+
+  test("designates a primary guest from the event's own guest list", async () => {
+    await createEvent(fd({ name: "Sponsored Event", type: "member_dinner" }));
+    const eventId = await findEventId("Sponsored Event");
+    await addInvitee(fd({ eventId, contactId: aliceId }));
+    const invitee = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, contactId: aliceId } }),
+    );
+
+    // A guest on this event can be set as the primary guest.
+    await setEventSponsor(fd({ eventId, inviteeId: invitee!.id }));
+    const sponsored = await withOrg(orgA.id, (tx) =>
+      tx.event.findUnique({ where: { id: eventId }, select: { sponsorInviteeId: true } }),
+    );
+    expect(sponsored?.sponsorInviteeId).toBe(invitee!.id);
+
+    // A guest belonging to a DIFFERENT event is refused.
+    await createEvent(fd({ name: "Other Event", type: "panel" }));
+    const otherEventId = await findEventId("Other Event");
+    await addInvitee(fd({ eventId: otherEventId, contactId: bobId }));
+    const otherInvitee = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId: otherEventId, contactId: bobId } }),
+    );
+    await expect(
+      setEventSponsor(fd({ eventId, inviteeId: otherInvitee!.id })),
+    ).rejects.toThrow();
+    // A bogus invitee id is refused.
+    await expect(
+      setEventSponsor(fd({ eventId, inviteeId: randomUUID() })),
+    ).rejects.toThrow();
+
+    // Clearing the primary guest is allowed.
+    await setEventSponsor(fd({ eventId, inviteeId: "" }));
+    const cleared = await withOrg(orgA.id, (tx) =>
+      tx.event.findUnique({ where: { id: eventId }, select: { sponsorInviteeId: true } }),
+    );
+    expect(cleared?.sponsorInviteeId).toBeNull();
   });
 
   test("marks only confirmed guests as attended", async () => {

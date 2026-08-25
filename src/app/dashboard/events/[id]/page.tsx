@@ -33,6 +33,7 @@ import {
   markAllAttended,
   removeConversion,
   removeInvitee,
+  setEventSponsor,
   updateEventCost,
   updateInviteeRsvp,
 } from "../actions";
@@ -164,6 +165,15 @@ export default async function EventDetailPage({
   );
   const invitable = contacts.filter((c) => !invitedContactIds.has(c.id));
 
+  // The event's primary guest (the guest/company the event is built for), if set.
+  const sponsor = event.invitees.find((i) => i.id === event.sponsorInviteeId) ?? null;
+  const sponsorName = sponsor
+    ? (sponsor.contact?.name ?? sponsor.externalName ?? "Guest")
+    : null;
+  const sponsorOrg = sponsor
+    ? (sponsor.contact?.company?.name ?? sponsor.externalOrg ?? null)
+    : null;
+
   // Network guests already on the list — the pool the outreach draft can write to
   // (external guests have no profile to ground a personal invitation in). Each
   // carries its persisted outreach stage + last draft so the panel seeds from it.
@@ -264,6 +274,16 @@ export default async function EventDetailPage({
             ) : undefined
           }
         />
+        {sponsorName ? (
+          <p className="border-b border-line-2 bg-gold-bg/40 px-4 py-2 text-[11px] text-ink-2">
+            <span className="font-medium text-gold uppercase tracking-[0.06em] text-[10px]">
+              Primary guest
+            </span>{" "}
+            <span className="font-medium">{sponsorName}</span>
+            {sponsorOrg ? <span className="text-ink-3"> · {sponsorOrg}</span> : null}
+            <span className="ml-1 text-ink-3">— the event is built for this guest.</span>
+          </p>
+        ) : null}
         {event.invitees.length === 0 ? (
           <p className="px-4 py-6 text-xs text-ink-3">No guests invited yet.</p>
         ) : (
@@ -274,6 +294,7 @@ export default async function EventDetailPage({
                 <Th>Organization</Th>
                 <Th>RSVP</Th>
                 <Th>Update</Th>
+                <Th>Primary</Th>
                 <Th> </Th>
               </>
             }
@@ -322,6 +343,32 @@ export default async function EventDetailPage({
                       </select>
                       <Button type="submit">Save</Button>
                     </form>
+                  </Td>
+                  <Td>
+                    {i.id === event.sponsorInviteeId ? (
+                      <form action={setEventSponsor} className="flex items-center gap-2">
+                        <input type="hidden" name="eventId" value={event.id} />
+                        <input type="hidden" name="inviteeId" value="" />
+                        <TagBadge label="Primary" tone="gold" />
+                        <button
+                          type="submit"
+                          className="text-[11px] text-ink-3 hover:text-red-ink"
+                        >
+                          Clear
+                        </button>
+                      </form>
+                    ) : (
+                      <form action={setEventSponsor}>
+                        <input type="hidden" name="eventId" value={event.id} />
+                        <input type="hidden" name="inviteeId" value={i.id} />
+                        <button
+                          type="submit"
+                          className="text-[11px] text-ink-3 hover:text-gold"
+                        >
+                          Make primary
+                        </button>
+                      </form>
+                    )}
                   </Td>
                   <Td>
                     <form action={removeInvitee}>
