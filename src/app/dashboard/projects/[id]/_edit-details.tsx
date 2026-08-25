@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 
 import { AddDisclosure, Button, Field, SelectField } from "@/components/ui";
+import { PROJECT_INDUSTRIES } from "@/lib/project-industries";
 
 import { updateProjectDetails, type UpdateDetailsState } from "../actions";
 
@@ -75,8 +76,14 @@ export function EditDetails({
           name="industry"
           label="Industry"
           defaultValue={project.industry ?? ""}
-          placeholder="Hospitality"
+          placeholder="Multifamily"
+          list="project-industries"
         />
+        <datalist id="project-industries">
+          {PROJECT_INDUSTRIES.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
         <Field
           name="county"
           label="County"

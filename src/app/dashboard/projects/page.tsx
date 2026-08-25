@@ -9,6 +9,7 @@ import {
   stageRank,
 } from "@/lib/project-stages";
 import { impactIsEmpty, parseEconomicImpact } from "@/lib/value-created";
+import { PROJECT_INDUSTRIES } from "@/lib/project-industries";
 import { parseHvServices } from "@/lib/hv-services";
 import {
   AddDisclosure,
@@ -181,7 +182,17 @@ export default async function ProjectsPage({
               ))}
             </SelectField>
             <Field name="type" label="Type" placeholder="Mixed-use" />
-            <Field name="industry" label="Industry" placeholder="Hospitality" />
+            <Field
+              name="industry"
+              label="Industry"
+              placeholder="Multifamily"
+              list="project-industries"
+            />
+            <datalist id="project-industries">
+              {PROJECT_INDUSTRIES.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
             <Field name="county" label="County" placeholder="Dutchess" />
             <Field
               name="units"
