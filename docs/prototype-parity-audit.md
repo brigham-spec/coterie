@@ -34,7 +34,7 @@ notes + follow-ups + intros-at-event). No open Events work remains.
 | 7 | Outreach → Find Targets | Scans network for non-invited members connected to current guests via 4 edge types (intro history, intro obligation, shared project, referral), strength-ranked; +Add/Dismiss; stores connection chain. (~L8470–8560) | DONE (`findEventTargets` + `_find-targets.tsx`, `lib/event-targets`) | No | M |
 | 8 | Outreach → Draft All + send tracking | Batch-draft invite emails for every guest; per-guest status none/draft/sent; refinement chips (Shorter/Event first/Connection first/Direct/Fresh take); Redraft/Copy/Mark Sent. (~L8570+) | DONE (`draftOutreach`/`markOutreachSent` + `_outreach.tsx`; invitee.outreachStatus/outreachDraft) | **Yes** (shipped) | L |
 | 9 | Mark All Confirmed → Attended | Bulk RSVP transition. (~L8239) | DONE (`markAllAttended`) | No | S |
-| 10 | Link to Project | `projectId` field on event create/detail. | DONE (`linkEventProject`; projectId on create) | **Yes** (shipped) | S |
+| 10 | Link to Project | `projectId` field on event create/detail. | DONE (`updateEventDetails`; projectId on create) | **Yes** (shipped) | S |
 | 11 | List stats + "Never invited" roster | 5 metrics (adds New members, Net ROI) + never-invited member chips. | DONE (5 metrics + never-invited roster, `events/page.tsx`) | Derived | S |
 | 12 | External guest fields | Prototype captures external name/org/**email/title**. | DONE (externalEmail/externalTitle on `EventInvitee`) | **Yes** (shipped) | S |
 

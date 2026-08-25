@@ -44,7 +44,8 @@ export default async function ContactDetailPage({
 
   // Reads share one pooled connection inside the tx, so run them in sequence —
   // concurrent queries on a single pg client serialize and can stall the load.
-  const { contact, introductions, meetings, actionItems } = await withOrg(
+  const { contact, introductions, meetings, actionItems, venueEvents } =
+    await withOrg(
     ctx.orgId,
     async (tx) => {
       const contact = await tx.contact.findUnique({
@@ -95,7 +96,20 @@ export default async function ContactDetailPage({
         orderBy: { createdAt: "desc" },
         select: { id: true, text: true, status: true, dueDate: true },
       });
-      return { contact, introductions, meetings, actionItems };
+      // Events this contact provided the venue for — a "value add" they give the
+      // network. Read-only here; the link is set on the event's Details card.
+      const venueEvents = await tx.event.findMany({
+        where: { venueContactId: id },
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+        select: {
+          id: true,
+          name: true,
+          date: true,
+          venue: true,
+          venueCompany: { select: { id: true, name: true } },
+        },
+      });
+      return { contact, introductions, meetings, actionItems, venueEvents };
     },
   );
 
@@ -262,6 +276,41 @@ export default async function ContactDetailPage({
           </Table>
         )}
       </Card>
+
+      {venueEvents.length > 0 ? (
+        <Card>
+          <CardHeader title="Venue provided for us" />
+          <Table
+            head={
+              <>
+                <Th>Event</Th>
+                <Th>Venue</Th>
+                <Th>Date</Th>
+              </>
+            }
+          >
+            {venueEvents.map((ev) => (
+              <Tr key={ev.id}>
+                <Td className="font-medium">
+                  <Link
+                    href={`/dashboard/events/${ev.id}`}
+                    className="hover:text-gold"
+                  >
+                    {ev.name}
+                  </Link>
+                </Td>
+                <Td>
+                  {ev.venue || "—"}
+                  {ev.venueCompany ? (
+                    <span className="text-ink-3"> · {ev.venueCompany.name}</span>
+                  ) : null}
+                </Td>
+                <Td>{ev.date ? dateFmt.format(ev.date) : "—"}</Td>
+              </Tr>
+            ))}
+          </Table>
+        </Card>
+      ) : null}
     </div>
   );
 }

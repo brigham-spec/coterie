@@ -224,6 +224,7 @@ model Company {
   dismissalsAsCandidate IntroDismissal[]     @relation("IntroDismissalCandidate")
   introSuggestionCaches IntroSuggestionCache[]
   eventConversions      EventConversion[]
+  venueEvents           Event[]              @relation("EventVenueCompany")
   timelineNotes         Note[]
   referredBy            Company?             @relation("CompanyReferral", fields: [referredById], references: [id], onDelete: SetNull)
   referrals             Company[]            @relation("CompanyReferral")
@@ -271,6 +272,7 @@ model Contact {
   meetingAttendees MeetingAttendee[]
   ownedActionItems ActionItem[]      @relation("ActionItemOwnerContact")
   eventInvitees    EventInvitee[]
+  venueEvents      Event[]           @relation("EventVenueContact")
   /// The LinkedIn-tier row this contact was promoted from, if any.
   linkedinSource   LinkedinContact?  @relation("LinkedinPromotion")
 
@@ -957,12 +959,21 @@ model Event {
   /// (a composite FK would force SetNull to null the required org_id) —
   /// app-layer re-checked inside withOrg on write, like introductions.projectId.
   projectId   String?   @map("project_id") @db.Uuid
+  /// Optional venue attribution — the member company that owns/provided the venue
+  /// and/or the contact who arranged it. Tracked as a "value add" surfaced on that
+  /// company's/contact's profile. Plain FKs to companies.id / contacts.id (SetNull,
+  /// re-checked inside withOrg on write) — a composite FK would force SetNull to null
+  /// the required org_id, same pattern as projectId.
+  venueCompanyId String?  @map("venue_company_id") @db.Uuid
+  venueContactId String?  @map("venue_contact_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization  Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project       Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  venueCompany  Company?          @relation("EventVenueCompany", fields: [venueCompanyId], references: [id], onDelete: SetNull)
+  venueContact  Contact?          @relation("EventVenueContact", fields: [venueContactId], references: [id], onDelete: SetNull)
   invitees      EventInvitee[]
   conversions   EventConversion[]
   actionItems   ActionItem[]
@@ -973,6 +984,8 @@ model Event {
   @@index([orgId])
   @@index([orgId, date(sort: Desc)])
   @@index([projectId])
+  @@index([venueCompanyId])
+  @@index([venueContactId])
   @@map("events")
 }
 

@@ -25,7 +25,7 @@ const { createProject, updateStage } = await import(
 const { createIntroduction } = await import(
   "@/app/dashboard/introductions/actions"
 );
-const { createEvent, updateEventStage, updateInviteeRsvp } = await import(
+const { createEvent, updateEventDetails, updateInviteeRsvp } = await import(
   "@/app/dashboard/events/actions"
 );
 
@@ -78,9 +78,11 @@ describe("write-boundary enum validation", () => {
     expect(withOrgSpy).not.toHaveBeenCalled();
   });
 
-  test("updateEventStage rejects an invalid stage", async () => {
+  test("updateEventDetails rejects an invalid stage", async () => {
     await expect(
-      updateEventStage(fd({ eventId: "e", stage: "mystery" })),
+      updateEventDetails(
+        fd({ eventId: "e", name: "Dinner", type: "member_dinner", stage: "mystery" }),
+      ),
     ).rejects.toThrow(/invalid event stage/);
     expect(withOrgSpy).not.toHaveBeenCalled();
   });

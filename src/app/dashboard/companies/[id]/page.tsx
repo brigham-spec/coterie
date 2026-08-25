@@ -14,6 +14,7 @@ import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { RSVP_CONFIRMED, RSVP_ATTENDED } from "@/lib/event-stages";
 import { deriveValueEntries } from "@/lib/value-delivered";
 import { PageTitle, TagBadge } from "@/components/ui";
+import { CollapsibleCard } from "@/components/collapsible-card";
 
 import { CompanyBrief } from "./_brief";
 import { MeetingPrep } from "./_meeting-prep";
@@ -50,6 +51,12 @@ import { ProjectsCard } from "./_projects-card";
 // run an opus pass; give them headroom past Vercel's short default so they can
 // finish instead of timing out.
 export const maxDuration = 60;
+
+const venueDateFmt = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
 
 export default async function CompanyDetailPage({
   params,
@@ -94,6 +101,7 @@ export default async function CompanyDetailPage({
     valueDelivered,
     notes,
     eventsAttended,
+    venueEvents,
     teamMemberships,
     linkOptions,
     referralOptions,
@@ -135,6 +143,7 @@ export default async function CompanyDetailPage({
           valueDelivered: [],
           notes: [],
           eventsAttended: [],
+          venueEvents: [],
           teamMemberships: [],
           linkOptions: [],
           referralOptions: [],
@@ -399,6 +408,20 @@ export default async function CompanyDetailPage({
             },
           })
         : [];
+      // Events hosted at this company's venue (they own/provided the location) —
+      // a "value add" this member gives the network. Read-only here; the link is
+      // set on the event's Details card.
+      const venueEvents = await tx.event.findMany({
+        where: { venueCompanyId: id },
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+        select: {
+          id: true,
+          name: true,
+          date: true,
+          venue: true,
+          venueContact: { select: { id: true, name: true } },
+        },
+      });
       // Projects this company is staffed on as a professional-team firm (the
       // team member's optional company link points here). Being on the team
       // is realized network value just like a formal participant link, so these
@@ -428,6 +451,7 @@ export default async function CompanyDetailPage({
         valueDelivered,
         notes,
         eventsAttended: eventInvites,
+        venueEvents,
         teamMemberships,
         linkOptions,
         referralOptions,
@@ -883,6 +907,34 @@ export default async function CompanyDetailPage({
           (p) => !company.projectLinks.some((l) => l.project.id === p.id),
         )}
       />
+
+      {venueEvents.length > 0 ? (
+        <CollapsibleCard id="company-venue-hosted" title="Venue hosted for us">
+          <ul className="divide-y divide-line">
+            {venueEvents.map((ev) => (
+              <li key={ev.id} className="px-4 py-3 text-xs">
+                <Link
+                  href={`/dashboard/events/${ev.id}`}
+                  className="font-medium text-ink hover:text-gold"
+                >
+                  {ev.name}
+                </Link>
+                <div className="mt-0.5 text-ink-3">
+                  {[
+                    ev.date == null ? null : venueDateFmt.format(ev.date),
+                    ev.venue,
+                    ev.venueContact == null
+                      ? null
+                      : `arranged by ${ev.venueContact.name}`,
+                  ]
+                    .filter((v): v is string => v != null && v !== "")
+                    .join(" · ")}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </CollapsibleCard>
+      ) : null}
 
       <MeetingsCard
         companyId={company.id}

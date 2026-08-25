@@ -105,38 +105,6 @@ export async function createEvent(formData: FormData): Promise<void> {
   revalidatePath("/dashboard/events");
 }
 
-// Link an event to a project (or clear the link). projectId is a plain FK, so it's
-// re-checked inside withOrg (RLS-scoped → null if foreign) exactly like createEvent.
-export async function linkEventProject(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
-
-  const eventId = String(formData.get("eventId") ?? "").trim();
-  const projectId = String(formData.get("projectId") ?? "").trim();
-  if (!eventId) throw new Error("event is required");
-
-  await withOrg(orgId, async (tx) => {
-    const event = await tx.event.findUnique({
-      where: { id: eventId },
-      select: { id: true },
-    });
-    if (!event) throw new Error("event not found");
-    if (projectId) {
-      const project = await tx.project.findUnique({
-        where: { id: projectId },
-        select: { id: true },
-      });
-      if (!project) throw new Error("project not found");
-    }
-    await tx.event.update({
-      where: { id: eventId },
-      data: { projectId: projectId === "" ? null : projectId },
-    });
-  });
-
-  revalidatePath("/dashboard/events");
-  revalidatePath(`/dashboard/events/${eventId}`);
-}
-
 // Set an event's cost (drives Projected ROI). The findUnique is withOrg-scoped, so a
 // foreign eventId resolves to null and is refused.
 export async function updateEventCost(formData: FormData): Promise<void> {
@@ -164,6 +132,103 @@ export async function updateEventCost(formData: FormData): Promise<void> {
 
   revalidatePath("/dashboard/events");
   revalidatePath(`/dashboard/events/${eventId}`);
+}
+
+// Edit an event's core details after creation (mirrors the createEvent fields plus
+// the optional venue attribution). projectId/venueCompanyId/venueContactId are plain
+// FKs, each re-checked inside withOrg (RLS-scoped → null if foreign) so an event can
+// never link to another tenant's project/company/contact.
+export async function updateEventDetails(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const type = String(formData.get("type") ?? "").trim();
+  const stage = String(formData.get("stage") ?? "").trim();
+  const date = optionalDate(formData, "date");
+  const venue = String(formData.get("venue") ?? "").trim();
+  const theme = String(formData.get("theme") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const capacityRaw = String(formData.get("capacity") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  const venueCompanyId = String(formData.get("venueCompanyId") ?? "").trim();
+  const venueContactId = String(formData.get("venueContactId") ?? "").trim();
+
+  if (!eventId) throw new Error("event is required");
+  if (!name || !type) throw new Error("name and type are required");
+  if (!isEventType(type)) throw new Error("invalid event type");
+  if (stage !== "" && !isEventStage(stage))
+    throw new Error("invalid event stage");
+  if (capacityRaw !== "" && !Number.isInteger(Number(capacityRaw)))
+    throw new Error("capacity must be a whole number");
+
+  const prevVenue = await withOrg(orgId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      select: { id: true, venueCompanyId: true, venueContactId: true },
+    });
+    if (!event) throw new Error("event not found");
+    if (projectId) {
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { id: true },
+      });
+      if (!project) throw new Error("project not found");
+    }
+    if (venueCompanyId) {
+      const company = await tx.company.findUnique({
+        where: { id: venueCompanyId },
+        select: { id: true },
+      });
+      if (!company) throw new Error("venue company not found");
+    }
+    if (venueContactId) {
+      const contact = await tx.contact.findUnique({
+        where: { id: venueContactId },
+        select: { id: true },
+      });
+      if (!contact) throw new Error("venue contact not found");
+    }
+    await tx.event.update({
+      where: { id: eventId },
+      data: {
+        name,
+        type,
+        stage: stage === "" ? "planning" : stage,
+        date,
+        venue: venue === "" ? null : venue,
+        theme: theme === "" ? null : theme,
+        description,
+        capacity: capacityRaw === "" ? null : Number(capacityRaw),
+        projectId: projectId === "" ? null : projectId,
+        venueCompanyId: venueCompanyId === "" ? null : venueCompanyId,
+        venueContactId: venueContactId === "" ? null : venueContactId,
+      },
+    });
+    return {
+      companyId: event.venueCompanyId,
+      contactId: event.venueContactId,
+    };
+  });
+
+  revalidatePath("/dashboard/events");
+  revalidatePath(`/dashboard/events/${eventId}`);
+  // The venue attribution surfaces on the linked company/contact profile — refresh
+  // both the newly-linked profile and any prior one that was reassigned or cleared.
+  for (const companyId of new Set(
+    [prevVenue.companyId, venueCompanyId === "" ? null : venueCompanyId].filter(
+      (v): v is string => v != null,
+    ),
+  )) {
+    revalidatePath(`/dashboard/companies/${companyId}`);
+  }
+  for (const contactId of new Set(
+    [prevVenue.contactId, venueContactId === "" ? null : venueContactId].filter(
+      (v): v is string => v != null,
+    ),
+  )) {
+    revalidatePath(`/dashboard/contacts/${contactId}`);
+  }
 }
 
 // Bulk RSVP transition after an event: every guest who confirmed is marked attended
@@ -252,30 +317,6 @@ export async function removeConversion(formData: FormData): Promise<void> {
 
   revalidatePath("/dashboard/events");
   if (eventId) revalidatePath(`/dashboard/events/${eventId}`);
-}
-
-// Advance (or correct) an event's stage. The findUnique runs inside withOrg
-// (RLS-scoped), so a foreign eventId resolves to null and is refused; the update is
-// likewise scoped, needing no separate ownership re-check.
-export async function updateEventStage(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
-
-  const eventId = String(formData.get("eventId") ?? "").trim();
-  const stage = String(formData.get("stage") ?? "").trim();
-  if (!eventId || !stage) throw new Error("event and stage are required");
-  if (!isEventStage(stage)) throw new Error("invalid event stage");
-
-  await withOrg(orgId, async (tx) => {
-    const event = await tx.event.findUnique({
-      where: { id: eventId },
-      select: { id: true },
-    });
-    if (!event) throw new Error("event not found");
-    await tx.event.update({ where: { id: eventId }, data: { stage } });
-  });
-
-  revalidatePath("/dashboard/events");
-  revalidatePath(`/dashboard/events/${eventId}`);
 }
 
 // Add a guest to an event — either a network contact (contactId) or an external guest

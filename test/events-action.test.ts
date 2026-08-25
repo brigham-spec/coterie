@@ -42,7 +42,7 @@ const {
   draftOutreach,
   markOutreachSent,
   findEventTargets,
-  linkEventProject,
+  updateEventDetails,
   updateEventCost,
   markAllAttended,
   addConversion,
@@ -350,7 +350,7 @@ describe("event + guest-list actions", () => {
     expect(invitee?.externalTitle).toBe("Managing Partner");
   });
 
-  test("links an event to a project, refusing a foreign one", async () => {
+  test("edits details, links a project + venue, refusing foreign refs", async () => {
     await createEvent(
       fd({ name: "Linked Event", type: "site_visit", projectId: projectAId }),
     );
@@ -360,16 +360,62 @@ describe("event + guest-list actions", () => {
     );
     expect(linked?.projectId).toBe(projectAId);
 
+    // Edit core details plus the venue attribution (member company + the contact who
+    // arranged it), both in-tenant.
+    await updateEventDetails(
+      fd({
+        eventId,
+        name: "Linked Event",
+        type: "site_visit",
+        stage: "confirmed",
+        venueCompanyId: companyAId,
+        venueContactId: aliceId,
+      }),
+    );
+    const saved = await withOrg(orgA.id, (tx) =>
+      tx.event.findUnique({
+        where: { id: eventId },
+        select: { stage: true, venueCompanyId: true, venueContactId: true },
+      }),
+    );
+    expect(saved).toMatchObject({
+      stage: "confirmed",
+      venueCompanyId: companyAId,
+      venueContactId: aliceId,
+    });
+
     // orgB's project is invisible to orgA (RLS-scoped re-check) → refused.
     await expect(
-      linkEventProject(fd({ eventId, projectId: projectBId })),
+      updateEventDetails(
+        fd({ eventId, name: "Linked Event", type: "site_visit", projectId: projectBId }),
+      ),
     ).rejects.toThrow();
-    // Clearing the link is allowed.
-    await linkEventProject(fd({ eventId, projectId: "" }));
+    // A foreign venue contact is refused the same way.
+    await expect(
+      updateEventDetails(
+        fd({ eventId, name: "Linked Event", type: "site_visit", venueContactId: bContactId }),
+      ),
+    ).rejects.toThrow();
+    // An invalid stage is rejected before any write.
+    await expect(
+      updateEventDetails(
+        fd({ eventId, name: "Linked Event", type: "site_visit", stage: "mystery" }),
+      ),
+    ).rejects.toThrow();
+
+    // Clearing the project + venue links is allowed.
+    await updateEventDetails(fd({ eventId, name: "Linked Event", type: "site_visit" }));
     const cleared = await withOrg(orgA.id, (tx) =>
-      tx.event.findUnique({ where: { id: eventId }, select: { projectId: true } }),
+      tx.event.findUnique({
+        where: { id: eventId },
+        select: { projectId: true, venueCompanyId: true, venueContactId: true },
+      }),
     );
-    expect(cleared?.projectId).toBeNull();
+    expect(cleared).toEqual({
+      projectId: null,
+      venueCompanyId: null,
+      venueContactId: null,
+    });
   });
 
   test("marks only confirmed guests as attended", async () => {
