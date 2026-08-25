@@ -1,5 +1,7 @@
 import "server-only";
 
+import * as Sentry from "@sentry/nextjs";
+
 import {
   generateActionItems,
   ownerColumns,
@@ -65,12 +67,14 @@ export async function autoExtractActionItems(
       // Over the org's AI cap: stop here rather than burning retries — the
       // remaining meetings are left for manual extraction.
       if (err instanceof AiRateLimitError) break;
-      // Any other model/parse failure: skip this meeting, keep going. Log it so
-      // a systematic extraction problem is visible rather than silently dropped.
-      console.error(
-        `auto-extract failed for meeting ${meetingId}:`,
-        err,
-      );
+      // Any other model/parse failure: skip this meeting, keep going. Forward it
+      // to Sentry (which emails) so a systematic extraction problem reaches the
+      // operator rather than dying in a log no one reads.
+      console.error(`auto-extract failed for meeting ${meetingId}:`, err);
+      Sentry.captureException(err, {
+        tags: { source: "auto-action-items" },
+        extra: { orgId, meetingId },
+      });
       continue;
     }
 

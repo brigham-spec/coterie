@@ -98,9 +98,14 @@ export const syncFireflies = inngest.createFunction(
       actionItems = await autoExtractActionItems(orgId, result.createdMeetingIds);
     } catch (err) {
       // Swallow — a successful sync should never be undone by extraction. The
-      // manual "Extract" button remains available for these meetings. Log it so
-      // a persistent extraction failure isn't silently invisible.
+      // manual "Extract" button remains available for these meetings. Forward it
+      // to Sentry (which emails) so a persistent extraction failure reaches the
+      // operator instead of staying invisible in a log.
       console.error("auto-extract action items failed after sync:", err);
+      Sentry.captureException(err, {
+        tags: { source: "fireflies-sync-extract" },
+        extra: { orgId },
+      });
     }
 
     return { ...result, actionItems };
