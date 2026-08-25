@@ -413,7 +413,14 @@ export default async function ProjectDetailPage({
           >
             {project.projectLinks.map((l) => (
               <Tr key={l.companyId}>
-                <Td className="font-medium">{l.company.name}</Td>
+                <Td className="font-medium">
+                  <Link
+                    href={`/dashboard/companies/${l.companyId}`}
+                    className="hover:text-gold hover:underline"
+                  >
+                    {l.company.name}
+                  </Link>
+                </Td>
                 <Td>{projectLinkRoleLabel(l.role)}</Td>
                 <Td>
                   <StatusBadge status={l.company.status} />
