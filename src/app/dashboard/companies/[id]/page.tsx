@@ -150,7 +150,7 @@ export default async function CompanyDetailPage({
       const referralOptions = await tx.company.findMany({
         where: { id: { not: id } },
         orderBy: { name: "asc" },
-        select: { id: true, name: true, status: true },
+        select: { id: true, name: true, status: true, industry: true },
       });
       const linkOptions =
         company.status === "strategic_partner"
@@ -472,6 +472,17 @@ export default async function CompanyDetailPage({
     })),
   }));
 
+  // Industry suggestions for the edit form's datalist — the distinct industries
+  // already used across the org (incl. this company's), so an edit reuses an
+  // existing label instead of introducing a typo'd variant.
+  const industries = [
+    ...new Set(
+      [company.industry, ...referralOptions.map((c) => c.industry)].filter(
+        (v): v is string => v.trim() !== "",
+      ),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+
   // Cross-attribution owner pool for meeting action items (all network contacts,
   // labelled by company); each meeting card filters out its own attendees.
   const networkOptions = networkContacts.map((c) => ({
@@ -722,6 +733,7 @@ export default async function CompanyDetailPage({
         staff={staff}
         tierDefs={tierDefs}
         referralOptions={referralOptions}
+        industries={industries}
       />
 
       {company.status === "prospect" ? (

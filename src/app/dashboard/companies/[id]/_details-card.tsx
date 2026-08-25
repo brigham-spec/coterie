@@ -62,11 +62,13 @@ export function DetailsCard({
   staff,
   tierDefs,
   referralOptions,
+  industries,
 }: {
   company: DetailsCompany;
   staff: StaffOption[];
   tierDefs: MemberTier[];
   referralOptions: ReferralOption[];
+  industries: string[];
 }) {
   const [editing, setEditing] = useState(false);
 
@@ -77,6 +79,7 @@ export function DetailsCard({
         staff={staff}
         tierDefs={tierDefs}
         referralOptions={referralOptions}
+        industries={industries}
         onDone={() => setEditing(false)}
       />
     );
@@ -271,12 +274,14 @@ function EditForm({
   staff,
   tierDefs,
   referralOptions,
+  industries,
   onDone,
 }: {
   company: DetailsCompany;
   staff: StaffOption[];
   tierDefs: MemberTier[];
   referralOptions: ReferralOption[];
+  industries: string[];
   onDone: () => void;
 }) {
   const tagSet = new Set(company.networkTags);
@@ -329,8 +334,14 @@ function EditForm({
             name="industry"
             label="Industry"
             defaultValue={company.industry}
+            list="company-industries"
             required
           />
+          <datalist id="company-industries">
+            {industries.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
           <div>
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase">

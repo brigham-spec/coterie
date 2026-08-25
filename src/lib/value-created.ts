@@ -181,6 +181,10 @@ export type ValueProject = {
   memberNames: string[];
   stageHistory: string[];
   economicImpact: EconomicImpact;
+  // Sum of this project's active HVEDC-service fees (project hv_services). Earned
+  // service revenue, distinct from a company's IDA/capital serviceFee — both flow
+  // into serviceFeeRevenue below.
+  serviceFees: number;
 };
 
 export type ValueCompany = {
@@ -242,11 +246,16 @@ export function computeValueSummary(
     .filter((p) => isActiveStage(p.stage))
     .reduce((sum, p) => sum + facilitatedValue(p), 0);
 
-  const serviceFeeRevenue = companies.reduce((sum, c) => {
+  const companyServiceFees = companies.reduce((sum, c) => {
     const ida = c.services.ida?.serviceFee ?? 0;
     const capital = c.services.capital?.serviceFee ?? 0;
     return sum + ida + capital;
   }, 0);
+  // Project-level HVEDC-service fees (IDA navigation, capital sourcing, etc.)
+  // are earned revenue too — fold them in so a project with active services no
+  // longer reads as $0.
+  const projectServiceFees = projects.reduce((sum, p) => sum + p.serviceFees, 0);
+  const serviceFeeRevenue = companyServiceFees + projectServiceFees;
 
   const totalArr = companies.reduce((sum, c) => sum + c.annualValue, 0);
 

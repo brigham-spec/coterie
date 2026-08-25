@@ -18,7 +18,13 @@ import { createCompany } from "./actions";
 // inline warning, and lets a second submit through. The check runs against the
 // companies list already loaded by the page, so there's no extra round-trip.
 
-export function AddCompanyForm({ existing }: { existing: ExistingCompany[] }) {
+export function AddCompanyForm({
+  existing,
+  industries,
+}: {
+  existing: ExistingCompany[];
+  industries: string[];
+}) {
   const [duplicate, setDuplicate] = useState<ExistingCompany | null>(null);
   // The normalized name we've already warned about; a matching second submit is
   // allowed through. Re-typing a different name re-arms the warning.
@@ -67,8 +73,14 @@ export function AddCompanyForm({ existing }: { existing: ExistingCompany[] }) {
         name="industry"
         label="Industry"
         placeholder="Manufacturing"
+        list="company-industries"
         required
       />
+      <datalist id="company-industries">
+        {industries.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
       <Field
         name="annualValue"
         label="Annual value (USD)"

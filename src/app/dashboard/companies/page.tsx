@@ -273,6 +273,7 @@ export default async function CompaniesPage({
         <AddDisclosure label="+ Add a company">
           <AddCompanyForm
             existing={companies.map((c) => ({ id: c.id, name: c.name }))}
+            industries={industries.map((i) => i.name)}
           />
         </AddDisclosure>
       </Card>

@@ -67,6 +67,12 @@ export async function reconcileTranscripts(
     staffRows.map((r) => [normalizeEmail(r.user.email), r.user.id]),
   );
 
+  // Resolve a matched contact back to its company so a synced meeting freshens
+  // that company's last-contact clock (powers the dashboard "Needs a Call").
+  const companyByContactId = new Map(
+    contacts.map((c) => [c.id, c.companyId]),
+  );
+
   let meetings = 0;
   let attendees = 0;
   let newConnections = 0;
@@ -110,6 +116,10 @@ export async function reconcileTranscripts(
     if (meeting.createdAt.getTime() === meeting.updatedAt.getTime())
       createdMeetingIds.push(meeting.id);
     meetings++;
+
+    // Companies whose contacts attended this meeting — their last-contact clock
+    // is advanced to heldAt after the attendee loop (forward-only).
+    const touchedCompanyIds = new Set<string>();
 
     for (const attendee of transcript.meeting_attendees ?? []) {
       // Our own staff: record who was on the call (scopes the dashboard's New
@@ -218,8 +228,24 @@ export async function reconcileTranscripts(
           update: {},
         }),
       );
+      const touchedCompanyId = companyByContactId.get(match.contactId);
+      if (touchedCompanyId != null) touchedCompanyIds.add(touchedCompanyId);
       attendees++;
     }
+
+    // Advance the last-contact clock for every company seen on this meeting.
+    // Forward-only: an older backfilled transcript must not roll a company's
+    // clock backwards past a more recent touch.
+    if (touchedCompanyIds.size > 0)
+      await withOrg(orgId, (tx) =>
+        tx.company.updateMany({
+          where: {
+            id: { in: [...touchedCompanyIds] },
+            OR: [{ lastContactAt: null }, { lastContactAt: { lt: heldAt } }],
+          },
+          data: { lastContactAt: heldAt },
+        }),
+      );
   }
 
   return { meetings, attendees, newConnections, createdMeetingIds };

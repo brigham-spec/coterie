@@ -4,6 +4,7 @@ import { requireOrgContext } from "@/lib/auth";
 import { requireModule } from "@/lib/org-modules";
 import { withOrg } from "@/lib/tenant";
 import { getStageDef } from "@/lib/project-stages";
+import { parseHvServices, sumActiveServiceFees } from "@/lib/hv-services";
 import {
   computeValueSummary,
   facilitatedValue,
@@ -46,8 +47,8 @@ function loadValueData(orgId: string) {
     const projects = await tx.project.findMany({
       orderBy: { name: "asc" },
       // Only the columns the rollup reads — economic_impact feeds the impact
-      // tiles; hv_services is not consumed here (service-fee revenue comes from
-      // company `services`), so it's left out.
+      // tiles; hv_services feeds project-level service-fee revenue (alongside
+      // company `services`).
       select: {
         id: true,
         name: true,
@@ -58,6 +59,7 @@ function loadValueData(orgId: string) {
         realizedValue: true,
         stageHistory: true,
         economicImpact: true,
+        hvServices: true,
         projectLinks: { include: { company: { select: { name: true } } } },
       },
     });
@@ -107,6 +109,7 @@ export default async function ValueCreatedPage() {
     memberNames: p.projectLinks.map((l) => l.company.name),
     stageHistory: stageHistoryStages(p.stageHistory),
     economicImpact: parseEconomicImpact(p.economicImpact),
+    serviceFees: sumActiveServiceFees(parseHvServices(p.hvServices)),
   }));
 
   const valueCompanies: ValueCompany[] = companies.map((c) => ({
@@ -149,7 +152,7 @@ export default async function ValueCreatedPage() {
         <Metric
           label="Service fee revenue"
           value={money(s.serviceFeeRevenue)}
-          note="IDA + capital placement"
+          note="company + project services"
         />
         <Metric
           label="Network multiplier"

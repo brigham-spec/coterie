@@ -148,6 +148,58 @@ describe("reconcileTranscripts staff attribution", () => {
     expect(count).toBe(2);
   });
 
+  test("advances the matched contact's company last-contact clock, forward-only", async () => {
+    const companyId = randomUUID();
+    const contactId = randomUUID();
+    const contactEmail = `cora_${randomUUID()}@acme.example`;
+    await withOrg(orgA.id, async (tx) => {
+      await tx.company.create({
+        data: {
+          id: companyId,
+          orgId: orgA.id,
+          name: "Cold Co",
+          status: "member",
+          industry: "Manufacturing",
+          annualValue: 1000,
+          emailDomain: "acme.example",
+        },
+      });
+      await tx.contact.create({
+        data: {
+          id: contactId,
+          orgId: orgA.id,
+          companyId,
+          name: "Cora Cold",
+          email: contactEmail,
+        },
+      });
+    });
+
+    // A recent meeting freshens the clock from null to heldAt.
+    const recent = transcript({
+      date: Date.UTC(2026, 7, 10),
+      meeting_attendees: [{ displayName: "Cora Cold", email: contactEmail, name: null }],
+    });
+    await reconcileTranscripts(orgA.id, [recent]);
+
+    const afterRecent = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({ where: { id: companyId }, select: { lastContactAt: true } }),
+    );
+    expect(afterRecent?.lastContactAt?.getTime()).toBe(Date.UTC(2026, 7, 10));
+
+    // An older backfilled meeting must NOT roll the clock backwards.
+    const older = transcript({
+      date: Date.UTC(2026, 6, 1),
+      meeting_attendees: [{ displayName: "Cora Cold", email: contactEmail, name: null }],
+    });
+    await reconcileTranscripts(orgA.id, [older]);
+
+    const afterOlder = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({ where: { id: companyId }, select: { lastContactAt: true } }),
+    );
+    expect(afterOlder?.lastContactAt?.getTime()).toBe(Date.UTC(2026, 7, 10));
+  });
+
   test("another tenant's staff email is not attributed here (org-scoped match)", async () => {
     const t = transcript({
       title: "Cross-tenant probe",

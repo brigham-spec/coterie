@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { PROJECT_STAGES, TERMINAL_STAGES } from "@/lib/project-stages";
 import { buildStageTimeline } from "@/lib/stage-history";
 import { openRoles } from "@/lib/disciplines";
+import { normalizeEmail } from "@/lib/new-connections";
 import { parseImpactForm } from "@/lib/value-created";
 import { parseHvServices } from "@/lib/hv-services";
 import {
@@ -107,6 +108,21 @@ export default async function ProjectDetailPage({
       include: { company: { select: { name: true } } },
       orderBy: { createdAt: "asc" },
     });
+    // Resolve team members to real contacts by email so their name can link to a
+    // profile. Team-member rows store free-text email (no contactId); contact
+    // emails are stored lowercased, so match on the lowercased address.
+    const teamEmails = [
+      ...new Set(
+        teamMembers.map((m) => normalizeEmail(m.email)).filter((e) => e !== ""),
+      ),
+    ];
+    const teamContacts =
+      teamEmails.length === 0
+        ? []
+        : await tx.contact.findMany({
+            where: { email: { in: teamEmails } },
+            select: { id: true, email: true },
+          });
     // Funding sources & grants tracked on this project (RLS-scoped).
     const fundingSources = await tx.fundingSource.findMany({
       where: { projectId: id },
@@ -158,6 +174,7 @@ export default async function ProjectDetailPage({
       project,
       companies,
       teamMembers,
+      teamContacts,
       fundingSources,
       deliverables,
       projectContacts,
@@ -170,6 +187,7 @@ export default async function ProjectDetailPage({
     project,
     companies,
     teamMembers,
+    teamContacts,
     fundingSources,
     deliverables,
     projectContacts,
@@ -197,6 +215,10 @@ export default async function ProjectDetailPage({
     ownerId: d.ownerUserId ?? d.ownerContactId ?? "",
     ownerName: d.ownerUser?.name ?? d.ownerContact?.name ?? "Unassigned",
   }));
+  const contactIdByEmail = new Map<string, string>();
+  for (const c of teamContacts) {
+    if (c.email) contactIdByEmail.set(normalizeEmail(c.email), c.id);
+  }
   const teamRows: TeamMemberRow[] = teamMembers.map((m) => ({
     id: m.id,
     role: m.role,
@@ -205,6 +227,7 @@ export default async function ProjectDetailPage({
     email: m.email,
     companyId: m.companyId,
     companyName: m.company?.name ?? null,
+    contactId: contactIdByEmail.get(normalizeEmail(m.email)) ?? null,
   }));
   const fundingRows: FundingRow[] = fundingSources.map((f) => ({
     id: f.id,

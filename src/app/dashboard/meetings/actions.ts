@@ -185,7 +185,7 @@ export async function logManualMeeting(
     // here is refused rather than silently dropped.
     const contacts = await tx.contact.findMany({
       where: { id: { in: attendeeIds } },
-      select: { id: true },
+      select: { id: true, companyId: true },
     });
     if (contacts.length !== new Set(attendeeIds).size)
       return "An attendee is not a contact in this network.";
@@ -208,6 +208,18 @@ export async function logManualMeeting(
           })),
         },
       },
+    });
+
+    // Freshen the attendees' companies' last-contact clock (powers the
+    // dashboard "Needs a Call" card). Forward-only — a backdated meeting must
+    // never roll a company's clock backwards past a more recent touch.
+    const companyIds = [...new Set(contacts.map((c) => c.companyId))];
+    await tx.company.updateMany({
+      where: {
+        id: { in: companyIds },
+        OR: [{ lastContactAt: null }, { lastContactAt: { lt: heldAt } }],
+      },
+      data: { lastContactAt: heldAt },
     });
     return null;
   });

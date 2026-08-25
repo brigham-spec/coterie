@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { Button, Card, CardHeader, Field } from "@/components/ui";
@@ -22,6 +23,9 @@ export type TeamMemberRow = {
   email: string;
   companyId: string | null;
   companyName: string | null;
+  // Set when this member's email matches a network contact, so the name links to
+  // that contact's profile; null for off-network professionals.
+  contactId: string | null;
 };
 
 export type TeamCompanyOption = { id: string; name: string };
@@ -92,6 +96,7 @@ function TeamItem({
   companies: TeamCompanyOption[];
 }) {
   const [editing, setEditing] = useState(false);
+  const label = member.name || member.org || "—";
 
   if (editing) {
     return (
@@ -110,9 +115,16 @@ function TeamItem({
     <li className="flex items-start justify-between gap-3 p-4">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-ink">
-            {member.name || member.org || "—"}
-          </span>
+          {member.contactId ? (
+            <Link
+              href={`/dashboard/contacts/${member.contactId}`}
+              className="text-xs font-medium text-ink hover:text-gold hover:underline"
+            >
+              {label}
+            </Link>
+          ) : (
+            <span className="text-xs font-medium text-ink">{label}</span>
+          )}
           <span className="rounded-sm border border-line-2 bg-surface px-1.5 py-0.5 text-[10px] text-ink-2">
             {teamRoleLabel(member.role)}
           </span>

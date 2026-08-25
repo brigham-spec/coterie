@@ -34,6 +34,7 @@ function project(over: Partial<ValueProject> = {}): ValueProject {
     memberNames: over.memberNames ?? [],
     stageHistory: over.stageHistory ?? [],
     economicImpact: over.economicImpact ?? ZERO_IMPACT,
+    serviceFees: over.serviceFees ?? 0,
   };
 }
 
@@ -271,6 +272,22 @@ describe("computeValueSummary", () => {
     const s = computeValueSummary([], [withServices, company({ id: "plain" })]);
     expect(s.serviceFeeRevenue).toBe(13000);
     expect(s.activeServices.map((c) => c.id)).toEqual(["svc"]);
+  });
+
+  it("includes project-level HVEDC-service fees in service-fee revenue", () => {
+    const withServices = company({
+      id: "svc",
+      services: {
+        ida: { active: true, status: "", serviceFee: 5000, valueSecured: 0 },
+        capital: null,
+      },
+    });
+    const s = computeValueSummary(
+      [project({ id: "p1", serviceFees: 12000 }), project({ id: "p2", serviceFees: 3000 })],
+      [withServices],
+    );
+    // 5000 company IDA fee + 12000 + 3000 project service fees.
+    expect(s.serviceFeeRevenue).toBe(20000);
   });
 
   it("computes the network multiplier as facilitated / ARR, null when either is zero", () => {
