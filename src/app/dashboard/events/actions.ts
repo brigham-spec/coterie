@@ -17,7 +17,7 @@ import {
 } from "@/lib/event-targets";
 import { COMMITMENT_STATUSES } from "@/lib/commitments";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
-import { NETWORK_STATUSES } from "@/lib/company-statuses";
+import { EVENT_GUEST_STATUSES, NETWORK_STATUSES } from "@/lib/company-statuses";
 import { revalidateActionItemSurfaces } from "@/lib/revalidate";
 import {
   RSVP_ATTENDED,
@@ -684,7 +684,7 @@ export async function suggestEvents(
 
 export type SuggestGuestsState =
   | { status: "idle" }
-  | { status: "ok"; added: number }
+  | { status: "ok"; added: { contactId: string; name: string; reason: string }[] }
   | { status: "empty" }
   | { status: "error"; message: string };
 
@@ -706,6 +706,7 @@ export async function suggestGuestList(
         theme: true,
         description: true,
         capacity: true,
+        project: { select: { name: true, description: true } },
       },
     });
     if (!event) return null;
@@ -728,10 +729,10 @@ export async function suggestGuestList(
       select: { companyId: true },
       distinct: ["companyId"],
     });
-    // Network contacts eligible to invite (active member tiers), with the company
-    // profile the engine reasons over.
+    // Contacts eligible to invite — members, strategic partners, AND prospects
+    // (events convert prospects), with the company profile the engine reasons over.
     const contacts = await tx.contact.findMany({
-      where: { company: { status: { in: [...NETWORK_STATUSES] } } },
+      where: { company: { status: { in: [...EVENT_GUEST_STATUSES] } } },
       orderBy: { name: "asc" },
       select: {
         id: true,
@@ -796,6 +797,12 @@ export async function suggestGuestList(
         typeLabel: getEventType(data.event.type).label,
         theme: data.event.theme || data.event.description || null,
         capacity: data.event.capacity,
+        project: data.event.project
+          ? {
+              name: data.event.project.name,
+              description: data.event.project.description,
+            }
+          : null,
       },
       alreadyInvited,
       candidates,
@@ -829,7 +836,7 @@ export async function suggestGuestList(
     });
     const invited = new Set(current.map((i) => i.contactId));
     const toCreate = picks.filter((p) => !invited.has(p.contactId));
-    if (toCreate.length === 0) return 0;
+    if (toCreate.length === 0) return [];
     await tx.eventInvitee.createMany({
       data: toCreate.map((p) => ({
         orgId,
@@ -838,11 +845,15 @@ export async function suggestGuestList(
         notes: p.reason,
       })),
     });
-    return toCreate.length;
+    return toCreate.map((p) => ({
+      contactId: p.contactId,
+      name: p.name,
+      reason: p.reason,
+    }));
   });
 
   revalidatePath(`/dashboard/events/${eventId}`);
-  return added === 0 ? { status: "empty" } : { status: "ok", added };
+  return added.length === 0 ? { status: "empty" } : { status: "ok", added };
 }
 
 // Find-Targets connection graph (slice S10b, ported from the prototype's

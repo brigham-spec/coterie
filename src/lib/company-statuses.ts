@@ -22,6 +22,15 @@ export const COMPANY_STATUSES: readonly string[] = COMPANY_STATUS_DEFS.map(
 /// (members + strategic partners), as opposed to prospects or former relationships.
 export const NETWORK_STATUSES: readonly string[] = ["member", "strategic_partner"];
 
+/// Statuses eligible for an event guest list. Wider than NETWORK_STATUSES: events
+/// are a prospect-conversion tool (we track new-member ROI per event), so prospects
+/// belong in the AI curator's candidate pool alongside members and strategic
+/// partners. Former relationships are still excluded.
+export const EVENT_GUEST_STATUSES: readonly string[] = [
+  ...NETWORK_STATUSES,
+  "prospect",
+];
+
 const VALUES = new Set(COMPANY_STATUSES);
 
 /// Whether a value is a known company status. Used at the write boundary to reject

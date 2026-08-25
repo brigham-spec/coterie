@@ -244,6 +244,7 @@ function EventTable({ title, events }: { title: string; events: EventRow[] }) {
             <Th>Type</Th>
             <Th>Stage</Th>
             <Th>Date</Th>
+            <Th>Venue</Th>
             <Th>Guests</Th>
           </>
         }
@@ -265,6 +266,7 @@ function EventTable({ title, events }: { title: string; events: EventRow[] }) {
                 <StatusBadge status={e.stage} />
               </Td>
               <Td>{e.date == null ? "TBD" : dateFmt.format(e.date)}</Td>
+              <Td>{e.venue == null || e.venue === "" ? "—" : e.venue}</Td>
               <Td>
                 {confirmed}
                 {e.capacity ? ` / ${e.capacity}` : ""}

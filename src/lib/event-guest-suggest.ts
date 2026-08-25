@@ -40,6 +40,9 @@ export type SuggestGuestInput = {
     typeLabel: string;
     theme: string | null;
     capacity: number | null;
+    // The linked project (if any) — its name and description give the curator the
+    // real substance of what the event is about, beyond the event's own theme.
+    project: { name: string; description: string | null } | null;
   };
   alreadyInvited: string[];
   candidates: GuestCandidate[];
@@ -124,6 +127,11 @@ function buildPrompt(input: SuggestGuestInput): string {
         .join("\n")}`
     : "";
 
+  const project = input.event.project;
+  const projectBlock = project
+    ? `\n\nLINKED PROJECT (the substance behind this event — weigh contacts whose needs/offers fit it):\n- ${project.name}${project.description ? `: ${project.description.replace(/\s+/g, " ").slice(0, 400)}` : ""}`
+    : "";
+
   const meetings = input.recentMeetings.length
     ? `\n\nRECENT MEETING INTELLIGENCE (identify contacts with an active, relevant need):\n${input.recentMeetings
         .map(
@@ -138,12 +146,12 @@ function buildPrompt(input: SuggestGuestInput): string {
 Event: "${input.event.name}"
 Theme: ${input.event.theme || "Member networking and relationship building"}
 Target size: about ${target} guests
-Already invited: ${alreadyInvited}${neverInvitedBlock}${meetings}
+Already invited: ${alreadyInvited}${projectBlock}${neverInvitedBlock}${meetings}
 
 AVAILABLE CONTACTS (not yet invited):
 ${candidates}
 
-Select the best up to ${target} candidates. Prioritise: specific fit with the event's theme, contacts whose company has never been invited, and active relevance from the meeting intelligence. Use ONLY the [ID:...] contact ids listed above.
+Select the best up to ${target} candidates. Cast a wide net across the full network — members, strategic partners, and prospects who would convert or benefit — not just the handful already connected to current guests. Prioritise: specific fit with the event's theme and linked project, contacts whose company has never been invited, and active relevance from the meeting intelligence. Use ONLY the [ID:...] contact ids listed above.
 
 Return ONLY a valid JSON array — no prose, no markdown code fences:
 [{"contactId":"<id from above>","reason":"<one specific sentence on why they fit this event>"}]`;
