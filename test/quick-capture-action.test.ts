@@ -232,6 +232,39 @@ describe("saveQuickCapture", () => {
     expect(companies).toHaveLength(1);
   });
 
+  test("never rolls a company's last-contact clock backwards (forward-only)", async () => {
+    // Pin the clock to a date AFTER the capture's date.
+    const future = new Date("2030-01-01T00:00:00.000Z");
+    await withOrg(orgA.id, (tx) =>
+      tx.company.updateMany({
+        where: { id: companyA.id },
+        data: { lastContactAt: future },
+      }),
+    );
+
+    // A backdated capture (2026-07-08) touching companyA via its contact.
+    const capture = {
+      title: "Backdated coffee",
+      date: "2026-07-08",
+      summary: "Old note logged late.",
+      actionItems: [],
+      suggestedIntros: [],
+      newProspects: [],
+      matched: [{ id: contactA.id, name: contactA.name, org: companyA.name }],
+    };
+    const state = await saveQuickCapture(
+      { status: "idle" },
+      fd({ capture: JSON.stringify(capture) }),
+    );
+    expect(state.status).toBe("saved");
+
+    // The more recent touch stands — the backdated capture did not regress it.
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({ where: { id: companyA.id }, select: { lastContactAt: true } }),
+    );
+    expect(company!.lastContactAt).toEqual(future);
+  });
+
   test("refuses to save when the payload is unreadable", async () => {
     const state = await saveQuickCapture({ status: "idle" }, fd({ capture: "not json" }));
     expect(state).toEqual({ status: "error", message: "Nothing to save." });

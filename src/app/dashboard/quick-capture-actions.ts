@@ -217,10 +217,15 @@ export async function saveQuickCapture(
           });
           attendees = validContacts.length;
 
-          // Freshen the touched companies' last-contact clock.
+          // Freshen the touched companies' last-contact clock. Forward-only —
+          // a backdated capture must never roll a company's clock backwards past
+          // a more recent touch (matches meetings + Fireflies sync).
           const companyIds = [...new Set(validContacts.map((c) => c.companyId))];
           await tx.company.updateMany({
-            where: { id: { in: companyIds } },
+            where: {
+              id: { in: companyIds },
+              OR: [{ lastContactAt: null }, { lastContactAt: { lt: heldAt } }],
+            },
             data: { lastContactAt: heldAt },
           });
         }

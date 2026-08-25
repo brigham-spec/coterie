@@ -382,8 +382,13 @@ export async function saveEmailThread(
           },
         },
       });
-      await tx.company.update({
-        where: { id: targetCompanyId },
+      // Forward-only — a backdated thread must never roll a company's clock
+      // backwards past a more recent touch (matches meetings + Fireflies sync).
+      await tx.company.updateMany({
+        where: {
+          id: targetCompanyId,
+          OR: [{ lastContactAt: null }, { lastContactAt: { lt: heldAt } }],
+        },
         data: { lastContactAt: heldAt },
       });
 

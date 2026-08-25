@@ -281,6 +281,33 @@ describe("saveEmailThread", () => {
     expect(acmes).toHaveLength(1);
   });
 
+  test("never rolls a company's last-contact clock backwards (forward-only)", async () => {
+    // Pin the matched company's clock to a date AFTER the thread's date.
+    const future = new Date("2030-01-01T00:00:00.000Z");
+    await withOrg(orgA.id, (tx) =>
+      tx.company.updateMany({
+        where: { id: companyAId },
+        data: { lastContactAt: future },
+      }),
+    );
+
+    // `matched` is backdated (meetingDate 2026-06-30) and lands on Acme Mills.
+    const state = await saveEmailThread(
+      { status: "idle" },
+      fd({ extraction: JSON.stringify({ ...matched, newProspects: [] }) }),
+    );
+    expect(state.status).toBe("saved");
+
+    // The more recent touch stands — the backdated thread did not regress it.
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: companyAId },
+        select: { lastContactAt: true },
+      }),
+    );
+    expect(company!.lastContactAt).toEqual(future);
+  });
+
   test("rejects an extraction that carries no usable content", async () => {
     const state = await saveEmailThread(
       { status: "idle" },
