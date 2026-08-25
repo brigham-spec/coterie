@@ -1,18 +1,23 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui";
 import { CollapsibleCard } from "@/components/collapsible-card";
 
 import { dismissIntro, suggestIntros, type IntroSuggestState } from "./actions";
+import { INTRO_DISMISS_REASONS } from "@/lib/intro-dismissal";
 import type { IntroSuggestion } from "@/lib/intro-engine";
 
-// Client shell for per-member intro suggestions (slice 11.4b). Like the AI brief,
-// this holds only view state — the reasoning runs in the `suggestIntros` server
-// action, so the Anthropic key never crosses to the browser. Suggestions are
-// EPHEMERAL: they live in this component's action state and are regenerated on
-// demand, never persisted (a durable dismiss/accept ledger arrives in 11.4c).
+// Client shell for per-member intro suggestions. Like the AI brief, this holds
+// only view state — the reasoning runs in the `suggestIntros` server action, so
+// the Anthropic key never crosses to the browser. The suggestions themselves are
+// EPHEMERAL (regenerated on demand, never stored), but each one can be acted on:
+// LOG it — deep-linked to the introductions log form, which resolves each company
+// to its primary contact and seeds the two parties + headline — or DISMISS it with
+// a reason (not relevant / competitor / wrong timing / other), which persists via
+// dismissIntro so the same pair is suppressed on the next Refresh.
 
 const initialState: IntroSuggestState = { status: "idle" };
 
@@ -90,13 +95,18 @@ function SuggestionCard({
   onDismiss: (candidateId: string) => void;
 }) {
   const [isDismissing, startDismiss] = useTransition();
+  // Deep-link to the introductions log form, which resolves each company to its
+  // primary contact and seeds the two parties + headline (same path the
+  // dashboard scanner and the co-attendance panel use).
+  const logHref = `/dashboard/introductions?logCompanyA=${focusId}&logCompanyB=${s.companyId}&logText=${encodeURIComponent(s.headline)}#log-intro`;
 
-  function dismiss() {
-    // Optimistically hide, then persist. If the write fails the card stays
-    // hidden for this session but simply reappears on the next Refresh.
+  function dispose(reason: string) {
+    // Optimistically hide, then persist with the chosen reason. If the write
+    // fails the card stays hidden for this session but simply reappears on the
+    // next Refresh (which re-queries the DB and already excludes it).
     onDismiss(s.companyId);
     startDismiss(async () => {
-      await dismissIntro(focusId, s.companyId);
+      await dismissIntro(focusId, s.companyId, reason);
     });
   }
 
@@ -123,10 +133,25 @@ function SuggestionCard({
           ))}
         </ul>
       ) : null}
-      <div className="mt-3 flex justify-end">
-        <Button type="button" onClick={dismiss} disabled={isDismissing}>
-          {isDismissing ? "Dismissing…" : "Dismiss"}
-        </Button>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line pt-2.5">
+        <Link
+          href={logHref}
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+        >
+          Log intro
+        </Link>
+        <span className="text-[9.5px] text-ink-3">Dismiss as</span>
+        {INTRO_DISMISS_REASONS.map((r) => (
+          <button
+            key={r.value}
+            type="button"
+            onClick={() => dispose(r.value)}
+            disabled={isDismissing}
+            className="text-[10px] text-ink-3 hover:text-ink-2 hover:underline disabled:opacity-50"
+          >
+            {r.label}
+          </button>
+        ))}
       </div>
     </li>
   );
