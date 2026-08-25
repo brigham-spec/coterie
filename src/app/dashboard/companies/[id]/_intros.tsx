@@ -1,80 +1,144 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 
-import { Button } from "@/components/ui";
+import { Button, cn } from "@/components/ui";
 import { CollapsibleCard } from "@/components/collapsible-card";
 
-import { dismissIntro, suggestIntros, type IntroSuggestState } from "./actions";
+import { dismissIntro, suggestIntros } from "./actions";
 import { INTRO_DISMISS_REASONS } from "@/lib/intro-dismissal";
+import { isProactiveCacheFresh, relativeAge } from "@/lib/proactive-cache";
+import type { IntroSuggestSnapshot } from "@/lib/intro-suggestion-cache";
 import type { IntroSuggestion } from "@/lib/intro-engine";
 
 // Client shell for per-member intro suggestions. Like the AI brief, this holds
 // only view state — the reasoning runs in the `suggestIntros` server action, so
-// the Anthropic key never crosses to the browser. The suggestions themselves are
-// EPHEMERAL (regenerated on demand, never stored), but each one can be acted on:
-// LOG it — deep-linked to the introductions log form, which resolves each company
-// to its primary contact and seeds the two parties + headline — or DISMISS it with
-// a reason (not relevant / competitor / wrong timing / other), which persists via
-// dismissIntro so the same pair is suppressed on the next Refresh.
+// the Anthropic key never crosses to the browser.
+//
+// It HYDRATES from the last saved per-company scan (IntroSuggestionCache) so the
+// card renders instantly on revisit instead of re-firing the paid AI scan every
+// time the profile is opened. Like the dashboard scanner it NEVER auto-fires on a
+// stale cache; the operator refreshes on demand when they want NEW suggestions, and
+// an age label (plus a gold "refresh for the latest" hint once past the TTL) tells
+// them how current the view is. A Refresh only supersedes the cached view on
+// success — a transient AI failure surfaces alongside it, never wiping it.
+//
+// Each suggestion can be acted on: LOG it — deep-linked to the introductions log
+// form, which resolves each company to its primary contact and seeds the two
+// parties + headline — or DISMISS it with a reason (not relevant / competitor /
+// wrong timing / other), which persists via dismissIntro so the same pair is
+// suppressed on the next scan (and filtered out of the cache on read).
 
-const initialState: IntroSuggestState = { status: "idle" };
-
-export function IntroSuggestions({ companyId }: { companyId: string }) {
-  const [state, formAction, isPending] = useActionState(
-    suggestIntros,
-    initialState,
+export function IntroSuggestions({
+  companyId,
+  initial,
+}: {
+  companyId: string;
+  initial: IntroSuggestSnapshot | null;
+}) {
+  // Last-known-good suggestions (seeded from the cache). A refresh only replaces
+  // them on success; errors surface alongside, not over, the cached view.
+  const [snapshot, setSnapshot] = useState<IntroSuggestion[] | null>(
+    initial ? initial.suggestions : null,
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [analyzedAt, setAnalyzedAt] = useState<number | null>(
+    initial ? Date.parse(initial.generatedAt) : null,
   );
   // Locally hide dismissed cards from the current list. The dismissal is also
   // persisted (dismissIntro) so a later Refresh — which re-queries the DB —
   // already excludes it; a stale id here is harmless (it won't be in the new list).
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
-  const visible =
-    state.status === "ok"
-      ? state.suggestions.filter((s) => !dismissed.has(s.companyId))
-      : [];
+  const [pending, startTransition] = useTransition();
+  // Wall clock captured on mount (never during render — that would be impure and
+  // could disagree with the server-rendered HTML on hydration).
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setNowMs(Date.now()));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const run = useCallback(() => {
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("companyId", companyId);
+      const next = await suggestIntros({ status: "idle" }, fd);
+      if (next.status === "ok") {
+        setSnapshot(next.suggestions);
+        setError(null);
+        setAnalyzedAt(Date.now());
+        setNowMs(Date.now());
+        // The rescan re-queries the DB (already excluding server-side
+        // dismissals), so the optimistic hide set starts clean.
+        setDismissed(new Set());
+      } else if (next.status === "error") {
+        setError(next.message);
+      }
+    });
+  }, [companyId]);
+
+  const visible = snapshot
+    ? snapshot.filter((s) => !dismissed.has(s.companyId))
+    : [];
+  const stale =
+    analyzedAt !== null &&
+    nowMs !== null &&
+    !isProactiveCacheFresh(new Date(analyzedAt), nowMs);
 
   return (
     <CollapsibleCard
       id="company-intro-suggestions"
       title="Suggested introductions"
       action={
-        <form action={formAction}>
-          <input type="hidden" name="companyId" value={companyId} />
-          <Button type="submit" variant="gold" disabled={isPending}>
-            {isPending
-              ? "Thinking…"
-              : state.status === "ok"
-                ? "Refresh"
-                : "Suggest introductions"}
+        <div className="flex items-center gap-2">
+          {snapshot && nowMs !== null && analyzedAt !== null ? (
+            <span
+              className={cn("text-[10px]", stale ? "text-gold-ink" : "text-ink-3")}
+            >
+              updated {relativeAge(analyzedAt, nowMs)}
+              {stale ? " · refresh for the latest" : ""}
+            </span>
+          ) : null}
+          <Button
+            type="button"
+            variant="gold"
+            disabled={pending}
+            onClick={run}
+          >
+            {pending ? "Thinking…" : snapshot ? "Refresh" : "Suggest introductions"}
           </Button>
-        </form>
+        </div>
       }
     >
       <div className="px-4 py-4">
-        {state.status === "error" ? (
-          <p className="text-xs text-red-ink">{state.message}</p>
-        ) : state.status === "ok" ? (
-          visible.length === 0 ? (
-            <p className="text-xs text-ink-3">
-              No strong introductions surfaced from the current network.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {visible.map((s) => (
-                <SuggestionCard
-                  key={s.companyId}
-                  s={s}
-                  focusId={companyId}
-                  onDismiss={(id) =>
-                    setDismissed((prev) => new Set(prev).add(id))
-                  }
-                />
-              ))}
-            </ul>
-          )
-        ) : (
+        {/* Errors show alongside — never replacing — the last good scan. */}
+        {error !== null ? (
+          <p className="mb-2 text-xs text-red-ink">{error}</p>
+        ) : null}
+
+        {visible.length > 0 ? (
+          <ul className="flex flex-col gap-3">
+            {visible.map((s) => (
+              <SuggestionCard
+                key={s.companyId}
+                s={s}
+                focusId={companyId}
+                onDismiss={(id) =>
+                  setDismissed((prev) => new Set(prev).add(id))
+                }
+              />
+            ))}
+          </ul>
+        ) : pending ? (
+          <p className="text-xs text-ink-2">
+            Scanning the network… this can take a moment.
+          </p>
+        ) : snapshot ? (
+          <p className="text-xs text-ink-3">
+            No strong introductions surfaced from the current network.
+          </p>
+        ) : error !== null ? null : (
           <p className="text-xs text-ink-3">
             Scan the network for companies this one should be introduced to, and
             why.

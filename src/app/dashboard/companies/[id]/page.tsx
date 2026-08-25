@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
 import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
+import { loadIntroSuggestionSnapshot } from "@/lib/intro-suggestion-cache";
 import { buildRelationshipTimeline } from "@/lib/relationship-timeline";
 import { readMemberTierDefs } from "@/lib/member-tiers";
 import { hasCredential } from "@/lib/integrations";
@@ -98,6 +99,7 @@ export default async function CompanyDetailPage({
     referralOptions,
     projects,
     networkContacts,
+    introSuggestions,
   } = await withOrg(ctx.orgId, async (tx) => {
       const company = await tx.company.findUnique({
         where: { id },
@@ -138,6 +140,7 @@ export default async function CompanyDetailPage({
           referralOptions: [],
           projects: [],
           networkContacts: [],
+          introSuggestions: null,
         };
       }
       // In-network companies offered in the Referred-by picker — this tenant's
@@ -409,6 +412,9 @@ export default async function CompanyDetailPage({
           project: { select: { name: true } },
         },
       });
+      // Last cached AI intro scan for this company (written by suggestIntros) —
+      // lets the profile card hydrate instantly instead of re-firing a paid scan.
+      const introSuggestions = await loadIntroSuggestionSnapshot(tx, id);
       return {
         company,
         introductions,
@@ -427,6 +433,7 @@ export default async function CompanyDetailPage({
         referralOptions,
         projects,
         networkContacts,
+        introSuggestions,
       };
     });
 
@@ -731,7 +738,7 @@ export default async function CompanyDetailPage({
 
       <CompanyBrief companyId={company.id} />
 
-      <IntroSuggestions companyId={company.id} />
+      <IntroSuggestions companyId={company.id} initial={introSuggestions} />
 
       <IntroductionsCard
         companyId={company.id}

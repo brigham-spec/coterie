@@ -288,10 +288,28 @@ export async function suggestIntros(
       candidates,
       meetingContext,
     );
+    const meetingIntelligenceActive = meetingContext !== "";
+    // Persist so the profile card hydrates from cache on revisit instead of
+    // re-firing this paid scan every load — a fresh withOrg pass (the AI call
+    // can't be held inside a transaction), mirroring scanNetworkIntros.
+    const generatedAt = new Date();
+    await withOrg(orgId, (tx) =>
+      tx.introSuggestionCache.upsert({
+        where: { orgId_focusCompanyId: { orgId, focusCompanyId: companyId } },
+        create: {
+          orgId,
+          focusCompanyId: companyId,
+          suggestions,
+          meetingIntelligenceActive,
+          generatedAt,
+        },
+        update: { suggestions, meetingIntelligenceActive, generatedAt },
+      }),
+    );
     return {
       status: "ok",
       suggestions,
-      meetingIntelligenceActive: meetingContext !== "",
+      meetingIntelligenceActive,
     };
   } catch (err) {
     console.error("intro suggestions failed", err);

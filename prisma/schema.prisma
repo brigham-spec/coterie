@@ -74,6 +74,7 @@ model Organization {
   unmatchedAttendees     UnmatchedAttendee[]
   aiRateLimit            AiRateLimit?
   proactiveScanCaches    ProactiveScanCache[]
+  introSuggestionCaches  IntroSuggestionCache[]
   notes                  Note[]
   agendaItemStates       AgendaItemState[]
   linkedinImports        LinkedinImport[]
@@ -221,6 +222,7 @@ model Company {
   developedProjects     Project[]            @relation("ProjectDeveloper")
   dismissalsAsFocus     IntroDismissal[]     @relation("IntroDismissalFocus")
   dismissalsAsCandidate IntroDismissal[]     @relation("IntroDismissalCandidate")
+  introSuggestionCaches IntroSuggestionCache[]
   eventConversions      EventConversion[]
   timelineNotes         Note[]
   referredBy            Company?             @relation("CompanyReferral", fields: [referredById], references: [id], onDelete: SetNull)
@@ -1394,6 +1396,36 @@ model ProactiveScanCache {
 
   @@id([orgId, scope])
   @@map("proactive_scan_caches")
+}
+
+/// Per-company cache of the last AI intro suggestions for a company profile
+/// (written by suggestIntros). Persists the last scan per focus company so the
+/// profile's "Suggested introductions" card hydrates instantly on revisit instead
+/// of forcing an expensive AI rescan every time — the operator only rescans on
+/// demand to look for new ones. Ephemeral analysis, not a source of truth:
+/// suggestions are stored as JSON exactly as generateIntroSuggestions returned them
+/// and are re-filtered against IntroDismissal rows on read, so a dismissed pair never
+/// resurfaces from the cache. Tenant-scoped: org_id + RLS; the composite FK to
+/// companies(id, org_id) cascades the cache away when the focus company is deleted.
+model IntroSuggestionCache {
+  orgId                     String   @map("org_id") @db.Uuid
+  focusCompanyId            String   @map("focus_company_id") @db.Uuid
+  /// The scan payload: IntroSuggestion[] as returned by generateIntroSuggestions.
+  suggestions               Json     @default("[]")
+  /// Whether recent meeting intelligence grounded this scan.
+  meetingIntelligenceActive Boolean  @default(false) @map("meeting_intelligence_active")
+  /// When the scan was produced — drives the freshness label on the card.
+  generatedAt               DateTime @map("generated_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  focusCompany Company      @relation(fields: [focusCompanyId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@id([orgId, focusCompanyId])
+  @@index([orgId])
+  @@map("intro_suggestion_caches")
 }
 
 /// Archival trash for recoverable hard-deletes. The two permanent-delete surfaces
