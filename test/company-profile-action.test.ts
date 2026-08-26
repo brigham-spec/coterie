@@ -168,6 +168,7 @@ describe("updateCompany", () => {
         lookingFor: "growth capital",
         canOffer: "manufacturing capacity",
         agencyContacts: "Jane at the IDA",
+        venue: "The Foundry Hall",
         notes: "Fresh notes.",
         counties: "Ulster, Dutchess, Ulster, ",
         networkTags: ["seeking_equity", "not_a_real_tag", "ida_active"],
@@ -191,6 +192,7 @@ describe("updateCompany", () => {
           lookingFor: true,
           canOffer: true,
           agencyContacts: true,
+          venue: true,
           notes: true,
           counties: true,
           networkTags: true,
@@ -210,6 +212,7 @@ describe("updateCompany", () => {
     expect(company!.lookingFor).toBe("growth capital");
     expect(company!.canOffer).toBe("manufacturing capacity");
     expect(company!.agencyContacts).toBe("Jane at the IDA");
+    expect(company!.venue).toBe("The Foundry Hall");
     expect(company!.notes).toBe("Fresh notes.");
     // Counties: trimmed + de-duped (order preserved), blank dropped.
     expect(company!.counties).toEqual(["Ulster", "Dutchess"]);

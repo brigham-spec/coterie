@@ -200,6 +200,10 @@ model Company {
   /// What we're actively working on together (demo `collaborationNotes`).
   collaborationNotes  String @default("") @map("collaboration_notes")
 
+  /// Event space this member offers (name of their venue), standalone from any
+  /// event. Surfaces as a selectable suggestion in the event venue field.
+  venue String?
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

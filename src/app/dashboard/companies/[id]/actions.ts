@@ -1574,6 +1574,7 @@ export async function updateCompany(formData: FormData): Promise<void> {
     lookingFor: optionalText(formData, "lookingFor"),
     canOffer: optionalText(formData, "canOffer"),
     agencyContacts: optionalText(formData, "agencyContacts"),
+    venue: optionalText(formData, "venue"),
     notes: String(formData.get("notes") ?? "").trim(),
     counties,
     networkTags,

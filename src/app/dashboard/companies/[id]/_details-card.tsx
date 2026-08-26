@@ -48,6 +48,7 @@ export type DetailsCompany = {
   lookingFor: string | null;
   canOffer: string | null;
   agencyContacts: string | null;
+  venue: string | null;
   notes: string;
   networkTags: string[];
   ownerName: string | null;
@@ -121,6 +122,7 @@ function ReadView({
       value: company.memberSince == null ? null : String(company.memberSince),
     },
     { label: "Deal size", value: company.dealSize },
+    { label: "Venue", value: company.venue },
     {
       label: "Counties",
       value: company.counties.length ? company.counties.join(", ") : null,
@@ -426,6 +428,12 @@ function EditForm({
             name="dealSize"
             label="Deal size"
             defaultValue={company.dealSize ?? ""}
+          />
+          <Field
+            name="venue"
+            label="Venue"
+            defaultValue={company.venue ?? ""}
+            placeholder="Event space this member offers"
           />
           <SelectField
             name="referredById"

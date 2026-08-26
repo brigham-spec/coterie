@@ -64,7 +64,15 @@ function loadEventsData(orgId: string) {
       where: { contactId: { not: null } },
       select: { contact: { select: { companyId: true } } },
     });
-    return { events, projects, members, invited };
+    // Member companies that offer an event space — their venue names feed the
+    // venue field's suggestion dropdown (still free-text). Set on the company
+    // profile's Details card.
+    const venueCompanies = await tx.company.findMany({
+      where: { venue: { not: null } },
+      orderBy: { name: "asc" },
+      select: { name: true, venue: true },
+    });
+    return { events, projects, members, invited, venueCompanies };
   });
 }
 
@@ -75,7 +83,14 @@ type EventRow = Awaited<
 export default async function EventsPage() {
   await requireModule("events");
   const ctx = await requireOrgContext();
-  const { events, projects, members, invited } = await loadEventsData(ctx.orgId);
+  const { events, projects, members, invited, venueCompanies } =
+    await loadEventsData(ctx.orgId);
+
+  // Distinct venue names offered by member companies, each labelled with the
+  // company that provides it — powers the venue field's suggestion dropdown.
+  const venueOptions = venueCompanies
+    .filter((c): c is { name: string; venue: string } => c.venue != null)
+    .map((c) => ({ venue: c.venue, company: c.name }));
 
   const upcoming = events.filter(
     (e) => !TERMINAL_EVENT_STAGES.includes(e.stage),
@@ -153,7 +168,21 @@ export default async function EventsPage() {
               ))}
             </SelectField>
             <Field name="date" label="Date" type="date" />
-            <Field name="venue" label="Venue" placeholder="The Rhinecliff" />
+            <Field
+              name="venue"
+              label="Venue"
+              placeholder="The Rhinecliff"
+              list="member-venues"
+            />
+            <datalist id="member-venues">
+              {venueOptions.map((v) => (
+                <option
+                  key={`${v.venue}-${v.company}`}
+                  value={v.venue}
+                  label={`${v.venue} — ${v.company}`}
+                />
+              ))}
+            </datalist>
             <Field
               name="capacity"
               label="Capacity"

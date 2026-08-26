@@ -723,6 +723,7 @@ export default async function CompanyDetailPage({
           lookingFor: company.lookingFor,
           canOffer: company.canOffer,
           agencyContacts: company.agencyContacts,
+          venue: company.venue,
           notes: company.notes,
           networkTags: company.networkTags,
           ownerName: company.owner?.name ?? null,

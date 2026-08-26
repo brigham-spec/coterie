@@ -42,11 +42,13 @@ export function DetailsCard({
   projects,
   companies,
   contacts,
+  venueOptions,
 }: {
   event: EventDetails;
   projects: Option[];
   companies: Option[];
   contacts: Option[];
+  venueOptions: Array<{ venue: string; company: string }>;
 }) {
   const [editing, setEditing] = useState(false);
 
@@ -122,7 +124,17 @@ export function DetailsCard({
             label="Venue"
             defaultValue={event.venue ?? ""}
             placeholder="The Rhinecliff"
+            list="member-venues"
           />
+          <datalist id="member-venues">
+            {venueOptions.map((v) => (
+              <option
+                key={`${v.venue}-${v.company}`}
+                value={v.venue}
+                label={`${v.venue} — ${v.company}`}
+              />
+            ))}
+          </datalist>
           <Field
             name="capacity"
             label="Capacity"

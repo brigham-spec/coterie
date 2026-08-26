@@ -112,7 +112,7 @@ export default async function EventDetailPage({
     const companies = await tx.company.findMany({
       where: { status: { in: [...NETWORK_STATUSES, "prospect"] } },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, venue: true },
     });
     // Post-event debrief: the follow-up commitments and introductions anchored to
     // this event (both carry event_id).
@@ -233,6 +233,12 @@ export default async function EventDetailPage({
     venueContactName: event.venueContact?.name ?? null,
   };
 
+  // Venue names offered by member companies, each labelled with the company —
+  // feeds the venue field's suggestion dropdown in the edit form.
+  const venueOptions = companies
+    .filter((c): c is { id: string; name: string; venue: string } => c.venue != null)
+    .map((c) => ({ venue: c.venue, company: c.name }));
+
   return (
     <div className="mx-auto w-full max-w-5xl">
       <div className="mb-6">
@@ -254,8 +260,9 @@ export default async function EventDetailPage({
       <DetailsCard
         event={eventDetails}
         projects={projects}
-        companies={companies}
+        companies={companies.map((c) => ({ id: c.id, name: c.name }))}
         contacts={contacts.map((c) => ({ id: c.id, name: c.name }))}
+        venueOptions={venueOptions}
       />
 
       <Card>
