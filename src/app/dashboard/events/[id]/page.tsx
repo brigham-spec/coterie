@@ -47,6 +47,7 @@ import {
   type EventIntro,
   type FollowUp,
 } from "./_debrief";
+import { DeleteEvent } from "./_delete-event";
 
 // Event detail — the seat of the guest list (slice 11.7). event_invitees carries a
 // composite FK to events(id, org_id) so a guest can never straddle orgs; the optional
@@ -561,6 +562,8 @@ export default async function EventDetailPage({
           </form>
         </div>
       </Card>
+
+      <DeleteEvent eventId={event.id} eventName={event.name} />
     </div>
   );
 }

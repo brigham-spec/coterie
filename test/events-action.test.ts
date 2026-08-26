@@ -18,8 +18,12 @@ import type { GuestContext } from "@/lib/event-brief";
 const mockCtx = vi.hoisted(() => ({ orgId: "", orgName: "", userId: "", userName: "" }));
 vi.mock("@/lib/auth", () => ({
   requireOrgContext: vi.fn(async () => mockCtx),
+  requireAdmin: vi.fn(async () => mockCtx),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// deleteEvent redirects to the directory once the row is gone; a real redirect
+// throws, so stub it out.
+vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
 const genSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/event-brief", async (importOriginal) => {
@@ -48,6 +52,7 @@ const {
   markAllAttended,
   addConversion,
   removeConversion,
+  deleteEvent,
 } = await import("@/app/dashboard/events/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
@@ -565,5 +570,41 @@ describe("event + guest-list actions", () => {
     ]);
     // No other tenant's company is ever suggested (RLS).
     expect(state.suggestions.some((s) => s.org === "Member B")).toBe(false);
+  });
+
+  test("deletes an event, cascading its guest list", async () => {
+    await createEvent(fd({ name: "Deletable Event", type: "social" }));
+    const eventId = await findEventId("Deletable Event");
+    await addInvitee(fd({ eventId, contactId: aliceId }));
+    await addInvitee(fd({ eventId, externalName: "Walk-in" }));
+
+    await deleteEvent(fd({ eventId }));
+
+    const gone = await withOrg(orgA.id, (tx) =>
+      tx.event.findUnique({ where: { id: eventId } }),
+    );
+    expect(gone).toBeNull();
+    // event_invitees cascade at the DB, so the guest list is gone too.
+    const invitees = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findMany({ where: { eventId } }),
+    );
+    expect(invitees).toEqual([]);
+  });
+
+  test("cannot delete another tenant's event (RLS no-op)", async () => {
+    const orgBEventId = await withOrg(orgB.id, async (tx) => {
+      const ev = await tx.event.create({
+        data: { orgId: orgB.id, name: "Foreign Event", type: "panel" },
+      });
+      return ev.id;
+    });
+
+    // mockCtx is orgA; the deleteMany is RLS-scoped so it removes nothing.
+    await deleteEvent(fd({ eventId: orgBEventId }));
+
+    const survived = await withOrg(orgB.id, (tx) =>
+      tx.event.findUnique({ where: { id: orgBEventId } }),
+    );
+    expect(survived?.id).toBe(orgBEventId);
   });
 });

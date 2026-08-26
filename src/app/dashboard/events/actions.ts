@@ -2,8 +2,9 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
-import { requireOrgContext } from "@/lib/auth";
+import { requireAdmin, requireOrgContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
@@ -103,6 +104,23 @@ export async function createEvent(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/dashboard/events");
+}
+
+// Permanently delete an event. Guest list (event_invitees) and logged conversions
+// (event_conversions) cascade at the DB; linked action_items and introductions
+// SetNull their event_id; the event's own sponsor/venue FKs vanish with the row.
+// deleteMany is a no-op when RLS excludes the row; then redirect to the directory.
+// Admin-gated, matching project/company deletion.
+export async function deleteEvent(formData: FormData): Promise<void> {
+  const { orgId } = await requireAdmin();
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  if (!eventId) throw new Error("event is required");
+
+  await withOrg(orgId, (tx) => tx.event.deleteMany({ where: { id: eventId } }));
+
+  revalidatePath("/dashboard/events");
+  redirect("/dashboard/events");
 }
 
 // Set an event's cost (drives Projected ROI). The findUnique is withOrg-scoped, so a
