@@ -20,10 +20,13 @@ vi.mock("@/lib/action-items", async (importOriginal) => ({
   generateActionItems,
 }));
 
-vi.mock("@/lib/ai-rate-limit", () => ({
-  enforceAiRateLimit: vi.fn(async () => {}),
-  AiRateLimitError: class AiRateLimitError extends Error {},
-}));
+// AiRateLimitError is hoisted so the rate-cap test can throw an instance the
+// module under test recognizes (its `err instanceof AiRateLimitError` check).
+const { enforceAiRateLimit, AiRateLimitError } = vi.hoisted(() => {
+  class AiRateLimitError extends Error {}
+  return { enforceAiRateLimit: vi.fn(async () => {}), AiRateLimitError };
+});
+vi.mock("@/lib/ai-rate-limit", () => ({ enforceAiRateLimit, AiRateLimitError }));
 
 const { autoExtractActionItems } = await import("@/lib/auto-action-items");
 
@@ -40,6 +43,9 @@ const companyId = randomUUID();
 const contactId = randomUUID();
 let meetingWithNotesId: string;
 let meetingNoNotesId: string;
+// Two more note-bearing meetings dedicated to the rate-cap drain test.
+let drainReachedId: string;
+let drainCappedId: string;
 
 beforeAll(async () => {
   await prisma.organization.create({ data: { ...orgA, orgType: "edc" } });
@@ -93,6 +99,25 @@ beforeAll(async () => {
       },
     });
     meetingNoNotesId = noNotes.id;
+
+    const reached = await tx.meeting.create({
+      data: {
+        orgId: orgA.id,
+        title: "Drain reached",
+        heldAt: new Date("2026-06-03T15:00:00Z"),
+        summary: "Reviewed the financing package and outstanding follow-ups.",
+      },
+    });
+    drainReachedId = reached.id;
+    const capped = await tx.meeting.create({
+      data: {
+        orgId: orgA.id,
+        title: "Drain capped",
+        heldAt: new Date("2026-06-04T15:00:00Z"),
+        summary: "Walked the site plan and agreed on the permitting timeline.",
+      },
+    });
+    drainCappedId = capped.id;
   });
 });
 
@@ -120,8 +145,8 @@ describe("autoExtractActionItems", () => {
       { text: "Someone should follow up", ownerName: "", ownerKind: "unknown", ownerId: null },
     ]);
 
-    const created = await autoExtractActionItems(orgA.id, [meetingWithNotesId]);
-    expect(created).toBe(2);
+    const result = await autoExtractActionItems(orgA.id, [meetingWithNotesId]);
+    expect(result).toEqual({ created: 2, remaining: [] });
 
     const rows = await itemsForMeeting(meetingWithNotesId);
     expect(rows).toEqual([
@@ -131,8 +156,8 @@ describe("autoExtractActionItems", () => {
   });
 
   test("skips a meeting whose notes are too short to extract from", async () => {
-    const created = await autoExtractActionItems(orgA.id, [meetingNoNotesId]);
-    expect(created).toBe(0);
+    const result = await autoExtractActionItems(orgA.id, [meetingNoNotesId]);
+    expect(result).toEqual({ created: 0, remaining: [] });
     // The model is never even called for a summary under the minimum length.
     expect(generateActionItems).not.toHaveBeenCalledWith(
       "hi",
@@ -143,6 +168,33 @@ describe("autoExtractActionItems", () => {
   });
 
   test("no-ops on an empty meeting list", async () => {
-    expect(await autoExtractActionItems(orgA.id, [])).toBe(0);
+    expect(await autoExtractActionItems(orgA.id, [])).toEqual({
+      created: 0,
+      remaining: [],
+    });
+  });
+
+  test("stops at the AI cap and hands back the unreached meetings", async () => {
+    // First meeting extracts fine; the second trips the org's AI cap. The run
+    // must persist the first, stop, and return the capped meeting (and any after
+    // it) in `remaining` so the caller can resume after a cooldown.
+    generateActionItems.mockResolvedValueOnce([
+      { text: "Send the term sheet", ownerName: staffUser.name, ownerKind: "staff", ownerId: staffUser.id },
+    ]);
+    enforceAiRateLimit
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new AiRateLimitError("over cap"));
+
+    const result = await autoExtractActionItems(orgA.id, [
+      drainReachedId,
+      drainCappedId,
+    ]);
+    expect(result).toEqual({ created: 1, remaining: [drainCappedId] });
+
+    // The reached meeting persisted its item; the capped one wrote nothing.
+    expect(await itemsForMeeting(drainReachedId)).toEqual([
+      { text: "Send the term sheet", ownerUserId: staffUser.id, ownerContactId: null },
+    ]);
+    expect(await itemsForMeeting(drainCappedId)).toEqual([]);
   });
 });

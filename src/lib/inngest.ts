@@ -34,7 +34,7 @@ export const ping = inngest.createFunction(
 // out: validating the org_id off the event payload and stamping the sync clock.
 export const syncFireflies = inngest.createFunction(
   { id: "fireflies-sync", triggers: [{ event: "coterie/fireflies.sync" }] },
-  async ({ event }) => {
+  async ({ event, step }) => {
     // Inngest carries no auth context — the org_id is the only tenant signal, so
     // validate it explicitly. A malformed event is a bug, not a transient
     // failure, so don't retry it.
@@ -87,28 +87,64 @@ export const syncFireflies = inngest.createFunction(
       }),
     );
 
-    // Auto-extract action items for the meetings this run created, so the
+    // Hand the meetings this run created off to the extractActionItems job so the
     // operator arrives to a populated worklist instead of extracting each one by
-    // hand. This runs AFTER the sync clock is stamped: the reconcile (the durable
-    // work) has already succeeded, so an extraction hiccup must not fail the sync
-    // or trip a retry that would re-reconcile. It's best-effort and self-bounds to
-    // newly-created meetings (see auto-action-items.ts).
-    let actionItems = 0;
-    try {
-      actionItems = await autoExtractActionItems(orgId, result.createdMeetingIds);
-    } catch (err) {
-      // Swallow — a successful sync should never be undone by extraction. The
-      // manual "Extract" button remains available for these meetings. Forward it
-      // to Sentry (which emails) so a persistent extraction failure reaches the
-      // operator instead of staying invisible in a log.
-      console.error("auto-extract action items failed after sync:", err);
-      Sentry.captureException(err, {
-        tags: { source: "fireflies-sync-extract" },
-        extra: { orgId },
+    // hand. This fires AFTER the sync clock is stamped: the reconcile (the durable
+    // work) has already succeeded, so decoupling extraction into its own function
+    // means an extraction hiccup can't fail the sync or trip a retry that would
+    // re-reconcile. That job self-chains to drain meetings the AI cap defers (see
+    // extractActionItems below).
+    if (result.createdMeetingIds.length > 0)
+      await step.sendEvent("extract-action-items", {
+        name: "coterie/action-items.extract",
+        data: { orgId, meetingIds: result.createdMeetingIds },
+      });
+
+    return result;
+  },
+);
+
+// Auto-extract action items for a batch of newly-synced meetings, self-chaining
+// past the org's per-minute AI cap the same way enrichLinkedin drains its backlog.
+// autoExtractActionItems processes what it can and hands back the meetings it
+// couldn't reach (rate-capped) in `remaining`; when any remain, this cools down
+// past the per-minute window and re-triggers itself with exactly those ids —
+// terminating once none are left. The meetings-to-process travel in the event
+// payload (there's no extracted-yet DB flag), so a run only ever touches the ids
+// it was handed, never re-extracting meetings a prior run already finished.
+export const extractActionItems = inngest.createFunction(
+  {
+    id: "action-items-extract",
+    triggers: [{ event: "coterie/action-items.extract" }],
+  },
+  async ({ event, step }) => {
+    // No auth context here — the org_id is the only tenant signal, so validate it
+    // explicitly. A malformed event is a bug, not a transient failure; don't retry.
+    const data = event.data as { orgId?: unknown; meetingIds?: unknown };
+    if (typeof data.orgId !== "string" || data.orgId === "")
+      throw new NonRetriableError("action-items.extract event missing orgId");
+    const orgId = data.orgId;
+
+    const meetingIds = Array.isArray(data.meetingIds)
+      ? data.meetingIds.filter((id): id is string => typeof id === "string")
+      : [];
+    if (meetingIds.length === 0) return { created: 0, remaining: 0 };
+
+    const result = await step.run("extract-batch", () =>
+      autoExtractActionItems(orgId, meetingIds),
+    );
+
+    // Meetings left unreached (hit the org's AI cap) → cool down past the
+    // per-minute window, then re-trigger with just those ids. Chains until drained.
+    if (result.remaining.length > 0) {
+      await step.sleep("ai-cooldown", "1m");
+      await step.sendEvent("continue-action-items-extract", {
+        name: "coterie/action-items.extract",
+        data: { orgId, meetingIds: result.remaining },
       });
     }
 
-    return { ...result, actionItems };
+    return { created: result.created, remaining: result.remaining.length };
   },
 );
 
@@ -185,4 +221,10 @@ export const reportFailure = inngest.createFunction(
 );
 
 // Registered with the serve route (src/app/api/inngest/route.ts).
-export const functions = [ping, syncFireflies, enrichLinkedin, reportFailure];
+export const functions = [
+  ping,
+  syncFireflies,
+  extractActionItems,
+  enrichLinkedin,
+  reportFailure,
+];
