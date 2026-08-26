@@ -194,9 +194,11 @@ ${summary || "(network is empty)"}
 ${excludePipeline}SEARCH FOCUS:
 ${focus}${extra}
 
-Search the web for ${TARGET_COUNT} real Hudson Valley executives or organisations NOT in the network above. Use recent news (last 12 months) to find active players. Return them as a JSON array ONLY — no preamble, no markdown code fences, no explanation:
-[{"org":"<name>","contact":"<person>","title":"<role>","industry":"<sector>","county":"<HV county>","why":"<1 sentence>","theyGet":"<what the network offers them>","theyBring":"<what they add to the network>","connectWith":"<2 current members>","whyNow":"<reason to reach out now>","website":"<url or null>","score":<1-5>}]
-Ground every prospect in real, verifiable information from your search — do not invent organisations or people.`;
+Search the web for up to ${TARGET_COUNT} real Hudson Valley organisations or executives NOT in the network above that fit the search focus. Prefer active players from recent news.
+
+Return your findings as a JSON array ONLY — no preamble, no markdown code fences, no explanation. Return as many real matches as you find (fewer than ${TARGET_COUNT} is fine); return [] only if the search surfaced nothing relevant at all.
+[{"org":"<name>","contact":"<person or empty>","title":"<role or empty>","industry":"<sector>","county":"<HV county>","why":"<1 sentence>","theyGet":"<what the network offers them>","theyBring":"<what they add to the network>","connectWith":"<2 current members>","whyNow":"<reason to reach out now>","website":"<url or null>","score":<1-5>}]
+Base each prospect on a real organisation from your search results — do not invent organisations. If you found the organisation but not a specific person, set "contact" and "title" to "" rather than dropping the organisation or inventing a name.`;
 }
 
 // The two models, tiered by task depth (recommendations reasons over the whole
