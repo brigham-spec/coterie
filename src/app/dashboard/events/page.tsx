@@ -26,6 +26,7 @@ import {
 } from "@/components/ui";
 
 import { createEvent } from "./actions";
+import { DeleteEventRow } from "./_delete-event-row";
 import { EventIdeas } from "./_event-ideas";
 
 // Events — the gatherings surface (slice 11.7). Stage and type are the canonical
@@ -246,6 +247,9 @@ function EventTable({ title, events }: { title: string; events: EventRow[] }) {
             <Th>Date</Th>
             <Th>Venue</Th>
             <Th>Guests</Th>
+            <Th>
+              <span className="sr-only">Actions</span>
+            </Th>
           </>
         }
       >
@@ -270,6 +274,9 @@ function EventTable({ title, events }: { title: string; events: EventRow[] }) {
               <Td>
                 {confirmed}
                 {e.capacity ? ` / ${e.capacity}` : ""}
+              </Td>
+              <Td>
+                <DeleteEventRow eventId={e.id} eventName={e.name} />
               </Td>
             </Tr>
           );
