@@ -47,7 +47,7 @@ const LABEL_BY_VALUE = new Map(
   ]),
 );
 
-/// Whether a value is a known project-link role. Used at the linkCompany write
+/// Whether a value is a known project-link role. Used at the addParticipant write
 /// boundary to reject out-of-vocabulary roles before they persist.
 export function isProjectLinkRole(value: string): boolean {
   return LABEL_BY_VALUE.has(value);

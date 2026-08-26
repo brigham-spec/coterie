@@ -8,7 +8,6 @@ import { prisma } from "@/lib/prisma";
 import { PROJECT_STAGES, TERMINAL_STAGES } from "@/lib/project-stages";
 import { buildStageTimeline } from "@/lib/stage-history";
 import { openRoles } from "@/lib/disciplines";
-import { normalizeEmail } from "@/lib/new-connections";
 import { parseImpactForm } from "@/lib/value-created";
 import { parseHvServices } from "@/lib/hv-services";
 import {
@@ -18,13 +17,9 @@ import {
   PageTitle,
   SelectField,
   StatusBadge,
-  Table,
-  Td,
-  Th,
-  Tr,
 } from "@/components/ui";
 
-import { linkCompany, unlinkCompany, updateStage } from "../actions";
+import { updateStage } from "../actions";
 import { DeleteProject } from "./_delete-project";
 import { EditDetails } from "./_edit-details";
 import { OpenRoles } from "./_open-roles";
@@ -32,22 +27,24 @@ import {
   DeliverablesCard,
   type DeliverableRow,
 } from "./_deliverables";
-import { TeamCard, type TeamMemberRow } from "./_team";
+import {
+  ParticipantsCard,
+  type ParticipantRow,
+  type ParticipantContactOption,
+} from "./_participants";
 import { FundingCard, type FundingRow } from "./_funding";
 import { EconomicImpactCard } from "./_economic-impact";
 import { HvServicesCard } from "./_hv-services";
 import { AssistanceCard } from "./_assistance";
 import { ProjectNewsScanner } from "./_news-scanner";
 
-import {
-  PROJECT_LINK_ROLE_GROUPS,
-  projectLinkRoleLabel,
-} from "@/lib/project-roles";
 import { parseAssistanceKeys } from "@/lib/project-assistance";
 
 // Project detail — the seat of company participation. project_links carries
 // composite FKs to projects(id, org_id) and companies(id, org_id), so a link can
 // never straddle orgs; the read below is withOrg-scoped so nothing foreign shows.
+// A participant is one company (or off-network person) in a role with an optional
+// primary contact; a company may appear in several roles.
 
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -90,7 +87,10 @@ export default async function ProjectDetailPage({
       include: {
         developer: { select: { id: true, name: true } },
         projectLinks: {
-          include: { company: { select: { name: true, status: true } } },
+          include: {
+            company: { select: { name: true, status: true } },
+            contact: { select: { name: true } },
+          },
           orderBy: { role: "asc" },
         },
       },
@@ -100,29 +100,14 @@ export default async function ProjectDetailPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });
-    // Professional team = the individual professionals staffing the project (a
-    // roster distinct from projectLinks, which are network companies in pipeline
-    // roles). RLS-scoped; the optional company link is joined for its name.
-    const teamMembers = await tx.projectTeamMember.findMany({
-      where: { projectId: id },
-      include: { company: { select: { name: true } } },
-      orderBy: { createdAt: "asc" },
+    // Every contact in the tenant (RLS-scoped). Powers both the participant
+    // primary-contact picker (filtered client-side by the chosen company) and the
+    // deliverable "they owe" owner pool (contacts at a company already on the
+    // project). Company names come from the `companies` roster above, so no join.
+    const allContacts = await tx.contact.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, companyId: true },
     });
-    // Resolve team members to real contacts by email so their name can link to a
-    // profile. Team-member rows store free-text email (no contactId); contact
-    // emails are stored lowercased, so match on the lowercased address.
-    const teamEmails = [
-      ...new Set(
-        teamMembers.map((m) => normalizeEmail(m.email)).filter((e) => e !== ""),
-      ),
-    ];
-    const teamContacts =
-      teamEmails.length === 0
-        ? []
-        : await tx.contact.findMany({
-            where: { email: { in: teamEmails } },
-            select: { id: true, email: true },
-          });
     // Funding sources & grants tracked on this project (RLS-scoped).
     const fundingSources = await tx.fundingSource.findMany({
       where: { projectId: id },
@@ -138,15 +123,11 @@ export default async function ProjectDetailPage({
       },
       orderBy: { createdAt: "asc" },
     });
-    const companyIds = project.projectLinks.map((l) => l.companyId);
-    const projectContacts =
-      companyIds.length === 0
-        ? []
-        : await tx.contact.findMany({
-            where: { companyId: { in: companyIds } },
-            select: { id: true, name: true, company: { select: { name: true } } },
-            orderBy: { name: "asc" },
-          });
+    // Off-network participants carry a null company; drop them for the
+    // company-scoped news + owner-pool derivations below.
+    const companyIds = project.projectLinks
+      .map((l) => l.companyId)
+      .filter((cid): cid is string => cid !== null);
     // Press & News = saved news items explicitly cross-linked to this project
     // (News audit item 5) plus coverage saved across the participant companies
     // (read-only here; capture/link/removal live on /dashboard/news and company
@@ -173,11 +154,10 @@ export default async function ProjectDetailPage({
     return {
       project,
       companies,
-      teamMembers,
-      teamContacts,
+      allContacts,
+      companyIds,
       fundingSources,
       deliverables,
-      projectContacts,
       newsItems,
     };
   });
@@ -186,11 +166,10 @@ export default async function ProjectDetailPage({
   const {
     project,
     companies,
-    teamMembers,
-    teamContacts,
+    allContacts,
+    companyIds,
     fundingSources,
     deliverables,
-    projectContacts,
     newsItems,
   } = data;
 
@@ -202,10 +181,36 @@ export default async function ProjectDetailPage({
     select: { user: { select: { id: true, name: true } } },
   });
   const staff = staffRows.map((r) => r.user);
-  const contactOptions = projectContacts.map((c) => ({
+
+  // Companies already on the project — the "they owe" deliverable owner pool is
+  // limited to their contacts. Reuses the null-filtered ids computed above.
+  const linkedCompanyIds = new Set(companyIds);
+  const companyNameById = new Map(companies.map((c) => [c.id, c.name]));
+  const contactOptions = allContacts
+    .filter((c) => linkedCompanyIds.has(c.companyId))
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      companyName: companyNameById.get(c.companyId) ?? "",
+    }));
+  // The participant primary-contact picker offers every contact (filtered
+  // client-side by the chosen company).
+  const participantContacts: ParticipantContactOption[] = allContacts.map((c) => ({
     id: c.id,
     name: c.name,
-    companyName: c.company.name,
+    companyId: c.companyId,
+  }));
+  const participantRows: ParticipantRow[] = project.projectLinks.map((l) => ({
+    id: l.id,
+    role: l.role,
+    companyId: l.companyId,
+    companyName: l.company?.name ?? null,
+    companyStatus: l.company?.status ?? null,
+    contactId: l.contactId,
+    contactName: l.contact?.name ?? null,
+    name: l.name,
+    org: l.org,
+    email: l.email,
   }));
   const deliverableRows: DeliverableRow[] = deliverables.map((d) => ({
     id: d.id,
@@ -214,20 +219,6 @@ export default async function ProjectDetailPage({
     direction: d.ownerUserId ? "we_owe" : "they_owe",
     ownerId: d.ownerUserId ?? d.ownerContactId ?? "",
     ownerName: d.ownerUser?.name ?? d.ownerContact?.name ?? "Unassigned",
-  }));
-  const contactIdByEmail = new Map<string, string>();
-  for (const c of teamContacts) {
-    if (c.email) contactIdByEmail.set(normalizeEmail(c.email), c.id);
-  }
-  const teamRows: TeamMemberRow[] = teamMembers.map((m) => ({
-    id: m.id,
-    role: m.role,
-    name: m.name,
-    org: m.org,
-    email: m.email,
-    companyId: m.companyId,
-    companyName: m.company?.name ?? null,
-    contactId: contactIdByEmail.get(normalizeEmail(m.email)) ?? null,
   }));
   const fundingRows: FundingRow[] = fundingSources.map((f) => ({
     id: f.id,
@@ -241,9 +232,6 @@ export default async function ProjectDetailPage({
     notes: f.notes,
     aiSuggested: f.aiSuggested,
   }));
-
-  const linkedIds = new Set(project.projectLinks.map((l) => l.companyId));
-  const linkable = companies.filter((c) => !linkedIds.has(c.id));
 
   // Stage history reads the trail updateStage appends to; newest-first for display.
   const timeline = buildStageTimeline(project.stageHistory);
@@ -394,59 +382,11 @@ export default async function ProjectDetailPage({
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader title="Participants" />
-        {project.projectLinks.length === 0 ? (
-          <p className="px-4 py-6 text-xs text-ink-3">No companies linked yet.</p>
-        ) : (
-          <Table
-            head={
-              <>
-                <Th>Company</Th>
-                <Th>Role</Th>
-                <Th>Status</Th>
-                <Th>
-                  <span className="sr-only">Actions</span>
-                </Th>
-              </>
-            }
-          >
-            {project.projectLinks.map((l) => (
-              <Tr key={l.companyId}>
-                <Td className="font-medium">
-                  <Link
-                    href={`/dashboard/companies/${l.companyId}`}
-                    className="hover:text-gold hover:underline"
-                  >
-                    {l.company.name}
-                  </Link>
-                </Td>
-                <Td>{projectLinkRoleLabel(l.role)}</Td>
-                <Td>
-                  <StatusBadge status={l.company.status} />
-                </Td>
-                <Td className="text-right">
-                  <form action={unlinkCompany}>
-                    <input type="hidden" name="projectId" value={project.id} />
-                    <input type="hidden" name="companyId" value={l.companyId} />
-                    <button
-                      type="submit"
-                      className="text-[10px] font-medium tracking-[0.06em] text-red uppercase hover:underline"
-                    >
-                      Unlink
-                    </button>
-                  </form>
-                </Td>
-              </Tr>
-            ))}
-          </Table>
-        )}
-      </Card>
-
-      <TeamCard
+      <ParticipantsCard
         projectId={project.id}
-        members={teamRows}
+        participants={participantRows}
         companies={companies}
+        contacts={participantContacts}
       />
 
       <DeliverablesCard
@@ -520,56 +460,6 @@ export default async function ProjectDetailPage({
       {isActive && unfilledRoles.length > 0 ? (
         <OpenRoles projectId={project.id} roles={unfilledRoles} />
       ) : null}
-
-      <Card>
-        <CardHeader title="Link a company" />
-        {companies.length === 0 ? (
-          <p className="px-4 py-6 text-xs text-ink-3">
-            Add a{" "}
-            <Link href="/dashboard/companies" className="text-gold underline">
-              company
-            </Link>{" "}
-            first.
-          </p>
-        ) : linkable.length === 0 ? (
-          <p className="px-4 py-6 text-xs text-ink-3">
-            Every company is already linked to this project.
-          </p>
-        ) : (
-          <form action={linkCompany} className="grid grid-cols-2 gap-4 p-4">
-            <input type="hidden" name="projectId" value={project.id} />
-            <SelectField name="companyId" label="Company" defaultValue="" required>
-              <option value="" disabled>
-                Select a company…
-              </option>
-              {linkable.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </SelectField>
-            <SelectField name="role" label="Role" defaultValue="" required>
-              <option value="" disabled>
-                Select a role…
-              </option>
-              {PROJECT_LINK_ROLE_GROUPS.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </SelectField>
-            <div className="col-span-2 flex justify-end">
-              <Button type="submit" variant="primary">
-                Link company
-              </Button>
-            </div>
-          </form>
-        )}
-      </Card>
 
       <DeleteProject projectId={project.id} projectName={project.name} />
     </div>

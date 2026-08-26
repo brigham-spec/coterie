@@ -45,8 +45,8 @@ type FkRef = { field: string; target: string };
 type ImportStep = {
   name: string;
   delegate: (tx: Prisma.TransactionClient) => BulkDelegate;
-  // Composite-PK junctions (project_links, meeting_attendees) have no standalone
-  // id to remap — their key is made of the foreign keys, which we rewrite anyway.
+  // Composite-PK junctions (meeting_attendees) have no standalone id to remap —
+  // their key is made of the foreign keys, which we rewrite anyway.
   compositePk?: boolean;
   // FKs to other exported tables, rewritten through that table's id-map.
   fkRefs?: readonly FkRef[];
@@ -83,18 +83,10 @@ const INSERT_PLAN: readonly ImportStep[] = [
   {
     name: "projectLinks",
     delegate: (tx) => tx.projectLink as unknown as BulkDelegate,
-    compositePk: true,
     fkRefs: [
       { field: "projectId", target: "projects" },
       { field: "companyId", target: "companies" },
-    ],
-  },
-  {
-    name: "projectTeamMembers",
-    delegate: (tx) => tx.projectTeamMember as unknown as BulkDelegate,
-    fkRefs: [
-      { field: "projectId", target: "projects" },
-      { field: "companyId", target: "companies" },
+      { field: "contactId", target: "contacts" },
     ],
   },
   {

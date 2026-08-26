@@ -10,14 +10,17 @@ import {
   projectLinkRoleLabel,
 } from "@/lib/project-roles";
 
-import { linkCompany, unlinkCompany } from "../../projects/actions";
+import { addParticipant, removeParticipant } from "../../projects/actions";
 
 // Projects this company participates in (project_links). Read-only display plus
 // an "Add" disclosure to link the company to any org project it isn't already on
-// — the company-side mirror of the project page's "Link a company" form. Both
-// post the same linkCompany/unlinkCompany actions, which revalidate this path.
+// — the company-side mirror of the project page's participant form. Both post the
+// same addParticipant/removeParticipant actions, which revalidate this path. A
+// company may now hold several roles on one project, so each row keys on the
+// participant's own id and removes by that id.
 
 export type LinkedProject = {
+  linkId: string;
   projectId: string;
   projectName: string;
   projectStage: string;
@@ -56,7 +59,7 @@ export function ProjectsCard({
       {adding ? (
         <div className="border-b border-line p-4">
           <form
-            action={linkCompany}
+            action={addParticipant}
             className="grid grid-cols-[1fr_auto_auto] items-end gap-3"
           >
             <input type="hidden" name="companyId" value={companyId} />
@@ -127,7 +130,7 @@ export function ProjectsCard({
           }
         >
           {links.map((l) => (
-            <Tr key={l.projectId}>
+            <Tr key={l.linkId}>
               <Td className="font-medium">
                 <Link
                   href={`/dashboard/projects/${l.projectId}`}
@@ -141,9 +144,9 @@ export function ProjectsCard({
                 <StatusBadge status={l.projectStage} />
               </Td>
               <Td className="text-right">
-                <form action={unlinkCompany}>
+                <form action={removeParticipant}>
+                  <input type="hidden" name="linkId" value={l.linkId} />
                   <input type="hidden" name="projectId" value={l.projectId} />
-                  <input type="hidden" name="companyId" value={companyId} />
                   <button
                     type="submit"
                     className="text-[10px] text-ink-3 hover:text-red-ink"

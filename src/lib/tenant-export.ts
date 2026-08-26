@@ -31,7 +31,6 @@ const TABLES: readonly TableLoader[] = [
   { name: "contacts", load: (tx) => tx.contact.findMany() },
   { name: "projects", load: (tx) => tx.project.findMany() },
   { name: "projectLinks", load: (tx) => tx.projectLink.findMany() },
-  { name: "projectTeamMembers", load: (tx) => tx.projectTeamMember.findMany() },
   { name: "fundingSources", load: (tx) => tx.fundingSource.findMany() },
   { name: "introductions", load: (tx) => tx.introduction.findMany() },
   { name: "meetings", load: (tx) => tx.meeting.findMany() },

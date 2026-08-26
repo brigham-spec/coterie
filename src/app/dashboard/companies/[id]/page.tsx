@@ -102,7 +102,6 @@ export default async function CompanyDetailPage({
     notes,
     eventsAttended,
     venueEvents,
-    teamMemberships,
     linkOptions,
     referralOptions,
     projects,
@@ -144,7 +143,6 @@ export default async function CompanyDetailPage({
           notes: [],
           eventsAttended: [],
           venueEvents: [],
-          teamMemberships: [],
           linkOptions: [],
           referralOptions: [],
           projects: [],
@@ -422,19 +420,6 @@ export default async function CompanyDetailPage({
           venueContact: { select: { id: true, name: true } },
         },
       });
-      // Projects this company is staffed on as a professional-team firm (the
-      // team member's optional company link points here). Being on the team
-      // is realized network value just like a formal participant link, so these
-      // fold into the derived collaborations below (deduped against projectLinks).
-      const teamMemberships = await tx.projectTeamMember.findMany({
-        where: { companyId: id },
-        select: {
-          projectId: true,
-          role: true,
-          createdAt: true,
-          project: { select: { name: true } },
-        },
-      });
       // Last cached AI intro scan for this company (written by suggestIntros) —
       // lets the profile card hydrate instantly instead of re-firing a paid scan.
       const introSuggestions = await loadIntroSuggestionSnapshot(tx, id);
@@ -452,7 +437,6 @@ export default async function CompanyDetailPage({
         notes,
         eventsAttended: eventInvites,
         venueEvents,
-        teamMemberships,
         linkOptions,
         referralOptions,
         projects,
@@ -602,30 +586,20 @@ export default async function CompanyDetailPage({
   // even before any dollar-tagged win is logged. All derived entries are
   // non-monetary (amount stays null); intros already in the manual ledger are
   // suppressed so nothing is double-counted. Reuses data already loaded above.
-  // Collaborations = projects this company is on, whether as a formal participant
-  // (project_links) or as the linked firm on a project's professional team. Merge
-  // both, deduped by project so a project surfaces once — a formal participant
-  // link wins over a team role for the label. This is why staffing a member on a
-  // project's team (with its company linked) now flows to their value.
+  // Collaborations = projects this company participates in (project_links), deduped
+  // by project so a project surfaces once even when the company holds several roles
+  // on it (the role-asc order keeps the first/earliest role as the label).
   const collabByProject = new Map<
     string,
     { projectId: string; projectName: string; role: string; occurredAt: Date }
   >();
   for (const l of company.projectLinks) {
+    if (collabByProject.has(l.projectId)) continue;
     collabByProject.set(l.projectId, {
       projectId: l.projectId,
       projectName: l.project.name,
       role: l.role,
       occurredAt: l.createdAt,
-    });
-  }
-  for (const m of teamMemberships) {
-    if (collabByProject.has(m.projectId)) continue;
-    collabByProject.set(m.projectId, {
-      projectId: m.projectId,
-      projectName: m.project.name,
-      role: m.role,
-      occurredAt: m.createdAt,
     });
   }
 
@@ -897,6 +871,7 @@ export default async function CompanyDetailPage({
       <ProjectsCard
         companyId={company.id}
         links={company.projectLinks.map((l) => ({
+          linkId: l.id,
           projectId: l.project.id,
           projectName: l.project.name,
           projectStage: l.project.stage,
@@ -969,11 +944,16 @@ export default async function CompanyDetailPage({
           projectId: n.projectId,
           projectName: n.project?.name ?? null,
         }))}
-        // The article can be pinned to any project this company participates in.
-        projectOptions={company.projectLinks.map((l) => ({
-          id: l.project.id,
-          name: l.project.name,
-        }))}
+        // The article can be pinned to any project this company participates in
+        // (deduped — a company may hold several roles on one project).
+        projectOptions={[
+          ...new Map(
+            company.projectLinks.map((l) => [
+              l.project.id,
+              { id: l.project.id, name: l.project.name },
+            ]),
+          ).values(),
+        ]}
       />
 
       <CommitmentsCard

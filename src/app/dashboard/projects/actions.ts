@@ -22,7 +22,6 @@ import {
 } from "@/lib/open-roles-engine";
 import { isProjectStage } from "@/lib/project-stages";
 import { isProjectLinkRole } from "@/lib/project-roles";
-import { isTeamRole } from "@/lib/team-roles";
 import { isFundingCategory, isFundingStatus } from "@/lib/funding";
 import {
   generateFundingSuggestions,
@@ -144,56 +143,183 @@ export async function updateStage(formData: FormData): Promise<void> {
   revalidatePath(`/dashboard/projects/${projectId}`);
 }
 
-// Link a company to a project. Unlike contacts.company_id, project_links carries
-// composite FKs — (org_id, project_id) -> projects(org_id, id) and
-// (org_id, company_id) -> companies(org_id, id) — so a cross-org project or
-// company id has no matching parent and the insert is refused BY THE DATABASE.
-// We still stamp org_id from context; the composite FKs are the structural guard.
-export async function linkCompany(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
+// ── Project participants (the unified roster) ────────────────────────────────
+// A participant is one company (or off-network person) on a project, in a role,
+// with an optional primary contact. project_links carries composite FKs —
+// (org_id, project_id) -> projects(org_id, id) and (org_id, company_id) ->
+// companies(org_id, id) — so a cross-org project or company id has no matching
+// parent and the insert is refused BY THE DATABASE. A company may hold multiple
+// roles (rows) on one project. Off-network rows carry a null company + free-text
+// name/org/email. Both link surfaces (the project page and the company profile)
+// revalidate, since either can create a participant.
 
-  const projectId = String(formData.get("projectId") ?? "").trim();
-  const companyId = String(formData.get("companyId") ?? "").trim();
-  const role = String(formData.get("role") ?? "").trim();
-
-  if (!projectId || !companyId || !role)
-    throw new Error("project, company, and role are required");
-  if (!isProjectLinkRole(role)) throw new Error("invalid project role");
-
-  await withOrg(orgId, (tx) =>
-    tx.projectLink.create({ data: { orgId, projectId, companyId, role } }),
-  );
-
-  // Both link surfaces (the project page and the company profile) revalidate,
-  // since either can create the link.
-  revalidatePath(`/dashboard/projects/${projectId}`);
-  revalidatePath(`/dashboard/companies/${companyId}`);
+// Resolve an optional network company link (a participant's firm, a project's
+// developer), verifying it belongs to this tenant. Blank clears to null. Runs
+// inside the caller's withOrg tx (RLS-scoped, so a foreign id resolves null).
+async function resolveLinkedCompany(
+  tx: Parameters<Parameters<typeof withOrg>[1]>[0],
+  companyId: string,
+): Promise<string | null> {
+  if (companyId === "") return null;
+  const company = await tx.company.findUnique({
+    where: { id: companyId },
+    select: { id: true },
+  });
+  if (!company) throw new Error("linked company not found in this organization");
+  return company.id;
 }
 
-// Detach a company from a project. The project_links row keys on
-// (projectId, companyId); deleteMany (not delete) so an RLS-excluded row is a
-// silent no-op instead of a "record not found" throw.
-export async function unlinkCompany(formData: FormData): Promise<void> {
+// The free-text fields for an off-network participant, trimmed and bounded.
+function readParticipantFields(formData: FormData): {
+  name: string;
+  org: string;
+  email: string;
+} {
+  return {
+    name: String(formData.get("name") ?? "").trim().slice(0, 200),
+    org: String(formData.get("org") ?? "").trim().slice(0, 200),
+    email: String(formData.get("email") ?? "").trim().slice(0, 200),
+  };
+}
+
+// Resolve the optional primary contact for a participant. Null when off-network
+// (no company) or unset. When set, the contact MUST belong to the participant's
+// company (contact_id is a plain FK whose referential check bypasses tenant
+// scoping — companyId here is already tenant-verified by resolveLinkedCompany).
+async function resolveParticipantContact(
+  tx: Parameters<Parameters<typeof withOrg>[1]>[0],
+  companyId: string | null,
+  contactId: string,
+): Promise<string | null> {
+  if (companyId === null || contactId === "") return null;
+  const contact = await tx.contact.findFirst({
+    where: { id: contactId, companyId },
+    select: { id: true },
+  });
+  if (!contact)
+    throw new Error("primary contact must be a contact at the selected company");
+  return contact.id;
+}
+
+// Build the write payload shared by add/update: a company row keeps the free-text
+// fields empty (company + contact carry it); an off-network row keeps them.
+async function resolveParticipant(
+  tx: Parameters<Parameters<typeof withOrg>[1]>[0],
+  formData: FormData,
+): Promise<{
+  companyId: string | null;
+  contactId: string | null;
+  role: string;
+  name: string;
+  org: string;
+  email: string;
+}> {
+  const role = String(formData.get("role") ?? "").trim();
+  if (!isProjectLinkRole(role)) throw new Error("invalid role");
+
+  const companyId = await resolveLinkedCompany(
+    tx,
+    String(formData.get("companyId") ?? "").trim(),
+  );
+  const contactId = await resolveParticipantContact(
+    tx,
+    companyId,
+    String(formData.get("contactId") ?? "").trim(),
+  );
+  const fields = readParticipantFields(formData);
+  if (companyId === null && !fields.name && !fields.org)
+    throw new Error("select a company, or enter a name or organization");
+
+  return {
+    companyId,
+    contactId,
+    role,
+    name: companyId ? "" : fields.name,
+    org: companyId ? "" : fields.org,
+    email: companyId ? "" : fields.email,
+  };
+}
+
+export async function addParticipant(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();
 
   const projectId = String(formData.get("projectId") ?? "").trim();
-  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!projectId) throw new Error("project is required");
 
-  if (!projectId || !companyId)
-    throw new Error("project and company are required");
+  const companyId = await withOrg(orgId, async (tx) => {
+    // RLS scopes the project to this org; a foreign id resolves to null.
+    const project = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (!project) throw new Error("project not found in this organization");
 
-  await withOrg(orgId, (tx) =>
-    tx.projectLink.deleteMany({ where: { projectId, companyId } }),
-  );
+    const data = await resolveParticipant(tx, formData);
+    await tx.projectLink.create({ data: { orgId, projectId, ...data } });
+    return data.companyId;
+  });
 
   revalidatePath(`/dashboard/projects/${projectId}`);
-  revalidatePath(`/dashboard/companies/${companyId}`);
+  if (companyId) revalidatePath(`/dashboard/companies/${companyId}`);
+}
+
+export async function updateParticipant(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const linkId = String(formData.get("linkId") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!linkId || !projectId)
+    throw new Error("participant and project are required");
+
+  // The companies whose profiles need revalidating: the old link's company (if
+  // any) and the new one (if any).
+  const affected = new Set<string>();
+  await withOrg(orgId, async (tx) => {
+    // RLS scopes the load to this org; a foreign link id resolves to null.
+    const existing = await tx.projectLink.findUnique({
+      where: { id: linkId },
+      select: { companyId: true },
+    });
+    if (!existing) throw new Error("participant not found in this organization");
+    if (existing.companyId) affected.add(existing.companyId);
+
+    const data = await resolveParticipant(tx, formData);
+    if (data.companyId) affected.add(data.companyId);
+
+    await tx.projectLink.update({ where: { id: linkId }, data });
+  });
+
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  for (const cid of affected) revalidatePath(`/dashboard/companies/${cid}`);
+}
+
+// Remove a participant. Keyed on the surrogate id (a company can hold several
+// roles now); deleteMany (not delete) so an RLS-excluded row is a silent no-op.
+export async function removeParticipant(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const linkId = String(formData.get("linkId") ?? "").trim();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!linkId || !projectId)
+    throw new Error("participant and project are required");
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const existing = await tx.projectLink.findUnique({
+      where: { id: linkId },
+      select: { companyId: true },
+    });
+    await tx.projectLink.deleteMany({ where: { id: linkId, projectId } });
+    return existing?.companyId ?? null;
+  });
+
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  if (companyId) revalidatePath(`/dashboard/companies/${companyId}`);
 }
 
 // Permanently delete a project. All child rows cascade at the DB (project_links,
-// team_members, funding_sources, action_items) or SetNull (introductions,
-// events), so the single deleteMany is enough. deleteMany keeps it a no-op when
-// RLS excludes the row; then redirect back to the directory.
+// funding_sources, action_items) or SetNull (introductions, events), so the
+// single deleteMany is enough. deleteMany keeps it a no-op when RLS excludes the
+// row; then redirect back to the directory.
 export async function deleteProject(formData: FormData): Promise<void> {
   const { orgId } = await requireAdmin();
 
@@ -252,8 +378,11 @@ async function resolveDeliverableOwner(
     return { ownerUserId: ownerId, ownerContactId: null };
   }
 
-  // A "they owe" owner must be a contact at a company on this project.
-  const companyIds = project.projectLinks.map((l) => l.companyId);
+  // A "they owe" owner must be a contact at a company on this project (off-network
+  // participants carry a null company, so drop those before the contact lookup).
+  const companyIds = project.projectLinks
+    .map((l) => l.companyId)
+    .filter((id): id is string => id !== null);
   const contact =
     companyIds.length === 0
       ? null
@@ -355,117 +484,6 @@ export async function editProjectDeliverable(
     });
   });
   revalidateDeliverable(projectId);
-}
-
-// ── Professional team ───────────────────────────────────────────────────────
-// A team member is an individual professional on a project (architect, attorney,
-// lender, GC, …), captured as free text so off-network professionals can be
-// tracked, with an OPTIONAL link to a network company. Every write re-verifies the
-// parent project inside withOrg (RLS), so a foreign projectId is refused; the
-// company link, when set, is likewise verified in-tenant (company_id is a plain
-// FK whose referential check bypasses tenant scoping).
-
-function readTeamFields(formData: FormData): {
-  name: string;
-  org: string;
-  email: string;
-} {
-  return {
-    name: String(formData.get("name") ?? "").trim().slice(0, 200),
-    org: String(formData.get("org") ?? "").trim().slice(0, 200),
-    email: String(formData.get("email") ?? "").trim().slice(0, 200),
-  };
-}
-
-// Resolve an optional network company link (a team member's firm, a project's
-// developer), verifying it belongs to this tenant. Blank clears to null. Runs
-// inside the caller's withOrg tx (RLS-scoped, so a foreign id resolves null).
-async function resolveLinkedCompany(
-  tx: Parameters<Parameters<typeof withOrg>[1]>[0],
-  companyId: string,
-): Promise<string | null> {
-  if (companyId === "") return null;
-  const company = await tx.company.findUnique({
-    where: { id: companyId },
-    select: { id: true },
-  });
-  if (!company) throw new Error("linked company not found in this organization");
-  return company.id;
-}
-
-export async function addTeamMember(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
-
-  const projectId = String(formData.get("projectId") ?? "").trim();
-  const role = String(formData.get("role") ?? "").trim();
-  const companyId = String(formData.get("companyId") ?? "").trim();
-  const { name, org, email } = readTeamFields(formData);
-
-  if (!projectId) throw new Error("project is required");
-  if (!isTeamRole(role)) throw new Error("invalid team role");
-  if (!name && !org) throw new Error("a name or organization is required");
-
-  await withOrg(orgId, async (tx) => {
-    // RLS scopes the project to this org; a foreign id resolves to null.
-    const project = await tx.project.findUnique({
-      where: { id: projectId },
-      select: { id: true },
-    });
-    if (!project) throw new Error("project not found in this organization");
-
-    const linkedCompanyId = await resolveLinkedCompany(tx, companyId);
-
-    await tx.projectTeamMember.create({
-      data: { orgId, projectId, role, name, org, email, companyId: linkedCompanyId },
-    });
-  });
-
-  revalidatePath(`/dashboard/projects/${projectId}`);
-}
-
-export async function updateTeamMember(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
-
-  const memberId = String(formData.get("memberId") ?? "").trim();
-  const projectId = String(formData.get("projectId") ?? "").trim();
-  const role = String(formData.get("role") ?? "").trim();
-  const companyId = String(formData.get("companyId") ?? "").trim();
-  const { name, org, email } = readTeamFields(formData);
-
-  if (!memberId || !projectId) throw new Error("team member and project are required");
-  if (!isTeamRole(role)) throw new Error("invalid team role");
-  if (!name && !org) throw new Error("a name or organization is required");
-
-  await withOrg(orgId, async (tx) => {
-    // RLS scopes the load to this org; a foreign member id resolves to null.
-    const existing = await tx.projectTeamMember.findUnique({
-      where: { id: memberId },
-      select: { id: true },
-    });
-    if (!existing) throw new Error("team member not found in this organization");
-
-    const linkedCompanyId = await resolveLinkedCompany(tx, companyId);
-
-    await tx.projectTeamMember.update({
-      where: { id: memberId },
-      data: { role, name, org, email, companyId: linkedCompanyId },
-    });
-  });
-
-  revalidatePath(`/dashboard/projects/${projectId}`);
-}
-
-export async function removeTeamMember(formData: FormData): Promise<void> {
-  const { orgId } = await requireOrgContext();
-
-  const memberId = String(formData.get("memberId") ?? "").trim();
-  const projectId = String(formData.get("projectId") ?? "").trim();
-  if (!memberId || !projectId) throw new Error("team member and project are required");
-
-  await withOrg(orgId, (tx) =>
-    tx.projectTeamMember.deleteMany({ where: { id: memberId, projectId } }),
-  );
-  revalidatePath(`/dashboard/projects/${projectId}`);
 }
 
 // Open-role scan (slice 11.4c, ported from the prototype's doOpenRolesScan) — the

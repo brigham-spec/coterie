@@ -942,8 +942,10 @@ export async function findEventTargets(
     });
 
     // Only links in projects that an invited guest participates in can be shared.
+    // Off-network participants (null company) can't be targeted, so skip them.
     const linkRows = await tx.projectLink.findMany({
       where: {
+        companyId: { not: null },
         project: {
           projectLinks: { some: { companyId: { in: invitedCompanyIds } } },
         },
@@ -982,11 +984,13 @@ export async function findEventTargets(
       bCompanyId: i.partyB.companyId,
       status: i.status,
     })),
-    projectLinks: data.projectLinks.map((l) => ({
-      projectId: l.project.id,
-      projectName: l.project.name,
-      companyId: l.companyId,
-    })),
+    projectLinks: data.projectLinks
+      .filter((l): l is typeof l & { companyId: string } => l.companyId !== null)
+      .map((l) => ({
+        projectId: l.project.id,
+        projectName: l.project.name,
+        companyId: l.companyId,
+      })),
   });
 
   return { status: "ok", suggestions, guestCount };

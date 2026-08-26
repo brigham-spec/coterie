@@ -106,7 +106,9 @@ export default async function ValueCreatedPage() {
     description: p.description || null,
     value: p.value == null ? null : Number(p.value),
     realizedValue: p.realizedValue == null ? null : Number(p.realizedValue),
-    memberNames: p.projectLinks.map((l) => l.company.name),
+    memberNames: p.projectLinks
+      .map((l) => l.company?.name)
+      .filter((name): name is string => name != null),
     stageHistory: stageHistoryStages(p.stageHistory),
     economicImpact: parseEconomicImpact(p.economicImpact),
     serviceFees: sumActiveServiceFees(parseHvServices(p.hvServices)),

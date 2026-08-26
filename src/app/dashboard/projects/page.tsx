@@ -89,7 +89,7 @@ function loadProjects(orgId: string) {
         projectLinks: {
           include: { company: { select: { name: true } } },
         },
-        _count: { select: { teamMembers: true, fundingSources: true } },
+        _count: { select: { fundingSources: true } },
       },
     });
     // The roster for the developer/lead picker on the create form.
@@ -399,7 +399,11 @@ function EnrichBadge({
 }
 
 function ProjectCard({ project }: { project: ProjectRow }) {
-  const companies = project.projectLinks.map((l) => l.company.name);
+  // On-network participants surface as company chips; off-network rows (null
+  // company) are omitted here.
+  const companies = project.projectLinks
+    .map((l) => l.company?.name)
+    .filter((name): name is string => name != null);
   const value =
     project.value == null ? null : currency.format(Number(project.value));
   // Enrichment the card surfaces beyond the pipeline facts: active HVEDC service
@@ -409,13 +413,9 @@ function ProjectCard({ project }: { project: ProjectRow }) {
   const services = parseHvServices(project.hvServices).filter(
     (s) => s.line.active,
   );
-  const teamCount = project._count.teamMembers;
   const fundingCount = project._count.fundingSources;
   const hasEnrichment =
-    services.length > 0 ||
-    !impactIsEmpty(impact) ||
-    teamCount > 0 ||
-    fundingCount > 0;
+    services.length > 0 || !impactIsEmpty(impact) || fundingCount > 0;
   return (
     <Link
       href={`/dashboard/projects/${project.id}`}
@@ -477,11 +477,6 @@ function ProjectCard({ project }: { project: ProjectRow }) {
           {fundingCount > 0 ? (
             <EnrichBadge tone="bg-gold-bg text-gold-ink">
               {fundingCount} funding
-            </EnrichBadge>
-          ) : null}
-          {teamCount > 0 ? (
-            <EnrichBadge tone="bg-slate-bg text-slate-ink">
-              {teamCount} team
             </EnrichBadge>
           ) : null}
         </div>
