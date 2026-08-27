@@ -115,6 +115,21 @@ export function parseNewsArticles(raw: string): NewsArticle[] {
   return out;
 }
 
+/// PURE: drop articles whose URL is already in the saved set (case-insensitive),
+/// so re-scanning a company or project doesn't resurface press already in the
+/// NewsItem ledger (cuts noise). Articles with no URL can't be matched against a
+/// saved item, so they always pass through.
+export function excludeSavedArticles(
+  articles: NewsArticle[],
+  savedUrls: Iterable<string>,
+): NewsArticle[] {
+  const saved = new Set<string>();
+  for (const u of savedUrls) saved.add(u.toLowerCase());
+  return articles.filter(
+    (a) => a.url === null || !saved.has(a.url.toLowerCase()),
+  );
+}
+
 // PURE: the full user prompt handed to the model (with the web_search tool).
 // Grounds the search in this company + its projects and the tenant's region.
 function buildPrompt(input: NewsScanInput): string {

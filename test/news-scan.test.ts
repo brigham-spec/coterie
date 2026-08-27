@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { parseNewsArticles } from "@/lib/news-scan";
+import {
+  excludeSavedArticles,
+  parseNewsArticles,
+  type NewsArticle,
+} from "@/lib/news-scan";
 
 // Pure-logic tests for the News Intelligence parser: web-search replies can be
 // chatty and malformed, so parseNewsArticles must pull the first JSON array,
@@ -135,5 +139,45 @@ describe("parseNewsArticles", () => {
     expect(parseNewsArticles('{"headline":"object not array"}')).toEqual([]);
     expect(parseNewsArticles("[not valid json,]")).toEqual([]);
     expect(parseNewsArticles("")).toEqual([]);
+  });
+});
+
+// Filter that drops scan results already in the NewsItem ledger — so re-scanning
+// a company or project doesn't resurface press the user has already saved.
+describe("excludeSavedArticles", () => {
+  const article = (headline: string, url: string | null): NewsArticle => ({
+    headline,
+    source: "",
+    date: "",
+    url,
+    summary: "",
+    significance: "",
+    keyFacts: [],
+  });
+
+  test("drops articles whose URL is already saved (case-insensitive)", () => {
+    const scanned = [
+      article("Already saved", "https://x.example/saved"),
+      article("New one", "https://x.example/fresh"),
+    ];
+    const out = excludeSavedArticles(scanned, ["https://X.EXAMPLE/SAVED"]);
+    expect(out.map((a) => a.headline)).toEqual(["New one"]);
+  });
+
+  test("keeps url-less articles (can't match a saved item)", () => {
+    const scanned = [
+      article("No link", null),
+      article("Saved link", "https://x.example/dup"),
+    ];
+    const out = excludeSavedArticles(scanned, ["https://x.example/dup"]);
+    expect(out.map((a) => a.headline)).toEqual(["No link"]);
+  });
+
+  test("returns every article when nothing has been saved yet", () => {
+    const scanned = [
+      article("A", "https://x.example/a"),
+      article("B", "https://x.example/b"),
+    ];
+    expect(excludeSavedArticles(scanned, [])).toEqual(scanned);
   });
 });

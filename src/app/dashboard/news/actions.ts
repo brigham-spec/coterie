@@ -8,7 +8,11 @@ import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { TERMINAL_STAGES } from "@/lib/project-stages";
-import { scanCompanyNews, type NewsArticle } from "@/lib/news-scan";
+import {
+  excludeSavedArticles,
+  scanCompanyNews,
+  type NewsArticle,
+} from "@/lib/news-scan";
 
 // News Intelligence actions (slice 11.9). scanNews loads ONE company's context
 // in a withOrg tx (RLS scopes it — a foreign id resolves to no company) and hands
@@ -60,7 +64,13 @@ export async function scanNews(
         },
       },
     });
-    return { company, links };
+    // Articles already saved for this company — filtered out of the scan below
+    // so a re-scan doesn't resurface press already in the ledger (cuts noise).
+    const saved = await tx.newsItem.findMany({
+      where: { companyId },
+      select: { url: true },
+    });
+    return { company, links, savedUrls: saved.map((n) => n.url) };
   });
 
   if (company === null)
@@ -86,7 +96,7 @@ export async function scanNews(
       status: "ok",
       companyId: company.company.id,
       companyName: company.company.name,
-      articles,
+      articles: excludeSavedArticles(articles, company.savedUrls),
     };
   } catch (err) {
     console.error("news scan failed", err);
@@ -128,8 +138,8 @@ export async function scanProjectNews(
     return { status: "error", message: "Select a project to scan." };
 
   // RLS scopes the read; a foreign/unknown id resolves to no project.
-  const project = await withOrg(orgId, (tx) =>
-    tx.project.findUnique({
+  const resolved = await withOrg(orgId, async (tx) => {
+    const project = await tx.project.findUnique({
       where: { id: projectId },
       select: {
         id: true,
@@ -163,17 +173,33 @@ export async function scanProjectNews(
           },
         },
       },
-    }),
-  );
+    });
+    if (project === null) return null;
+    // Ground the search in the project's developer, falling back to its first
+    // participant. Saved articles attach to this company (or none if the project
+    // has no associated company — the scan still surfaces results ephemerally).
+    const subject = project.developer ?? project.projectLinks[0]?.company ?? null;
+    const attachCompanyId = subject?.id ?? null;
+    // Articles already saved for this project (or its subject company) — filtered
+    // out of the scan below so a re-scan doesn't resurface saved press (cuts noise).
+    const saved = await tx.newsItem.findMany({
+      where: attachCompanyId
+        ? { OR: [{ projectId }, { companyId: attachCompanyId }] }
+        : { projectId },
+      select: { url: true },
+    });
+    return {
+      project,
+      subject,
+      attachCompanyId,
+      savedUrls: saved.map((n) => n.url),
+    };
+  });
 
-  if (project === null)
+  if (resolved === null)
     return { status: "error", message: "Project not found in this organization." };
 
-  // Ground the search in the project's developer, falling back to its first
-  // participant. Saved articles attach to this company (or none if the project
-  // has no associated company — the scan can still surface results ephemerally).
-  const subject = project.developer ?? project.projectLinks[0]?.company ?? null;
-  const attachCompanyId = subject?.id ?? null;
+  const { project, subject, attachCompanyId, savedUrls } = resolved;
   const companyName = subject?.name ?? project.prospectLead ?? project.name;
   const counties = subject?.counties ?? (project.county ? [project.county] : []);
 
@@ -195,7 +221,7 @@ export async function scanProjectNews(
       projectId: project.id,
       projectName: project.name,
       attachCompanyId,
-      articles,
+      articles: excludeSavedArticles(articles, savedUrls),
     };
   } catch (err) {
     console.error("project news scan failed", err);
