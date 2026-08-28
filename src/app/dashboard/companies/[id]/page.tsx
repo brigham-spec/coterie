@@ -9,6 +9,8 @@ import { loadPendingIntroDetections } from "@/lib/intro-detection-load";
 import { loadIntroSuggestionSnapshot } from "@/lib/intro-suggestion-cache";
 import { buildRelationshipTimeline } from "@/lib/relationship-timeline";
 import { readMemberTierDefs } from "@/lib/member-tiers";
+import { isModuleEnabled } from "@/lib/modules";
+import { deriveInvoiceBalance, sumPayments } from "@/lib/invoice-status";
 import { hasCredential } from "@/lib/integrations";
 import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { RSVP_CONFIRMED, RSVP_ATTENDED } from "@/lib/event-stages";
@@ -39,6 +41,7 @@ import { RelationshipTimeline } from "./_timeline";
 import { IntroductionsCard } from "./_introductions-card";
 import { StatusPill } from "./_status-pill";
 import { ProjectsCard } from "./_projects-card";
+import { InvoicesCard } from "./_invoices-card";
 
 // Company detail — the central relationship's home. Surfaces the company's own
 // fields (including the slice-11.0 relationship attributes: what it's looking
@@ -85,6 +88,8 @@ export default async function CompanyDetailPage({
   ]);
   const staff = staffRows.map((m) => ({ id: m.user.id, name: m.user.name }));
   const tierDefs = readMemberTierDefs(org?.settings);
+  // Only surface the invoice schedule when the org runs the invoices module.
+  const invoicesEnabled = isModuleEnabled(org?.settings, "invoices");
 
   // Reads share one pooled connection inside the tx, so run them in sequence —
   // concurrent queries on a single pg client serialize and can stall the load.
@@ -96,6 +101,7 @@ export default async function CompanyDetailPage({
     secondDegree,
     emailMessages,
     newsItems,
+    invoices,
     actionItems,
     statusChanges,
     valueDelivered,
@@ -137,6 +143,7 @@ export default async function CompanyDetailPage({
           secondDegree: [],
           emailMessages: [],
           newsItems: [],
+          invoices: [],
           actionItems: [],
           statusChanges: [],
           valueDelivered: [],
@@ -281,6 +288,16 @@ export default async function CompanyDetailPage({
           project: { select: { name: true } },
         },
       });
+      // This company's invoice schedule (only when the org runs the invoices
+      // module). Payments ride along so the card can derive live status/balance;
+      // ordered by due date so the schedule reads front-to-back.
+      const invoices = invoicesEnabled
+        ? await tx.invoice.findMany({
+            where: { companyId: id },
+            orderBy: [{ dueOn: "asc" }, { issuedOn: "asc" }],
+            include: { payments: { select: { amount: true } } },
+          })
+        : [];
       // Commitments touching this company: manual ones logged on the profile
       // (companyId), items its contacts owe us (ownerContactId), plus items we
       // owe on meetings its people attended.
@@ -431,6 +448,7 @@ export default async function CompanyDetailPage({
         secondDegree,
         emailMessages,
         newsItems,
+        invoices,
         actionItems,
         statusChanges,
         valueDelivered,
@@ -956,6 +974,27 @@ export default async function CompanyDetailPage({
           ).values(),
         ]}
       />
+
+      {invoicesEnabled ? (
+        <InvoicesCard
+          companyId={company.id}
+          invoices={invoices.map((inv) => {
+            const { status, balance } = deriveInvoiceBalance(
+              inv.status,
+              inv.amount,
+              sumPayments(inv.payments),
+            );
+            return {
+              id: inv.id,
+              invoiceNumber: inv.invoiceNumber,
+              amount: Number(inv.amount),
+              balance: Number(balance),
+              status,
+              dueOn: inv.dueOn,
+            };
+          })}
+        />
+      ) : null}
 
       <CommitmentsCard
         companyId={company.id}

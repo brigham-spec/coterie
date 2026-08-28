@@ -48,6 +48,8 @@ export async function createInvoice(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/dashboard/invoices");
+  // The company profile surfaces this company's invoice schedule too.
+  revalidatePath(`/dashboard/companies/${companyId}`);
 }
 
 // Record money received against an invoice. invoiceId is a PLAIN FK on
