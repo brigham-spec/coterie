@@ -20,10 +20,16 @@ import { extractJsonArray } from "@/lib/json-extract";
 
 // One contact the curation may pick. `neverInvited` flags contacts whose company
 // has never appeared on any event guest list — the engine prioritises them.
+// `companyId`/`isPrimary` drive the one-guest-per-company rule: the list favours
+// broad company representation over several people from the same firm, so picks
+// collapse to a single guest per company — the company's PRIMARY contact when one
+// is on the roster (see oneGuestPerCompany).
 export type GuestCandidate = {
   contactId: string;
   name: string;
   company: string | null;
+  companyId: string | null;
+  isPrimary: boolean;
   industry: string | null;
   lookingFor: string | null;
   canOffer: string | null;
@@ -95,11 +101,52 @@ export function parseGuestSuggestions(
   return out;
 }
 
+/// PURE: collapse picks to one guest per company, favouring broad company
+/// representation over several guests from the same firm. Picks are walked in the
+/// model's order; the first pick for a company claims it, and every later pick
+/// from that same company is dropped. When the claimed company has a PRIMARY
+/// contact on the candidate roster, that primary is invited in place of whoever
+/// the model picked (the reason carries over) — so each represented company sends
+/// its main relationship contact. Candidates with no company (companyId null) are
+/// never grouped and always kept.
+export function oneGuestPerCompany(
+  picks: readonly SuggestedGuest[],
+  candidates: readonly GuestCandidate[],
+): SuggestedGuest[] {
+  const byId = new Map(candidates.map((c) => [c.contactId, c]));
+  const primaryByCompany = new Map<string, GuestCandidate>();
+  for (const c of candidates) {
+    if (c.companyId !== null && c.isPrimary && !primaryByCompany.has(c.companyId))
+      primaryByCompany.set(c.companyId, c);
+  }
+
+  const out: SuggestedGuest[] = [];
+  const claimed = new Set<string>();
+  for (const pick of picks) {
+    const cand = byId.get(pick.contactId);
+    const companyId = cand?.companyId ?? null;
+    if (companyId === null) {
+      out.push(pick);
+      continue;
+    }
+    if (claimed.has(companyId)) continue;
+    claimed.add(companyId);
+    const primary = primaryByCompany.get(companyId);
+    if (primary && primary.contactId !== pick.contactId) {
+      out.push({ contactId: primary.contactId, name: primary.name, reason: pick.reason });
+    } else {
+      out.push(pick);
+    }
+  }
+  return out;
+}
+
 // PURE: one candidate's profile line for the prompt (terse, id-tagged so the
 // model can reference it back in its picks).
 function candidateLine(c: GuestCandidate): string {
   const parts = [`[ID:${c.contactId}] ${c.name}`];
   if (c.company) parts.push(c.company);
+  if (c.isPrimary) parts.push("PRIMARY CONTACT");
   if (c.industry) parts.push(c.industry);
   if (c.tags.length) parts.push(`Tags: ${c.tags.join(", ")}`);
   if (c.lookingFor) parts.push(`Needs: ${c.lookingFor.slice(0, 120)}`);
@@ -151,7 +198,7 @@ Already invited: ${alreadyInvited}${projectBlock}${neverInvitedBlock}${meetings}
 AVAILABLE CONTACTS (not yet invited):
 ${candidates}
 
-Select the best up to ${target} candidates. Cast a wide net across the full network — members, strategic partners, and prospects who would convert or benefit — not just the handful already connected to current guests. Prioritise: specific fit with the event's theme and linked project, contacts whose company has never been invited, and active relevance from the meeting intelligence. Use ONLY the [ID:...] contact ids listed above.
+Select up to ${target} guests — AT MOST ONE PER COMPANY. The goal is broad company representation, so favour reaching more distinct firms over inviting several people from the same one. When a company fits, pick its PRIMARY CONTACT (flagged "PRIMARY CONTACT"); only pick a non-primary if that company has no primary listed. Cast a wide net across the full network — members, strategic partners, and prospects who would convert or benefit — not just the handful already connected to current guests. Prioritise: specific fit with the event's theme and linked project, contacts whose company has never been invited, and active relevance from the meeting intelligence. Use ONLY the [ID:...] contact ids listed above.
 
 Return ONLY a valid JSON array — no prose, no markdown code fences:
 [{"contactId":"<id from above>","reason":"<one specific sentence on why they fit this event>"}]`;
@@ -179,5 +226,7 @@ export async function generateGuestSuggestions(
     .join("")
     .trim();
 
-  return parseGuestSuggestions(text, input.candidates);
+  // Collapse to one guest per company (favouring each firm's primary contact) so
+  // the list spreads across distinct companies rather than stacking a single firm.
+  return oneGuestPerCompany(parseGuestSuggestions(text, input.candidates), input.candidates);
 }

@@ -735,7 +735,7 @@ export async function suggestGuestList(
       select: {
         contactId: true,
         externalName: true,
-        contact: { select: { name: true } },
+        contact: { select: { name: true, companyId: true } },
       },
     });
     // Companies that have appeared on ANY event guest list (via a network contact) —
@@ -755,6 +755,7 @@ export async function suggestGuestList(
       select: {
         id: true,
         name: true,
+        isPrimary: true,
         company: {
           select: {
             id: true,
@@ -780,6 +781,14 @@ export async function suggestGuestList(
   const invitedContactIds = new Set(
     data.invitees.map((i) => i.contactId).filter((v): v is string => v != null),
   );
+  // Companies already represented on THIS event's list — dropped from the
+  // candidate pool so a suggestion run reaches new firms instead of stacking a
+  // second guest onto a company that already has one (one guest per company).
+  const invitedCompanyIds = new Set(
+    data.invitees
+      .map((i) => i.contact?.companyId)
+      .filter((v): v is string => v != null),
+  );
   const alreadyInvited = data.invitees
     .map((i) => i.contact?.name ?? i.externalName ?? "")
     .filter((n) => n !== "");
@@ -788,11 +797,13 @@ export async function suggestGuestList(
   );
 
   const candidates: GuestCandidate[] = data.contacts
-    .filter((c) => !invitedContactIds.has(c.id))
+    .filter((c) => !invitedContactIds.has(c.id) && !invitedCompanyIds.has(c.company.id))
     .map((c) => ({
       contactId: c.id,
       name: c.name,
       company: c.company.name,
+      companyId: c.company.id,
+      isPrimary: c.isPrimary,
       industry: c.company.industry,
       lookingFor: c.company.lookingFor,
       canOffer: c.company.canOffer,
