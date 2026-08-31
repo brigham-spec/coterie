@@ -25,6 +25,7 @@ export type AffiliationRow = {
   role: string;
   industry: string;
   website: string;
+  linkedin: string;
   canOffer: string;
   lookingFor: string;
   counties: string;
@@ -123,6 +124,16 @@ function AffiliationItem({ affiliation }: { affiliation: AffiliationRow }) {
                 Website
               </a>
             ) : null}
+            {affiliation.linkedin ? (
+              <a
+                href={affiliation.linkedin}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-ink-3 hover:text-gold hover:underline"
+              >
+                LinkedIn
+              </a>
+            ) : null}
           </div>
           {meta ? <div className="mt-0.5 text-[11px] text-ink-3">{meta}</div> : null}
         </div>
@@ -208,6 +219,11 @@ function AffiliationForm({
           name="website"
           label="Website"
           defaultValue={defaults?.website ?? ""}
+        />
+        <Field
+          name="linkedin"
+          label="LinkedIn"
+          defaultValue={defaults?.linkedin ?? ""}
         />
         <Field
           name="counties"

@@ -1171,6 +1171,8 @@ model Affiliation {
   role       String @default("")
   industry   String @default("")
   website    String @default("")
+  /// The affiliated company's LinkedIn page URL (optional), linkable from the card.
+  linkedin   String @default("")
   canOffer   String @default("") @map("can_offer")
   lookingFor String @default("") @map("looking_for")
   /// Free-text geography (e.g. "Dutchess, Ulster, Orange"), mirroring the

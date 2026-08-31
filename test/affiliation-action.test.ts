@@ -110,6 +110,7 @@ describe("addAffiliation", () => {
         role: "Founder",
         industry: "Transportation",
         website: "acmelogistics.com",
+        linkedin: "https://linkedin.com/company/acme-logistics",
         canOffer: "Fleet capacity",
         lookingFor: "Warehouse partners",
         counties: "Dutchess, Ulster",
@@ -124,6 +125,7 @@ describe("addAffiliation", () => {
           role: true,
           industry: true,
           website: true,
+          linkedin: true,
           canOffer: true,
           lookingFor: true,
           counties: true,
@@ -135,11 +137,24 @@ describe("addAffiliation", () => {
       role: "Founder",
       industry: "Transportation",
       website: "acmelogistics.com",
+      linkedin: "https://linkedin.com/company/acme-logistics",
       canOffer: "Fleet capacity",
       lookingFor: "Warehouse partners",
       counties: "Dutchess, Ulster",
       dealSize: "$50k-$200k",
     });
+  });
+
+  test("rejects a dangerous-scheme LinkedIn URL", async () => {
+    await expect(
+      addAffiliation(
+        fd({
+          companyId: companyAId,
+          name: "Scheme Co",
+          linkedin: "javascript:alert(1)",
+        }),
+      ),
+    ).rejects.toThrow("LinkedIn must be an http(s) URL");
   });
 
   test("requires an affiliated company name", async () => {

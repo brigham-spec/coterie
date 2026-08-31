@@ -1932,6 +1932,7 @@ function readAffiliationFields(formData: FormData) {
     role: str("role"),
     industry: str("industry"),
     website: assertHttpUrl(str("website"), "website"),
+    linkedin: assertHttpUrl(str("linkedin"), "LinkedIn"),
     canOffer: str("canOffer"),
     lookingFor: str("lookingFor"),
     counties: str("counties"),

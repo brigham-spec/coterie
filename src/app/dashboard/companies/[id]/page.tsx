@@ -817,6 +817,7 @@ export default async function CompanyDetailPage({
           role: a.role,
           industry: a.industry,
           website: a.website,
+          linkedin: a.linkedin,
           canOffer: a.canOffer,
           lookingFor: a.lookingFor,
           counties: a.counties,
