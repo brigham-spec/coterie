@@ -45,6 +45,9 @@ export type SynthEvidence = {
   doneItems: string[];
   articles: string[];
   projects: string[];
+  // The member's additional companies / affiliations — other ventures and
+  // relationships they carry. Valuable connection points, folded into notesAppend.
+  affiliations: string[];
 };
 
 // The proposed update. Every writable field is a string; "" means "no change".
@@ -164,13 +167,13 @@ COMPANY: ${context.name}${context.contactName ? ` (contact: ${context.contactNam
 CURRENT STRUCTURED FIELDS:
 ${currentFields || "(no structured data yet)"}
 
-${section("MEETING HISTORY", meetingBlock)}${section("EVENT CONVERSATION NOTES", evidence.eventNotes)}${section("INTRODUCTIONS MADE", evidence.intros)}${section("OPEN COMMITMENTS", evidence.openItems)}${section("COMPLETED COMMITMENTS", evidence.doneItems)}${section("SAVED ARTICLES / RESEARCH", evidence.articles)}${section("ACTIVE PROJECTS (already tracked — do not re-list)", evidence.projects)}TASK: Based ONLY on the information above for THIS company, identify what should change. Look for:
+${section("MEETING HISTORY", meetingBlock)}${section("EVENT CONVERSATION NOTES", evidence.eventNotes)}${section("INTRODUCTIONS MADE", evidence.intros)}${section("OPEN COMMITMENTS", evidence.openItems)}${section("COMPLETED COMMITMENTS", evidence.doneItems)}${section("SAVED ARTICLES / RESEARCH", evidence.articles)}${section("ACTIVE PROJECTS (already tracked — do not re-list)", evidence.projects)}${section("ADDITIONAL COMPANIES & AFFILIATIONS (other ventures/relationships — valuable connection points)", evidence.affiliations)}TASK: Based ONLY on the information above for THIS company, identify what should change. Look for:
 - What they explicitly said they are seeking or need (lookingFor) — only if stated directly.
 - Expertise or resources they explicitly said they can offer others (canOffer) — only if stated.
 - Counties or regions they are active in (counties) — comma-separated.
 - Government/agency relationships they have or need (agencyContacts).
 - Their typical deal size or investment range (dealSize).
-- Any important new strategic context (notesAppend) — including project intel worth recording.
+- Any important new strategic context (notesAppend) — including project intel and affiliated companies worth recording as connection points.
 
 STRICT RULES — ACCURACY IS PARAMOUNT:
 - Use ONLY facts explicitly and directly stated above. Never infer, guess, or invent project names, dollar amounts, locations, or relationships.

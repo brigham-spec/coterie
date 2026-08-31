@@ -191,6 +191,18 @@ beforeAll(async () => {
       },
     });
 
+    // An affiliated company — a connection point folded into the evidence.
+    await tx.affiliation.create({
+      data: {
+        orgId: orgA.id,
+        companyId: companyAId,
+        name: "Acme Logistics",
+        role: "Founder",
+        industry: "Transportation",
+        canOffer: "Fleet capacity",
+      },
+    });
+
     // A member with no evidence at all — synth must report empty.
     await tx.company.create({
       data: {
@@ -270,6 +282,9 @@ describe("synthesizeCompany", () => {
       "Acme lands state grant — $500k awarded for the mill.",
     ]);
     expect(evidence.projects).toEqual(["Kingston Mill (Pre-Development)"]);
+    expect(evidence.affiliations).toEqual([
+      "Acme Logistics — Founder (Transportation); offers: Fleet capacity",
+    ]);
   });
 
   test("reports empty when the member has no evidence", async () => {

@@ -32,6 +32,7 @@ const EVENT_NOTE_TAKE = 6;
 const INTRO_TAKE = 8;
 const ARTICLE_TAKE = 8;
 const PROJECT_TAKE = 8;
+const AFFILIATION_TAKE = 12;
 
 export type SynthResult =
   | { status: "ok"; synthesis: ProfileSynthesis }
@@ -49,6 +50,24 @@ function introLine(
   const who = counterpart || "an unnamed contact";
   if (outcome && outcome.trim() !== "") return `Intro to ${who} → ${outcome.trim()}`;
   return `Intro to ${who} (${status})`;
+}
+
+// PURE: one-line read of an affiliated company — the member's other venture or
+// relationship — so the model sees it as a connection point (name, role there,
+// industry, and any offer/need it carries) without the relational graph.
+function affiliationLine(a: {
+  name: string;
+  role: string;
+  industry: string;
+  canOffer: string;
+  lookingFor: string;
+}): string {
+  let line = a.name.trim() || "an unnamed company";
+  if (a.role.trim() !== "") line += ` — ${a.role.trim()}`;
+  if (a.industry.trim() !== "") line += ` (${a.industry.trim()})`;
+  if (a.canOffer.trim() !== "") line += `; offers: ${a.canOffer.trim()}`;
+  if (a.lookingFor.trim() !== "") line += `; seeking: ${a.lookingFor.trim()}`;
+  return line;
 }
 
 export async function synthesizeCompany(companyId: string): Promise<SynthResult> {
@@ -158,6 +177,21 @@ export async function synthesizeCompany(companyId: string): Promise<SynthResult>
       select: { project: { select: { name: true, stage: true } } },
     });
 
+    // The member's additional companies / affiliations — other ventures and
+    // relationships they carry, read as connection points.
+    const affiliations = await tx.affiliation.findMany({
+      where: { companyId: id },
+      orderBy: { createdAt: "asc" },
+      take: AFFILIATION_TAKE,
+      select: {
+        name: true,
+        role: true,
+        industry: true,
+        canOffer: true,
+        lookingFor: true,
+      },
+    });
+
     return {
       company,
       contactIdSet,
@@ -167,6 +201,7 @@ export async function synthesizeCompany(companyId: string): Promise<SynthResult>
       intros,
       articles,
       projectLinks,
+      affiliations,
     };
   });
 
@@ -197,6 +232,7 @@ export async function synthesizeCompany(companyId: string): Promise<SynthResult>
     projects: data.projectLinks.map(
       (l) => `${l.project.name} (${getStageDef(l.project.stage).label})`,
     ),
+    affiliations: data.affiliations.map(affiliationLine),
   };
 
   // Nothing to synthesize from → tell the caller so it can show an empty state
@@ -208,7 +244,8 @@ export async function synthesizeCompany(companyId: string): Promise<SynthResult>
     evidence.openItems.length > 0 ||
     evidence.doneItems.length > 0 ||
     evidence.articles.length > 0 ||
-    evidence.projects.length > 0;
+    evidence.projects.length > 0 ||
+    evidence.affiliations.length > 0;
   if (!hasEvidence) return { status: "empty" };
 
   try {

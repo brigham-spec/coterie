@@ -142,6 +142,7 @@ describe("buildSynthPrompt", () => {
     doneItems: ["Shared the site plan"],
     articles: ["Acme lands state grant — $500k awarded for the mill."],
     projects: ["Kingston Mill Redevelopment (Due Diligence)"],
+    affiliations: ["Acme Logistics — Founder (Transportation); offers: fleet capacity"],
   };
 
   test("embeds the current field values and each non-empty evidence section", () => {
@@ -158,6 +159,8 @@ describe("buildSynthPrompt", () => {
     expect(prompt).toContain("COMPLETED COMMITMENTS");
     expect(prompt).toContain("SAVED ARTICLES");
     expect(prompt).toContain("ACTIVE PROJECTS");
+    expect(prompt).toContain("ADDITIONAL COMPANIES & AFFILIATIONS");
+    expect(prompt).toContain("Acme Logistics — Founder (Transportation)");
     // The exact JSON shape we consume is requested.
     expect(prompt).toContain('"agencyContacts"');
     expect(prompt).toContain('"dealSize"');
@@ -172,10 +175,12 @@ describe("buildSynthPrompt", () => {
       doneItems: [],
       articles: [],
       projects: [],
+      affiliations: [],
     });
     expect(prompt).toContain("MEETING HISTORY");
     expect(prompt).not.toContain("EVENT CONVERSATION NOTES");
     expect(prompt).not.toContain("INTRODUCTIONS MADE");
     expect(prompt).not.toContain("ACTIVE PROJECTS");
+    expect(prompt).not.toContain("ADDITIONAL COMPANIES & AFFILIATIONS");
   });
 });
