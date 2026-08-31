@@ -23,6 +23,7 @@ import {
 } from "@/components/ui";
 
 import { recordPayment, voidInvoice } from "../actions";
+import { EditInvoice } from "./_edit-invoice";
 
 // Invoice detail — the seat of payment history (build item 7, spec §3.12/§3.13).
 // Invoice, company, and payments are read in one withOrg pass; the live status
@@ -125,6 +126,19 @@ export default async function InvoiceDetailPage({
             </div>
           ) : null}
         </dl>
+        {status === "void" ? null : (
+          <EditInvoice
+            invoice={{
+              id: invoice.id,
+              invoiceNumber: invoice.invoiceNumber,
+              amount: String(invoice.amount),
+              issuedOn: invoice.issuedOn.toISOString().slice(0, 10),
+              dueOn: invoice.dueOn.toISOString().slice(0, 10),
+              status: invoice.status,
+              notes: invoice.notes,
+            }}
+          />
+        )}
       </Card>
 
       <Card>
