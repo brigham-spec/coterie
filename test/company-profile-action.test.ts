@@ -589,6 +589,32 @@ describe("changeCompanyStatus", () => {
     );
     expect(companyB!.status).toBe("member");
   });
+
+  test("moves a former member back to prospect, keeping them in the pipeline", async () => {
+    await changeCompanyStatus(
+      fd({ companyId: statusCompanyId, status: "prospect" }),
+    );
+
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findUnique({
+        where: { id: statusCompanyId },
+        select: { status: true },
+      }),
+    );
+    expect(company!.status).toBe("prospect");
+
+    const activities = await withOrg(orgA.id, (tx) =>
+      tx.activity.findMany({
+        where: { companyId: statusCompanyId, type: "status_changed" },
+        select: { payload: true },
+        orderBy: { createdAt: "asc" },
+      }),
+    );
+    expect(activities.at(-1)!.payload).toMatchObject({
+      from: "member",
+      to: "prospect",
+    });
+  });
 });
 
 describe("deleteCompany", () => {

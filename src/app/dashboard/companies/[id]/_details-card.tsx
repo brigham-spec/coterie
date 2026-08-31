@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { Button, Field, SelectField, Textarea, fieldControl } from "@/components/ui";
 import { CollapsibleCard } from "@/components/collapsible-card";
-import { COMPANY_STATUS_DEFS } from "@/lib/company-statuses";
+import { COMPANY_STATUS_DEFS, NETWORK_STATUSES } from "@/lib/company-statuses";
 import { autoAssignTier, type MemberTier } from "@/lib/member-tiers";
 import { ORG_TAGS } from "@/lib/tags";
 
@@ -243,12 +243,16 @@ function DangerZone({ company }: { company: DetailsCompany }) {
 }
 
 // Contextual lifecycle shortcuts, mirroring the prototype footer: prospects can
-// convert to member, active relationships can be archived, former ones restored.
+// convert to member, active relationships (members/strategic partners) can move
+// back to prospect if the relationship ends but they stay a future prospect, or
+// be archived, and former ones can be restored.
 function LifecycleBar({ company }: { company: DetailsCompany }) {
   const actions: Array<{ label: string; status: string; variant?: "primary" }> =
     [];
   if (company.status === "prospect")
     actions.push({ label: "Convert to member", status: "member", variant: "primary" });
+  if (NETWORK_STATUSES.includes(company.status))
+    actions.push({ label: "Move to prospect", status: "prospect" });
   if (company.status !== "former")
     actions.push({ label: "Archive", status: "former" });
   if (company.status === "former")
