@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import { optionalDate } from "@/lib/form-fields";
+import { ACTIVITY_STATUS_CHANGED } from "@/lib/activity";
 import { getTagDef } from "@/lib/tags";
 import { isIntroStage, TERMINAL_INTRO_STAGES } from "@/lib/intro-stages";
 import {
@@ -424,6 +425,107 @@ export async function removeInvitee(formData: FormData): Promise<void> {
   );
 
   if (eventId) revalidatePath(`/dashboard/events/${eventId}`);
+}
+
+// Promote an external guest (a name-only invitee, contact_id null) into a real
+// network Contact so they can be introduced, followed up with, and tracked like
+// any member — the chosen fix for logging introductions that involve external
+// guests (an Introduction still needs two real contacts). The invitee's stored
+// external fields (name/email/title) seed the contact; the company is resolved
+// from the submitted name (matched case-insensitively to an existing company,
+// else created as a prospect exactly like createCompany, founding-status activity
+// and all). The invitee is then relinked to the new contact and its external
+// fields cleared. Everything is withOrg-scoped, so a foreign invitee or company
+// id resolves to null and the write is refused.
+export type PromoteGuestState =
+  | { status: "saved" }
+  | { status: "error"; message: string };
+
+export async function promoteInviteeToContact(
+  formData: FormData,
+): Promise<PromoteGuestState> {
+  const { orgId, userId } = await requireOrgContext();
+
+  const inviteeId = String(formData.get("inviteeId") ?? "").trim();
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const companyName = String(formData.get("companyName") ?? "").trim();
+  if (!inviteeId || !eventId) return { status: "error", message: "Missing guest." };
+  if (!companyName)
+    return { status: "error", message: "Enter the guest's company." };
+
+  let createdCompany = false;
+  const error = await withOrg(orgId, async (tx) => {
+    const invitee = await tx.eventInvitee.findUnique({
+      where: { id: inviteeId },
+      select: {
+        eventId: true,
+        contactId: true,
+        externalName: true,
+        externalEmail: true,
+        externalTitle: true,
+      },
+    });
+    if (!invitee || invitee.eventId !== eventId)
+      return "Guest not found on this event.";
+    if (invitee.contactId != null) return "This guest is already in the network.";
+    const name = (invitee.externalName ?? "").trim();
+    if (!name) return "This guest has no name to add.";
+
+    // Reuse an existing company of the same name (case-insensitive) rather than
+    // duplicating it; otherwise stand one up as a prospect, mirroring createCompany.
+    let company = await tx.company.findFirst({
+      where: { name: { equals: companyName, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (!company) {
+      createdCompany = true;
+      company = await tx.company.create({
+        data: { orgId, name: companyName, status: "prospect", industry: "", annualValue: "0" },
+        select: { id: true },
+      });
+      await tx.activity.create({
+        data: {
+          orgId,
+          companyId: company.id,
+          actorUserId: userId,
+          type: ACTIVITY_STATUS_CHANGED,
+          payload: { from: null, to: "prospect" },
+          occurredAt: new Date(),
+        },
+      });
+    }
+
+    const contact = await tx.contact.create({
+      data: {
+        orgId,
+        companyId: company.id,
+        name,
+        email: invitee.externalEmail,
+        title: invitee.externalTitle,
+      },
+      select: { id: true },
+    });
+
+    await tx.eventInvitee.update({
+      where: { id: inviteeId },
+      data: {
+        contactId: contact.id,
+        externalName: null,
+        externalOrg: null,
+        externalEmail: null,
+        externalTitle: null,
+      },
+    });
+    return null;
+  });
+
+  if (error) return { status: "error", message: error };
+
+  revalidatePath(`/dashboard/events/${eventId}`);
+  revalidatePath("/dashboard/contacts");
+  // Only a brand-new prospect changes the companies list; skip the bust on reuse.
+  if (createdCompany) revalidatePath("/dashboard/companies");
+  return { status: "saved" };
 }
 
 // Designate (or clear) the event's primary guest — the guest the event is built for.

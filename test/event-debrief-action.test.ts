@@ -28,6 +28,7 @@ const {
   updateEventActionItemStatus,
   deleteEventActionItem,
   logIntroductionAtEvent,
+  promoteInviteeToContact,
 } = await import("@/app/dashboard/events/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
@@ -221,6 +222,111 @@ describe("post-event debrief actions", () => {
     const eventId = await makeEvent("Foreign Intro Event");
     const result = await logIntroductionAtEvent(
       fd({ eventId, partyAContactId: aliceId, partyBContactId: bContactId, status: "made" }),
+    );
+    expect(result.status).toBe("error");
+  });
+
+  test("promotes an external guest into a network contact + new prospect company", async () => {
+    const eventId = await makeEvent("Promote Event");
+    await addInvitee(
+      fd({
+        eventId,
+        externalName: "Dana External",
+        externalOrg: "Dana Ventures",
+        externalEmail: "dana@dana.co",
+        externalTitle: "Partner",
+      }),
+    );
+    const invitee = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, externalName: "Dana External" } }),
+    );
+    const result = await promoteInviteeToContact(
+      fd({ inviteeId: invitee!.id, eventId, companyName: "Dana Ventures" }),
+    );
+    expect(result.status).toBe("saved");
+
+    const promoted = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findUnique({
+        where: { id: invitee!.id },
+        include: { contact: { include: { company: true } } },
+      }),
+    );
+    // Invitee is now a real contact; the external fields are cleared.
+    expect(promoted?.contactId).not.toBeNull();
+    expect(promoted?.externalName).toBeNull();
+    expect(promoted?.externalOrg).toBeNull();
+    expect(promoted?.contact?.name).toBe("Dana External");
+    expect(promoted?.contact?.email).toBe("dana@dana.co");
+    expect(promoted?.contact?.title).toBe("Partner");
+    // A brand-new prospect company was stood up from the external org.
+    expect(promoted?.contact?.company.name).toBe("Dana Ventures");
+    expect(promoted?.contact?.company.status).toBe("prospect");
+
+    // The promoted contact can now be a party to an introduction at the event.
+    await logIntroductionAtEvent(
+      fd({
+        eventId,
+        partyAContactId: aliceId,
+        partyBContactId: promoted!.contactId!,
+        status: "made",
+      }),
+    );
+    const intro = await withOrg(orgA.id, (tx) =>
+      tx.introduction.findFirst({ where: { eventId } }),
+    );
+    expect(intro?.partyBContactId).toBe(promoted!.contactId);
+  });
+
+  test("reuses an existing company (case-insensitive) instead of duplicating it", async () => {
+    const eventId = await makeEvent("Promote Reuse Event");
+    await addInvitee(
+      fd({ eventId, externalName: "Ed External", externalOrg: "member a" }),
+    );
+    const invitee = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, externalName: "Ed External" } }),
+    );
+    const result = await promoteInviteeToContact(
+      fd({ inviteeId: invitee!.id, eventId, companyName: "member a" }),
+    );
+    expect(result.status).toBe("saved");
+
+    const promoted = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findUnique({
+        where: { id: invitee!.id },
+        select: { contact: { select: { companyId: true } } },
+      }),
+    );
+    // Linked to the pre-existing "Member A" company, not a new duplicate.
+    const memberA = await withOrg(orgA.id, (tx) =>
+      tx.company.findFirst({ where: { name: "Member A" }, select: { id: true } }),
+    );
+    expect(promoted?.contact?.companyId).toBe(memberA!.id);
+    const namesakes = await withOrg(orgA.id, (tx) =>
+      tx.company.count({ where: { name: { equals: "member a", mode: "insensitive" } } }),
+    );
+    expect(namesakes).toBe(1);
+  });
+
+  test("refuses promoting when no company is supplied", async () => {
+    const eventId = await makeEvent("Promote NoCompany Event");
+    await addInvitee(fd({ eventId, externalName: "Faye External" }));
+    const invitee = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, externalName: "Faye External" } }),
+    );
+    const result = await promoteInviteeToContact(
+      fd({ inviteeId: invitee!.id, eventId, companyName: "" }),
+    );
+    expect(result.status).toBe("error");
+  });
+
+  test("refuses promoting a guest that already has a network contact", async () => {
+    const eventId = await makeEvent("Promote AlreadyNetwork Event");
+    await addInvitee(fd({ eventId, contactId: aliceId }));
+    const invitee = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, contactId: aliceId } }),
+    );
+    const result = await promoteInviteeToContact(
+      fd({ inviteeId: invitee!.id, eventId, companyName: "Whatever Co" }),
     );
     expect(result.status).toBe("error");
   });

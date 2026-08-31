@@ -42,6 +42,7 @@ import { GuestBrief } from "./_guest-brief";
 import { Outreach } from "./_outreach";
 import { FindTargets } from "./_find-targets";
 import { SuggestGuests } from "./_suggest-guests";
+import { PromoteGuest } from "./_promote-guest";
 import {
   Debrief,
   type EventIntro,
@@ -379,16 +380,25 @@ export default async function EventDetailPage({
                     )}
                   </Td>
                   <Td>
-                    <form action={removeInvitee}>
-                      <input type="hidden" name="inviteeId" value={i.id} />
-                      <input type="hidden" name="eventId" value={event.id} />
-                      <button
-                        type="submit"
-                        className="text-[11px] text-ink-3 hover:text-red-ink"
-                      >
-                        Remove
-                      </button>
-                    </form>
+                    <div className="flex flex-col items-start gap-1">
+                      {i.contactId == null ? (
+                        <PromoteGuest
+                          inviteeId={i.id}
+                          eventId={event.id}
+                          defaultCompany={i.externalOrg ?? ""}
+                        />
+                      ) : null}
+                      <form action={removeInvitee}>
+                        <input type="hidden" name="inviteeId" value={i.id} />
+                        <input type="hidden" name="eventId" value={event.id} />
+                        <button
+                          type="submit"
+                          className="text-[11px] text-ink-3 hover:text-red-ink"
+                        >
+                          Remove
+                        </button>
+                      </form>
+                    </div>
                   </Td>
                 </Tr>
               );
@@ -396,6 +406,15 @@ export default async function EventDetailPage({
           </Table>
         )}
       </Card>
+
+      {/* Shared suggestion list for the "Add to network" company field on every
+          external-guest row — existing companies so promotion reuses one rather
+          than duplicating it, while still allowing a new name. */}
+      <datalist id="promote-company-names">
+        {companies.map((c) => (
+          <option key={c.id} value={c.name} />
+        ))}
+      </datalist>
 
       <Card>
         <CardHeader title="Add a guest" />
