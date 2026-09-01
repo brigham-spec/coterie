@@ -18,17 +18,22 @@ export function CompanyFilters({
   owners,
   tags,
   tiers,
+  currentUserId,
 }: {
   owners: OwnerOption[];
   tags: TagOption[];
   tiers: string[];
+  currentUserId: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
 
   const q = params.get("q") ?? "";
-  const owner = params.get("owner") ?? "";
+  // Mirrors the server default: with no explicit owner param the list shows the
+  // signed-in user's own companies (when they own any); "all" is Everyone.
+  const ownsMine = owners.some((o) => o.id === currentUserId);
+  const owner = params.get("owner") || (ownsMine ? currentUserId : "all");
   const tag = params.get("tag") ?? "";
   const tier = params.get("tier") ?? "";
   const likelihood = params.get("likelihood") ?? "";
@@ -74,10 +79,10 @@ export function CompanyFilters({
         aria-label="Filter by owner"
         className={control}
       >
-        <option value="">All owners</option>
+        <option value="all">Everyone</option>
         {owners.map((o) => (
           <option key={o.id} value={o.id}>
-            {o.name}
+            {o.id === currentUserId ? `${o.name} (me)` : o.name}
           </option>
         ))}
       </select>

@@ -27,6 +27,15 @@ const { createContact, updateContact, removeContact, setPrimaryContact } =
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
 const orgB = { id: randomUUID(), name: `TENANT_B_${randomUUID()}` };
 
+// A real user so removeContact's soft-delete can stamp deletedByUserId (a FK to
+// users); requireAdmin's mock returns this id as ctx.userId.
+const adminUser = {
+  id: randomUUID(),
+  clerkId: `clerk_${randomUUID()}`,
+  email: `admin_${randomUUID()}@example.com`,
+  name: "Admin User",
+};
+
 const companyAId = randomUUID();
 const companyBId = randomUUID();
 // Seeded contacts on company A: existing (edit target) + primary (demote target).
@@ -42,6 +51,7 @@ beforeAll(async () => {
       { ...orgB, orgType: "chamber" },
     ],
   });
+  await prisma.user.create({ data: adminUser });
 
   await withOrg(orgA.id, async (tx) => {
     await tx.company.create({
@@ -98,10 +108,12 @@ beforeAll(async () => {
 
   mockCtx.orgId = orgA.id;
   mockCtx.orgName = orgA.name;
+  mockCtx.userId = adminUser.id;
 });
 
 afterAll(async () => {
   await prisma.organization.deleteMany({ where: { id: { in: [orgA.id, orgB.id] } } });
+  await prisma.user.delete({ where: { id: adminUser.id } });
   await prisma.$disconnect();
 });
 

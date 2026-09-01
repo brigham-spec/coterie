@@ -89,9 +89,9 @@ export function EnrichFromWeb({ companyId }: { companyId: string }) {
           </p>
         ) : review ? null : (
           <p className="text-xs text-ink-3">
-            Research this member on the web to fill in what they&apos;re looking
-            for, what they can offer, their sector, region, and agency
-            relationships — review before anything is saved.
+            Enrich pulls in new facts from the public web to fill in what
+            they&apos;re looking for, what they can offer, their sector, region,
+            and agency relationships — review before anything is saved.
           </p>
         )}
 

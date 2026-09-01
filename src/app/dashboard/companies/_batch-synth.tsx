@@ -112,7 +112,9 @@ export function BatchSynth({ companies }: { companies: SynthCompany[] }) {
         <p className="mb-3 text-xs text-ink-3">
           Read everything the network knows about each member — meetings, event
           notes, introductions, commitments, and saved research — and propose
-          profile updates. Review before anything is saved.
+          profile updates. Review before anything is saved. This works from what
+          Coterie already knows; to pull in new facts, use Enrich on a
+          company&apos;s page.
         </p>
 
         <div className="mb-3 flex flex-wrap items-center gap-1.5">

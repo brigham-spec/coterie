@@ -12,7 +12,15 @@ import type { FocusHorizon, FocusItem } from "@/lib/daily-focus";
 // carries THIS org's open, dated commitments and upcoming events (correctly
 // sided), excludes done/undated rows, and never another tenant's data.
 
-const mockCtx = vi.hoisted(() => ({ orgId: "", orgName: "", userId: "", userName: "" }));
+// role "admin" so the action can resolve the org-wide "everyone" scope the
+// assertions below rely on (both we-owe and they-owe items surface).
+const mockCtx = vi.hoisted(() => ({
+  orgId: "",
+  orgName: "",
+  userId: "",
+  userName: "",
+  role: "admin" as const,
+}));
 vi.mock("@/lib/auth", () => ({
   requireOrgContext: vi.fn(async () => mockCtx),
 }));
@@ -99,7 +107,7 @@ beforeAll(async () => {
         dueDate: daysFromNow(1),
       },
     });
-    // Undated open — no urgency signal, must not surface.
+    // Undated open — no due date, so it surfaces as low-rank backlog (not dropped).
     await tx.actionItem.create({
       data: {
         orgId: orgA.id,
@@ -149,6 +157,7 @@ beforeAll(async () => {
   // Org C is left empty for the empty-state case.
 
   mockCtx.orgId = orgA.id;
+  mockCtx.userId = staffUser.id;
   mockCtx.userName = "Alex";
 });
 
@@ -167,6 +176,9 @@ beforeEach(() => {
 function fd(horizon: string): FormData {
   const f = new FormData();
   f.set("horizon", horizon);
+  // Org-wide scope so both staff-owned (we owe) and contact-owned (they owe)
+  // commitments are assembled; the action clamps this to admins.
+  f.set("scope", "everyone");
   return f;
 }
 
@@ -193,9 +205,10 @@ describe("generateDailyFocus action", () => {
     expect(texts).toContain("Send the IDA draft");
     expect(texts).toContain("Share their board deck");
     expect(texts).toContain("Fall Mixer");
-    // Done, undated, and org B's item are all absent.
+    // Undated backlog still surfaces (it has work to do, just no due date).
+    expect(texts).toContain("Someday task");
+    // Done and org B's item are absent.
     expect(texts).not.toContain("Closed already");
-    expect(texts).not.toContain("Someday task");
     expect(texts).not.toContain("Foreign commitment");
 
     // Sides render into the detail line; the event sorts ahead of commitments.

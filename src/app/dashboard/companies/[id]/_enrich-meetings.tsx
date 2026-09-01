@@ -86,8 +86,9 @@ export function EnrichFromMeetings({ companyId }: { companyId: string }) {
           </p>
         ) : review ? null : (
           <p className="text-xs text-ink-3">
-            Pull what this member is looking for, what they can offer, and their
-            sector out of recent meeting notes — review before anything is saved.
+            Enrich pulls what this member is looking for, what they can offer, and
+            their sector out of recent meeting transcripts — review before
+            anything is saved.
           </p>
         )}
 

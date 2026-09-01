@@ -118,7 +118,7 @@ describe("updateProjectDetails", () => {
         projectId: id,
         name: `${name} (renamed)`,
         description: "Reworked scope",
-        type: "Mixed-use",
+        type: "Mixed-Use",
         industry: "Manufacturing",
         county: "Dutchess",
         units: "120",
@@ -152,7 +152,7 @@ describe("updateProjectDetails", () => {
     );
     expect(updated!.name).toBe(`${name} (renamed)`);
     expect(updated!.description).toBe("Reworked scope");
-    expect(updated!.type).toBe("Mixed-use");
+    expect(updated!.type).toBe("Mixed-Use");
     expect(updated!.industry).toBe("Manufacturing");
     expect(updated!.county).toBe("Dutchess");
     expect(updated!.units).toBe(120);

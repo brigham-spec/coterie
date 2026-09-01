@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { getTagDef } from "@/lib/tags";
 import { ACTIVE_COMMITMENT_STATUSES } from "@/lib/commitments";
+import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import { readMemberTiers } from "@/lib/member-tiers";
 import {
   staleTone,
@@ -97,7 +98,7 @@ export default async function CompaniesPage({
 
   const segmentKey = one(sp.segment) || "all";
   const q = one(sp.q).trim().toLowerCase();
-  const ownerFilter = one(sp.owner);
+  const rawOwner = one(sp.owner);
   const tagFilter = one(sp.tag);
   const tierFilter = one(sp.tier);
   const industryFilter = one(sp.industry);
@@ -164,6 +165,16 @@ export default async function CompaniesPage({
     SEGMENTS.map((s) => [s.key, companies.filter((c) => s.match(c.status)).length]),
   );
 
+  // Top-of-page network metrics, all from the full set: total recurring value and
+  // how many active relationships (members + partners) have gone stale enough to
+  // need a call.
+  const networkValue = companies.reduce((t, c) => t + Number(c.annualValue), 0);
+  const needsCall = companies.filter(
+    (c) =>
+      NETWORK_STATUSES.includes(c.status) &&
+      staleTone(c.lastContactAt, now) === "stale",
+  ).length;
+
   // Owner + tag + tier facets, derived from what's actually present in the
   // network (so we only offer filters that would match something).
   const ownerMap = new Map<string, string>();
@@ -184,6 +195,13 @@ export default async function CompaniesPage({
   const owners = [...ownerMap.entries()]
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Owner filter defaults to the signed-in user's own companies (so they land on
+  // their book of business) when they actually own some and haven't chosen an
+  // owner explicitly. "all" is the explicit "Everyone" selection; any other value
+  // is a specific staff id.
+  const ownsAny = ownerMap.has(ctx.userId);
+  const ownerFilter = rawOwner || (ownsAny ? ctx.userId : "all");
   const tags = [...tagSet]
     .map((key) => ({ key, label: getTagDef(key).label }))
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -204,7 +222,7 @@ export default async function CompaniesPage({
         : c.name.toLowerCase().includes(q) ||
           c.industry.toLowerCase().includes(q),
     )
-    .filter((c) => (ownerFilter ? c.ownerUserId === ownerFilter : true))
+    .filter((c) => (ownerFilter === "all" ? true : c.ownerUserId === ownerFilter))
     .filter((c) => (tagFilter ? c.networkTags.includes(tagFilter) : true))
     .filter((c) => (tierFilter ? c.tier === tierFilter : true))
     .filter((c) => (industryFilter ? c.industry === industryFilter : true))
@@ -268,6 +286,17 @@ export default async function CompaniesPage({
         ) : null}
       </div>
 
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Metric label="Members" value={String(segmentCounts.get("members"))} />
+        <Metric label="Prospects" value={String(segmentCounts.get("prospects"))} />
+        <Metric label="Partners" value={String(segmentCounts.get("partners"))} />
+        <Metric
+          label="Network value"
+          value={networkValue > 0 ? currency.format(networkValue) : "—"}
+        />
+        <Metric label="Needs a call" value={String(needsCall)} />
+      </div>
+
       <Card>
         <CardHeader title="Add company" />
         <AddDisclosure label="+ Add a company">
@@ -277,16 +306,6 @@ export default async function CompaniesPage({
           />
         </AddDisclosure>
       </Card>
-
-      <LinkedInParse />
-
-      <BatchSynth
-        companies={companies.map((c) => ({
-          id: c.id,
-          name: c.name,
-          status: c.status,
-        }))}
-      />
 
       <Card>
         <div className="flex flex-wrap items-center gap-1 border-b border-line bg-surface-2 px-3 py-2">
@@ -337,7 +356,12 @@ export default async function CompaniesPage({
           </div>
         ) : null}
 
-        <CompanyFilters owners={owners} tags={tags} tiers={tiers} />
+        <CompanyFilters
+          owners={owners}
+          tags={tags}
+          tiers={tiers}
+          currentUserId={ctx.userId}
+        />
 
         {rows.length === 0 ? (
           <p className="px-4 py-6 text-xs text-ink-3">
@@ -452,6 +476,27 @@ export default async function CompaniesPage({
           </>
         )}
       </Card>
+
+      <LinkedInParse />
+
+      <BatchSynth
+        companies={companies.map((c) => ({
+          id: c.id,
+          name: c.name,
+          status: c.status,
+        }))}
+      />
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-line bg-surface px-4 py-3 shadow-card">
+      <div className="font-serif text-[18px] text-ink">{value}</div>
+      <div className="mt-0.5 text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
+        {label}
+      </div>
     </div>
   );
 }
