@@ -21,6 +21,7 @@ import {
   type RoleCandidate,
 } from "@/lib/open-roles-engine";
 import { isProjectStage } from "@/lib/project-stages";
+import { serializeProjectTypes } from "@/lib/project-types";
 import { isProjectLinkRole } from "@/lib/project-roles";
 import { isFundingCategory, isFundingStatus } from "@/lib/funding";
 import {
@@ -49,7 +50,7 @@ export async function createProject(formData: FormData): Promise<void> {
   const name = String(formData.get("name") ?? "").trim();
   const stage = String(formData.get("stage") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  const type = String(formData.get("type") ?? "").trim();
+  const type = serializeProjectTypes(formData.getAll("type").map(String));
   const industry = String(formData.get("industry") ?? "").trim();
   const county = String(formData.get("county") ?? "").trim();
   const unitsRaw = String(formData.get("units") ?? "").trim();
@@ -837,7 +838,7 @@ export async function updateProjectDetails(
   const projectId = String(formData.get("projectId") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  const type = String(formData.get("type") ?? "").trim();
+  const type = serializeProjectTypes(formData.getAll("type").map(String));
   const industry = String(formData.get("industry") ?? "").trim().slice(0, 200);
   const county = String(formData.get("county") ?? "").trim();
   const unitsRaw = String(formData.get("units") ?? "").trim();

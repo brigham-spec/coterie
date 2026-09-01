@@ -4,7 +4,9 @@ import { useActionState } from "react";
 
 import { AddDisclosure, Button, Field, SelectField } from "@/components/ui";
 import { PROJECT_INDUSTRIES } from "@/lib/project-industries";
+import { parseProjectTypes } from "@/lib/project-types";
 
+import { ProjectTypeField } from "../_project-type-field";
 import { updateProjectDetails, type UpdateDetailsState } from "../actions";
 
 // Edit-details form for a project's core profile facts. Split into a client
@@ -66,11 +68,9 @@ export function EditDetails({
           placeholder="Short summary"
           className="col-span-2"
         />
-        <Field
-          name="type"
-          label="Type"
-          defaultValue={project.type ?? ""}
-          placeholder="Mixed-use"
+        <ProjectTypeField
+          selected={parseProjectTypes(project.type)}
+          className="col-span-2"
         />
         <Field
           name="industry"

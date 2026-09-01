@@ -11,6 +11,7 @@ import {
 import { impactIsEmpty, parseEconomicImpact } from "@/lib/value-created";
 import { PROJECT_INDUSTRIES } from "@/lib/project-industries";
 import { parseHvServices } from "@/lib/hv-services";
+import { ProjectTypeField } from "./_project-type-field";
 import {
   AddDisclosure,
   Button,
@@ -181,7 +182,7 @@ export default async function ProjectsPage({
                 </option>
               ))}
             </SelectField>
-            <Field name="type" label="Type" placeholder="Mixed-use" />
+            <ProjectTypeField className="col-span-2" />
             <Field
               name="industry"
               label="Industry"

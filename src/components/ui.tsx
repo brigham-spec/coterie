@@ -129,7 +129,7 @@ export function PageTitle({
 }
 
 // ── Form field (label + control) ───────────────────────────────────────────
-const fieldLabel =
+export const fieldLabel =
   "mb-1 block text-[10px] font-medium tracking-[0.06em] text-ink-2 uppercase";
 export const fieldControl =
   "w-full rounded-sm border border-line-2 bg-surface px-3 py-2 text-xs text-ink outline-none transition-colors focus:border-gold-line focus:ring-2 focus:ring-gold-line/20";
