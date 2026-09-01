@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { Button, Card, CardHeader } from "@/components/ui";
+import { Button, Card, CardHeader, cn } from "@/components/ui";
 import type { ProfileSynthesis } from "@/lib/profile-synth";
 
 import {
@@ -63,6 +63,14 @@ export function BatchSynth({ companies }: { companies: SynthCompany[] }) {
 
   const runList = [...selected].slice(0, RUN_CAP);
   const overCap = selected.size > RUN_CAP;
+
+  // Once a run has begun, the selection becomes a live checklist: each member
+  // shows queued → reading → done/empty/error so the operator can watch the
+  // batch march through every one and see a clear tally at the end.
+  const started = running || results.size > 0;
+  const resultValues = [...results.values()];
+  const okCount = resultValues.filter((r) => r.status === "ok").length;
+  const errorCount = resultValues.filter((r) => r.status === "error").length;
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -172,18 +180,55 @@ export function BatchSynth({ companies }: { companies: SynthCompany[] }) {
           </p>
         ) : null}
 
-        {results.size > 0 ? (
-          <div className="mt-4 space-y-3">
-            {runList
-              .filter((id) => results.has(id))
-              .map((id) => (
-                <ResultCard
-                  key={id}
-                  companyId={id}
-                  name={nameById.get(id) ?? "Member"}
-                  result={results.get(id)!}
-                />
-              ))}
+        {started ? (
+          <div className="mt-4">
+            <p className="mb-2 text-[11px] font-medium text-ink-2">
+              {running
+                ? `Synthesizing… ${done} of ${runList.length} read`
+                : `Finished — read all ${runList.length}. ${okCount} ${
+                    okCount === 1 ? "profile has" : "profiles have"
+                  } proposed updates${
+                    errorCount > 0
+                      ? `, ${errorCount} could not be read`
+                      : ""
+                  }.`}
+            </p>
+            <div className="space-y-3">
+              {runList.map((id, i) => {
+                const name = nameById.get(id) ?? "Member";
+                const res = results.get(id);
+                if (res)
+                  return (
+                    <ResultCard
+                      key={id}
+                      companyId={id}
+                      name={name}
+                      result={res}
+                    />
+                  );
+                // Not yet in results: the one at index `done` is in flight while
+                // running; everything after it is still queued.
+                const reading = running && i === done;
+                return (
+                  <div
+                    key={id}
+                    className="flex items-center justify-between rounded-md border border-line bg-surface px-3.5 py-2.5"
+                  >
+                    <span className="truncate text-[12px] font-semibold text-ink">
+                      {name}
+                    </span>
+                    <span
+                      className={cn(
+                        "shrink-0 text-[10.5px]",
+                        reading ? "animate-pulse text-gold" : "text-ink-3",
+                      )}
+                    >
+                      {reading ? "Reading…" : "Queued"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ) : null}
       </div>
