@@ -18,9 +18,16 @@ import {
 // explicit server action — the Anthropic key never crosses to the browser, and
 // nothing is written until you Apply.
 
-// Ceiling on one batch, matching the per-org AI rate budget. Selecting more than
-// this simply runs the first RUN_CAP in list order.
-const RUN_CAP = 15;
+// Ceiling on one batch — generous enough to synthesize a whole network in one
+// pass, bounded well under the per-org daily AI budget (300/day). Selecting more
+// than this simply runs the first RUN_CAP in list order.
+const RUN_CAP = 100;
+
+// The server allows ~20 AI calls/minute per org (DEFAULT_CAPS.minuteCap). Space
+// each call start at least this far apart so a large batch stays under that burst
+// cap and never drops a member; when a call already took longer, we don't wait.
+// ~3.6s ⇒ at most ~17 starts in any 60s window, comfortably below 20.
+const MIN_SPACING_MS = 3600;
 
 // The six writable fields, in review order. `counties` is proposed as additions
 // only (the engine drops any the member already has).
@@ -90,10 +97,17 @@ export function BatchSynth({ companies }: { companies: SynthCompany[] }) {
     setRunning(true);
     setDone(0);
     setResults(new Map());
-    for (const id of runList) {
+    for (const [i, id] of runList.entries()) {
+      const startedAt = Date.now();
       const res = await synthesizeCompany(id);
       setResults((prev) => new Map(prev).set(id, res));
       setDone((d) => d + 1);
+      // Pace the next start under the per-minute AI budget so a big batch never
+      // trips the burst cap; skip the wait when the call already took long enough.
+      if (i < runList.length - 1) {
+        const wait = MIN_SPACING_MS - (Date.now() - startedAt);
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      }
     }
     setRunning(false);
   }
