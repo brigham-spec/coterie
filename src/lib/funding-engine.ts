@@ -126,7 +126,10 @@ function isContextRich(project: FundingProjectContext): boolean {
 /// the county's known regional programs, and applies the eligibility gates —
 /// choosing strict mode for a well-described project or exploratory mode for a
 /// sparse one (still respecting the gates).
-export function buildFundingPrompt(project: FundingProjectContext): string {
+export function buildFundingPrompt(
+  project: FundingProjectContext,
+  excludeNames: string[] = [],
+): string {
   const facts = [
     `Project Name: ${project.name || "Unnamed"}`,
     project.type ? `Type: ${project.type}` : "",
@@ -156,15 +159,23 @@ export function buildFundingPrompt(project: FundingProjectContext): string {
         .join("\n")
     : "";
 
+  // Programs the operator is already tracking. Injected so repeated clicks
+  // surface genuinely NEW options instead of re-rolling the same window.
+  const trimmed = excludeNames.map((n) => n.trim()).filter(Boolean);
+  const excludeContext = trimmed.length
+    ? `\nALREADY TRACKED (the operator already has these — do NOT suggest them again; find DIFFERENT programs):\n` +
+      trimmed.map((n) => `- ${n}`).join("\n")
+    : "";
+
   if (isContextRich(project)) {
     return `You are a New York State economic development financing expert.
 
 ${ELIGIBILITY_GATES}
 
 PROJECT TO ANALYZE:
-${facts}${regionalContext}
+${facts}${regionalContext}${excludeContext}
 
-Return ONLY a valid JSON array of 4-6 programs this project ACTUALLY QUALIFIES FOR.
+Return ONLY a valid JSON array of 6-10 programs this project ACTUALLY QUALIFIES FOR.
 ${OUTPUT_SHAPE}
 Do not suggest programs the project does not qualify for.
 IMPORTANT: For affordable housing projects (income-restricted units), LIHTC, HOME, HCR, and IDA programs almost always apply — do not omit them.
@@ -173,14 +184,14 @@ Always return at least the 3-4 programs best suited to this project. Never retur
 
   return `You are a New York State economic development financing expert.
 
-This project has limited details. Suggest 4-6 funding programs commonly applicable to this project type in New York's Hudson Valley region.
+This project has limited details. Suggest 6-10 funding programs commonly applicable to this project type in New York's Hudson Valley region.
 
 ${ELIGIBILITY_GATES}
 
 PROJECT:
-${facts}${regionalContext}
+${facts}${regionalContext}${excludeContext}
 
-Return a JSON array with 4-6 programs. For programs where eligibility depends on details not yet provided, include a note in the rationale about what to verify.
+Return a JSON array with 6-10 programs. For programs where eligibility depends on details not yet provided, include a note in the rationale about what to verify.
 ${OUTPUT_SHAPE}
 Return ONLY the JSON array with no other text.`;
 }
@@ -192,13 +203,14 @@ const SYSTEM_PROMPT = `You are a New York State economic development financing e
 /// empty array when the model gives nothing usable.
 export async function generateFundingSuggestions(
   project: FundingProjectContext,
+  excludeNames: string[] = [],
 ): Promise<FundingSuggestion[]> {
   const client = new Anthropic();
   const response = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 2500,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildFundingPrompt(project) }],
+    messages: [{ role: "user", content: buildFundingPrompt(project, excludeNames) }],
   });
 
   const text = response.content
@@ -207,5 +219,10 @@ export async function generateFundingSuggestions(
     .join("")
     .trim();
 
-  return parseFundingSuggestions(text);
+  // Belt-and-suspenders: drop any the model repeated despite the exclusion
+  // block, so a tracked program never comes back as a "new" suggestion.
+  const already = new Set(excludeNames.map((n) => n.trim().toLowerCase()).filter(Boolean));
+  return parseFundingSuggestions(text).filter(
+    (s) => !already.has(s.name.trim().toLowerCase()),
+  );
 }

@@ -266,6 +266,12 @@ describe("suggestFundingSources", () => {
     expect(arg.name).toBe("Riverfront Lofts");
     expect(arg.county).toBe("Ulster");
     expect(arg.units).toBe(80);
+
+    // Programs already tracked on this project (added by the tests above) are
+    // passed as the exclusion list so the model surfaces genuinely new options.
+    const excluded = genSpy.mock.calls[0][1] as string[];
+    expect(excluded).toContain("Restore NY");
+    expect(excluded).toContain("IDA 421-p PILOT");
   });
 
   test("refuses a foreign project id (no engine call)", async () => {

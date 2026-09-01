@@ -754,8 +754,8 @@ export async function suggestFundingSources(
 
   const { orgId } = await requireOrgContext();
 
-  const project = await withOrg(orgId, (tx) =>
-    tx.project.findUnique({
+  const data = await withOrg(orgId, async (tx) => {
+    const project = await tx.project.findUnique({
       where: { id: projectId },
       select: {
         name: true,
@@ -767,24 +767,37 @@ export async function suggestFundingSources(
         value: true,
         description: true,
       },
-    }),
-  );
+    });
+    if (project == null) return null;
+    // The programs already tracked on this project — fed to the model so each
+    // click surfaces genuinely new options rather than re-rolling the same set.
+    const tracked = await tx.fundingSource.findMany({
+      where: { projectId },
+      select: { name: true },
+    });
+    return { project, trackedNames: tracked.map((t) => t.name) };
+  });
 
-  if (project == null)
+  if (data == null)
     return { status: "error", message: "project not found in this organization" };
+
+  const { project } = data;
 
   try {
     await enforceAiRateLimit(orgId);
-    const suggestions = await generateFundingSuggestions({
-      name: project.name,
-      type: project.type,
-      stage: project.stage,
-      county: project.county,
-      industry: project.industry,
-      value: project.value == null ? null : String(project.value),
-      units: project.units,
-      description: project.description || null,
-    });
+    const suggestions = await generateFundingSuggestions(
+      {
+        name: project.name,
+        type: project.type,
+        stage: project.stage,
+        county: project.county,
+        industry: project.industry,
+        value: project.value == null ? null : String(project.value),
+        units: project.units,
+        description: project.description || null,
+      },
+      data.trackedNames,
+    );
     return { status: "ok", suggestions };
   } catch (err) {
     console.error("funding suggestion failed", err);

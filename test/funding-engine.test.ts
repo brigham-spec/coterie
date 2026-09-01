@@ -98,4 +98,17 @@ describe("buildFundingPrompt", () => {
     const prompt = buildFundingPrompt(ctx({ county: null }));
     expect(prompt).not.toContain("KNOWN LOCAL PROGRAMS");
   });
+
+  test("emits the already-tracked exclusion block when names are supplied", () => {
+    const prompt = buildFundingPrompt(ctx(), ["Restore NY", "IDA PILOT"]);
+    expect(prompt).toContain("ALREADY TRACKED");
+    expect(prompt).toContain("- Restore NY");
+    expect(prompt).toContain("- IDA PILOT");
+  });
+
+  test("omits the exclusion block when no tracked names are supplied", () => {
+    expect(buildFundingPrompt(ctx())).not.toContain("ALREADY TRACKED");
+    // Blank/whitespace names are filtered out, leaving nothing to exclude.
+    expect(buildFundingPrompt(ctx(), ["", "  "])).not.toContain("ALREADY TRACKED");
+  });
 });
