@@ -37,6 +37,7 @@ import { EconomicImpactCard } from "./_economic-impact";
 import { HvServicesCard } from "./_hv-services";
 import { AssistanceCard } from "./_assistance";
 import { ProjectNewsScanner } from "./_news-scanner";
+import { ProjectNewsPanel } from "./_news-updates";
 
 import { parseAssistanceKeys } from "@/lib/project-assistance";
 
@@ -248,6 +249,12 @@ export default async function ProjectDetailPage({
   // Companies eligible as the developer/lead (any in the tenant).
   const developerId = project.developerMemberId ?? "";
 
+  // Manual "Add link" + "Review updates from news" both save/read against a
+  // company (news_items.company_id is required), so they need one company to
+  // attach to: prefer the developer, else the first participant company. Null
+  // when the project has no linked company at all — the panel disables itself.
+  const attachCompanyId = project.developer?.id ?? companyIds[0] ?? null;
+
   // Open roles = disciplines not yet staffed on the team. Only meaningful while the
   // project is live — a completed / on-hold project isn't hiring.
   const isActive = !TERMINAL_STAGES.includes(project.stage);
@@ -406,6 +413,11 @@ export default async function ProjectDetailPage({
 
       <Card>
         <CardHeader title="Press & News" />
+        <ProjectNewsPanel
+          projectId={project.id}
+          attachCompanyId={attachCompanyId}
+          hasNews={newsItems.length > 0}
+        />
         {newsItems.length === 0 ? (
           <p className="px-4 py-6 text-xs text-ink-3">
             No saved news for the participant companies yet. Capture coverage on{" "}
