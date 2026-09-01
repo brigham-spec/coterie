@@ -70,6 +70,19 @@ function affiliationLine(a: {
   return line;
 }
 
+// Stamp when this profile was last read by synthesis so the batch can rotate
+// least-recently-first. Called on every non-error outcome (the model read the
+// member, or there was simply nothing to read) — NOT on error, so a rate-limited
+// or failed member stays at the front of the queue to be retried next run.
+async function markSynthesized(orgId: string, id: string): Promise<void> {
+  await withOrg(orgId, (tx) =>
+    tx.company.update({
+      where: { id },
+      data: { lastSynthesizedAt: new Date() },
+    }),
+  );
+}
+
 export async function synthesizeCompany(companyId: string): Promise<SynthResult> {
   const id = String(companyId ?? "").trim();
   if (!id) return { status: "error", message: "missing company" };
@@ -246,7 +259,10 @@ export async function synthesizeCompany(companyId: string): Promise<SynthResult>
     evidence.articles.length > 0 ||
     evidence.projects.length > 0 ||
     evidence.affiliations.length > 0;
-  if (!hasEvidence) return { status: "empty" };
+  if (!hasEvidence) {
+    await markSynthesized(orgId, id);
+    return { status: "empty" };
+  }
 
   try {
     await enforceAiRateLimit(orgId);
@@ -268,6 +284,7 @@ export async function synthesizeCompany(companyId: string): Promise<SynthResult>
       },
       evidence,
     );
+    await markSynthesized(orgId, id);
     if (synthesis == null) return { status: "empty" };
     return { status: "ok", synthesis };
   } catch (err) {

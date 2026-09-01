@@ -204,6 +204,11 @@ model Company {
   /// event. Surfaces as a selectable suggestion in the event venue field.
   venue String?
 
+  /// When this profile was last read by AI batch synthesis (stamped on each run,
+  /// applied or not). App-maintained; lets the batch rotate least-recently-first
+  /// so a large network cycles through rather than repeating the same head.
+  lastSynthesizedAt DateTime? @map("last_synthesized_at") @db.Timestamptz(6)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

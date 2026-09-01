@@ -484,6 +484,7 @@ export default async function CompaniesPage({
           id: c.id,
           name: c.name,
           status: c.status,
+          lastSynthesizedAt: c.lastSynthesizedAt?.getTime() ?? null,
         }))}
       />
     </div>

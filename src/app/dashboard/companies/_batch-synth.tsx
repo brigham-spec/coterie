@@ -42,7 +42,24 @@ const FIELDS = [
 
 type FieldKey = (typeof FIELDS)[number]["key"];
 
-export type SynthCompany = { id: string; name: string; status: string };
+export type SynthCompany = {
+  id: string;
+  name: string;
+  status: string;
+  // Epoch ms of the last synthesis run, or null if never synthesized.
+  lastSynthesizedAt: number | null;
+};
+
+// PURE: short "last synthesized" label for a member row. Null → never; otherwise
+// a coarse relative age (today / Nd / Nw / Nmo) so operators can spot stale ones.
+function lastSynthLabel(ms: number | null, now: number): string {
+  if (ms == null) return "Never synthesized";
+  const days = Math.floor((now - ms) / 86_400_000);
+  if (days <= 0) return "Synthesized today";
+  if (days < 7) return `Synthesized ${days}d ago`;
+  if (days < 30) return `Synthesized ${Math.floor(days / 7)}w ago`;
+  return `Synthesized ${Math.floor(days / 30)}mo ago`;
+}
 
 // The segments offered as quick-selects, in display order. Former relationships
 // are intentionally excluded — synthesis is about active members.
@@ -57,18 +74,53 @@ export function BatchSynth({ companies }: { companies: SynthCompany[] }) {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
   const [results, setResults] = useState<Map<string, SynthResult>>(new Map());
+  // Timestamps for members synthesized in THIS session, layered over the
+  // server-loaded times so re-running immediately picks up the NEXT batch
+  // (least-recently-first) rather than repeating the ones just done.
+  const [justSynthed, setJustSynthed] = useState<Map<string, number>>(new Map());
+  // The exact ordered members of the run in progress, frozen at start. The
+  // checklist renders from this so completing a member (which restamps its
+  // last-synthesized time) does NOT re-sort the list out from under the run.
+  const [runOrder, setRunOrder] = useState<string[]>([]);
+  // Snapshot "now" once at mount for the coarse relative last-synthesized labels
+  // (today / Nd / Nw / Nmo) so render stays pure and the labels stay stable.
+  const [now] = useState(() => Date.now());
 
-  // Only members/partners/prospects are offered here (former excluded).
+  // Effective last-synthesized time: this session's fresh stamp wins over the
+  // server-loaded one. Null (never) sorts first so it always gets priority.
+  const timeById = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const c of companies) m.set(c.id, justSynthed.get(c.id) ?? c.lastSynthesizedAt);
+    return m;
+  }, [companies, justSynthed]);
+  const orderKey = (id: string) => timeById.get(id) ?? -Infinity;
+
+  // Only members/partners/prospects are offered here (former excluded), ordered
+  // least-recently-synthesized first so the top of the list is the most neglected.
   const eligible = useMemo(
-    () => companies.filter((c) => GROUPS.some((g) => g.match(c.status))),
-    [companies],
+    () =>
+      companies
+        .filter((c) => GROUPS.some((g) => g.match(c.status)))
+        .sort(
+          (a, b) =>
+            orderKey(a.id) - orderKey(b.id) || a.name.localeCompare(b.name),
+        ),
+    // orderKey reads timeById; both derive from companies + justSynthed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [companies, timeById],
   );
   const nameById = useMemo(
     () => new Map(eligible.map((c) => [c.id, c.name] as const)),
     [eligible],
   );
 
-  const runList = [...selected].slice(0, RUN_CAP);
+  // The members that actually run this batch: the selection ordered
+  // least-recently-synthesized first, then capped. So when a selection exceeds
+  // the cap, the most-neglected members go first and later runs cycle through
+  // the rest rather than always repeating the same head.
+  const runList = [...selected]
+    .sort((a, b) => orderKey(a) - orderKey(b) || nameById.get(a)!.localeCompare(nameById.get(b)!))
+    .slice(0, RUN_CAP);
   const overCap = selected.size > RUN_CAP;
 
   // Once a run has begun, the selection becomes a live checklist: each member
@@ -94,17 +146,26 @@ export function BatchSynth({ companies }: { companies: SynthCompany[] }) {
   }
 
   async function run() {
+    // Freeze the ordered batch so mid-run restamps can't reshuffle it.
+    const order = runList;
+    setRunOrder(order);
     setRunning(true);
     setDone(0);
     setResults(new Map());
-    for (const [i, id] of runList.entries()) {
+    for (const [i, id] of order.entries()) {
       const startedAt = Date.now();
       const res = await synthesizeCompany(id);
       setResults((prev) => new Map(prev).set(id, res));
       setDone((d) => d + 1);
+      // The server stamps lastSynthesizedAt on any non-error read; mirror it
+      // locally so a second run in this session moves on to the next batch.
+      if (res.status !== "error") {
+        const at = Date.now();
+        setJustSynthed((prev) => new Map(prev).set(id, at));
+      }
       // Pace the next start under the per-minute AI budget so a big batch never
       // trips the burst cap; skip the wait when the call already took long enough.
-      if (i < runList.length - 1) {
+      if (i < order.length - 1) {
         const wait = MIN_SPACING_MS - (Date.now() - startedAt);
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       }
@@ -182,6 +243,9 @@ export function BatchSynth({ companies }: { companies: SynthCompany[] }) {
                     className="shrink-0"
                   />
                   <span className="truncate">{c.name}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-ink-3">
+                    {lastSynthLabel(timeById.get(c.id) ?? null, now)}
+                  </span>
                 </label>
               );
             })
@@ -190,7 +254,8 @@ export function BatchSynth({ companies }: { companies: SynthCompany[] }) {
 
         {overCap ? (
           <p className="mt-2 text-[10.5px] text-ink-3">
-            Only the first {RUN_CAP} selected will run in this batch.
+            Only the first {RUN_CAP} least-recently-synthesized run in this batch
+            — run again to continue through the rest.
           </p>
         ) : null}
 
@@ -198,8 +263,8 @@ export function BatchSynth({ companies }: { companies: SynthCompany[] }) {
           <div className="mt-4">
             <p className="mb-2 text-[11px] font-medium text-ink-2">
               {running
-                ? `Synthesizing… ${done} of ${runList.length} read`
-                : `Finished — read all ${runList.length}. ${okCount} ${
+                ? `Synthesizing… ${done} of ${runOrder.length} read`
+                : `Finished — read all ${runOrder.length}. ${okCount} ${
                     okCount === 1 ? "profile has" : "profiles have"
                   } proposed updates${
                     errorCount > 0
@@ -208,7 +273,7 @@ export function BatchSynth({ companies }: { companies: SynthCompany[] }) {
                   }.`}
             </p>
             <div className="space-y-3">
-              {runList.map((id, i) => {
+              {runOrder.map((id, i) => {
                 const name = nameById.get(id) ?? "Member";
                 const res = results.get(id);
                 if (res)
