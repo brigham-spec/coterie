@@ -7,6 +7,7 @@ import { withOrg } from "@/lib/tenant";
 import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
 import {
   buildFocusItems,
+  FOCUS_ITEM_CAP,
   type FocusCommitment,
   type FocusEvent,
   type FocusHorizon,
@@ -150,7 +151,9 @@ export async function generateDailyFocus(
       ? [{ kind: s.kind, refId: s.refId, state: s.state, snoozedUntil: s.snoozedUntil }]
       : [],
   );
-  const items = applyAgendaStates(built, stored, now);
+  // Cap AFTER the overlay so completing an item promotes the next-ranked one into
+  // the freed slot instead of just shortening the list on the next Refresh.
+  const items = applyAgendaStates(built, stored, now).slice(0, FOCUS_ITEM_CAP);
 
   if (items.length === 0) return { status: "empty", horizon };
 

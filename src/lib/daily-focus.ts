@@ -12,6 +12,11 @@
 
 const DAY = 86_400_000;
 
+// How many focus items the card shows at once. Applied by the caller AFTER the
+// triage overlay drops done/snoozed items, so completing an item frees a slot for
+// the next-ranked one to surface rather than just shortening the list.
+export const FOCUS_ITEM_CAP = 8;
+
 export type FocusHorizon = "today" | "week" | "month";
 
 // How far ahead each horizon looks. Overdue items (negative dueInDays) surface in
@@ -96,7 +101,9 @@ function timingLabel(dueInDays: number): string {
 /// event is in if it is dated and falls between today and the horizon edge
 /// (upcoming only — past events are never a focus). Events sort ahead of
 /// commitments; within each group the soonest/most-overdue come first (undated
-/// last), ties broken by text. Capped at 8, so dated items are never crowded out.
+/// last), ties broken by text. Returns the FULL prioritised pool; the display cap
+/// (FOCUS_ITEM_CAP) is applied by the caller after the triage overlay so done
+/// items free a slot for the next-ranked one instead of just shortening the list.
 export function buildFocusItems(
   input: FocusInput,
   horizon: FocusHorizon,
@@ -162,7 +169,7 @@ export function buildFocusItems(
     return a.text.localeCompare(b.text);
   });
 
-  return items.slice(0, 8);
+  return items;
 }
 
 const HORIZON_LABEL: Record<FocusHorizon, string> = {

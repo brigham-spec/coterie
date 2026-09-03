@@ -3,9 +3,11 @@ import { describe, expect, test } from "vitest";
 import {
   buildFocusContext,
   buildFocusItems,
+  FOCUS_ITEM_CAP,
   type FocusCommitment,
   type FocusEvent,
 } from "@/lib/daily-focus";
+import { applyAgendaStates } from "@/lib/agenda-state";
 
 // Pure-logic tests for the Daily Focus shaping: horizon windowing (overdue always
 // in, future bounded by the horizon edge), undated-commitment inclusion at the
@@ -146,12 +148,39 @@ describe("buildFocusItems", () => {
     expect(they.detail).toBe("They owe · Guest · Acme");
   });
 
-  test("caps at 8 items", () => {
+  test("returns the full prioritised pool (cap applied by the caller)", () => {
     const commitments = Array.from({ length: 12 }, (_, i) =>
       commitment({ id: `c${i}`, dueDate: on(9) }),
     );
     const items = buildFocusItems({ commitments, events: [] }, "month", now);
-    expect(items).toHaveLength(8);
+    expect(items).toHaveLength(12);
+  });
+
+  test("completing a top item promotes the next-ranked one into the capped view", () => {
+    // 10 items due on staggered days so their priority order is c0..c9.
+    const commitments = Array.from({ length: 10 }, (_, i) =>
+      commitment({ id: `c${i}`, dueDate: on(9 + i) }),
+    );
+    const built = buildFocusItems({ commitments, events: [] }, "month", now);
+    // Untouched: the capped view is the first FOCUS_ITEM_CAP in priority order.
+    const before = built.slice(0, FOCUS_ITEM_CAP);
+    expect(before.map((i) => i.id)).toEqual([
+      "c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7",
+    ]);
+    // Mark the top two done, then re-fold the overlay and cap: the freed slots
+    // backfill with c8 and c9 rather than the list simply shrinking to six.
+    const after = applyAgendaStates(
+      built,
+      [
+        { kind: "commitment", refId: "c0", state: "done", snoozedUntil: null },
+        { kind: "commitment", refId: "c1", state: "done", snoozedUntil: null },
+      ],
+      now,
+    ).slice(0, FOCUS_ITEM_CAP);
+    expect(after).toHaveLength(FOCUS_ITEM_CAP);
+    expect(after.map((i) => i.id)).toEqual([
+      "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9",
+    ]);
   });
 });
 
