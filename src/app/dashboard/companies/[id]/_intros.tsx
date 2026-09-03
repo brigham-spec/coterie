@@ -178,7 +178,12 @@ function SuggestionCard({
     <li className="rounded-md border border-line bg-surface px-4 py-3 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-medium text-ink">{s.companyName}</div>
+          <Link
+            href={`/dashboard/companies/${s.companyId}`}
+            className="font-medium text-ink hover:text-gold hover:underline"
+          >
+            {s.companyName}
+          </Link>
           <div className="mt-0.5 text-[10px] tracking-[0.06em] text-ink-3 uppercase">
             {s.connectionType}
           </div>
