@@ -14,6 +14,15 @@
 /** A clusterNote shorter than this is treated as noise and not surfaced. */
 export const CLUSTER_NOTE_MIN = 10;
 
+/** PURE: the 3–5 match-strength score as a plain quality word, so a pairing badge
+ * reads as a rating ("Strong") rather than a count ("5/5"). Production clamps the
+ * score to 3–5; anything at/above each rung takes that word. */
+export function fitLabel(score: number): string {
+  if (score >= 5) return "Strong";
+  if (score === 4) return "Good";
+  return "Possible";
+}
+
 // Rendered only when the scan flagged the pair as time-sensitive, so a gold-accented
 // card reads as "act now" while ordinary high-value pairs stay unadorned.
 export function UrgencyBanner({

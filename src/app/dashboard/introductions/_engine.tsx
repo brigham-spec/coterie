@@ -24,6 +24,7 @@ import { INTRO_DISMISS_REASONS } from "@/lib/intro-dismissal";
 import {
   CLUSTER_NOTE_MIN,
   ClusterNote,
+  fitLabel,
   UrgencyBanner,
 } from "./_pairing-signals";
 
@@ -533,7 +534,6 @@ function SuggestionCard({
 }
 
 // ── Project Catalyst (open roles) ─────────────────────────────────────────────
-const FIT_LABEL: Record<number, string> = { 5: "Strong", 4: "Good", 3: "Possible" };
 
 function CatalystMode({ projects }: { projects: EngineProject[] }) {
   const [query, setQuery] = useState("");
@@ -671,7 +671,7 @@ function CandidateCard({ c }: { c: RoleCandidate }) {
           {c.companyName}
         </Link>
         <span className="shrink-0 rounded-full border border-gold-line bg-gold-bg px-2 py-0.5 text-[10px] font-medium text-gold">
-          {FIT_LABEL[c.score] ?? `${c.score}/5`}
+          {fitLabel(c.score)}
         </span>
       </div>
       {c.whyFit ? <p className="mt-1.5 text-[11px] text-ink-2">{c.whyFit}</p> : null}

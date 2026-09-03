@@ -13,6 +13,7 @@ import type { ProactiveCacheSnapshot } from "./introductions/_engine";
 import {
   CLUSTER_NOTE_MIN,
   ClusterNote,
+  fitLabel,
   UrgencyBanner,
 } from "./introductions/_pairing-signals";
 import type { ProactivePairing } from "@/lib/intro-engine";
@@ -194,8 +195,11 @@ function PairingCard({
             {p.companyBName}
           </Link>
         </div>
-        <span className="shrink-0 rounded-full border border-gold-line bg-gold-bg px-2 py-0.5 text-[10px] font-medium text-gold">
-          {p.score}/5
+        <span
+          title="Match strength"
+          className="shrink-0 rounded-full border border-gold-line bg-gold-bg px-2 py-0.5 text-[10px] font-medium text-gold"
+        >
+          {fitLabel(p.score)}
         </span>
       </div>
       {timeSensitive ? (
