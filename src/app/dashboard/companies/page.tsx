@@ -46,6 +46,12 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+const addedDate = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
 type Segment = { key: string; label: string; match: (status: string) => boolean };
 
 const SEGMENTS: Segment[] = [
@@ -383,6 +389,7 @@ export default async function CompaniesPage({
                   <Th>Tags</Th>
                   <Th>Value</Th>
                   <Th>Last contact</Th>
+                  <Th>Added</Th>
                 </>
               }
             >
@@ -467,6 +474,9 @@ export default async function CompaniesPage({
                   </Td>
                   <Td className={STALE_CLASS[staleTone(c.lastContactAt, now)]}>
                     {relContact(c.lastContactAt, now)}
+                  </Td>
+                  <Td className="whitespace-nowrap text-ink-3">
+                    {addedDate.format(c.createdAt)}
                   </Td>
                 </Tr>
                 );
