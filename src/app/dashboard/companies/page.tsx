@@ -389,7 +389,21 @@ export default async function CompaniesPage({
                   <Th>Tags</Th>
                   <Th>Value</Th>
                   <Th>Last contact</Th>
-                  <Th>Added</Th>
+                  <Th>
+                    <Link
+                      href={makeHref({
+                        sort: sort === "newest" ? "oldest" : "newest",
+                      })}
+                      className="inline-flex items-center gap-1 hover:text-ink"
+                    >
+                      Added
+                      {sort === "newest" ? (
+                        <span aria-hidden>{"\u2193"}</span>
+                      ) : sort === "oldest" ? (
+                        <span aria-hidden>{"\u2191"}</span>
+                      ) : null}
+                    </Link>
+                  </Th>
                 </>
               }
             >
