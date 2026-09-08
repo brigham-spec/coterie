@@ -242,6 +242,11 @@ export default async function CompaniesPage({
       const bc = openActionByCompany.get(b.id) ?? 0;
       return bc - ac || a.name.localeCompare(b.name);
     }
+    // "newest"/"oldest" sort by when the company was added to the network.
+    if (sort === "newest")
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    if (sort === "oldest")
+      return a.createdAt.getTime() - b.createdAt.getTime();
     return a.name.localeCompare(b.name);
   });
 

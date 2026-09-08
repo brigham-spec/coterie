@@ -9,12 +9,20 @@ const DAY = 86_400_000;
 
 // The companies-table sort options — one source shared by the filter's <select>
 // (the labels) and the page's sort switch (the values), so they can't drift apart.
-export type CompanySort = "name" | "value" | "recent" | "actions";
+export type CompanySort =
+  | "name"
+  | "value"
+  | "recent"
+  | "actions"
+  | "newest"
+  | "oldest";
 export const COMPANY_SORT_OPTIONS: { value: CompanySort; label: string }[] = [
   { value: "name", label: "Name (A–Z)" },
   { value: "value", label: "Value (high–low)" },
   { value: "recent", label: "Last contact" },
   { value: "actions", label: "Open actions" },
+  { value: "newest", label: "Newest added" },
+  { value: "oldest", label: "Oldest added" },
 ];
 
 // Last-contact staleness bucket — red past 90 days, amber past 60, green when
