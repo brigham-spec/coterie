@@ -129,7 +129,9 @@ export function CompanyFilters({
       </select>
       <select
         value={sort}
-        onChange={(e) => push({ sort: e.target.value })}
+        // Choosing a field resets direction to that field's default; the column
+        // headers flip direction from there.
+        onChange={(e) => push({ sort: e.target.value, dir: "" })}
         aria-label="Sort by"
         className={control}
       >

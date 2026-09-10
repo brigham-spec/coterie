@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseCompanySort,
   staleTone,
   tallyIntrosByCompany,
   tallyOpenActionsByCompany,
@@ -68,6 +69,39 @@ describe("tallyOpenActionsByCompany", () => {
       { companyId: null, ownerContact: null },
     ]);
     expect(counts.size).toBe(0);
+  });
+});
+
+describe("parseCompanySort", () => {
+  it("defaults to name ascending when nothing is set", () => {
+    expect(parseCompanySort("", "")).toEqual({ field: "name", dir: "asc" });
+  });
+
+  it("falls back to an unknown field's default direction", () => {
+    expect(parseCompanySort("bogus", "")).toEqual({ field: "name", dir: "asc" });
+  });
+
+  it("uses each field's natural default direction", () => {
+    expect(parseCompanySort("value", "")).toEqual({ field: "value", dir: "desc" });
+    expect(parseCompanySort("added", "")).toEqual({ field: "added", dir: "desc" });
+    expect(parseCompanySort("owner", "")).toEqual({ field: "owner", dir: "asc" });
+  });
+
+  it("honours an explicit direction", () => {
+    expect(parseCompanySort("added", "asc")).toEqual({ field: "added", dir: "asc" });
+    expect(parseCompanySort("name", "desc")).toEqual({ field: "name", dir: "desc" });
+  });
+
+  it("ignores an invalid direction", () => {
+    expect(parseCompanySort("value", "sideways")).toEqual({
+      field: "value",
+      dir: "desc",
+    });
+  });
+
+  it("maps the legacy newest/oldest sorts onto added", () => {
+    expect(parseCompanySort("newest", "")).toEqual({ field: "added", dir: "desc" });
+    expect(parseCompanySort("oldest", "")).toEqual({ field: "added", dir: "asc" });
   });
 });
 

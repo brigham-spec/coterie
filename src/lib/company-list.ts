@@ -7,23 +7,65 @@
 
 const DAY = 86_400_000;
 
-// The companies-table sort options — one source shared by the filter's <select>
-// (the labels) and the page's sort switch (the values), so they can't drift apart.
-export type CompanySort =
+// The companies-table sort model — a FIELD (which column) plus a DIRECTION. One
+// source shared by the filter's <select> (the field labels) and the page's sort
+// comparator + clickable column headers, so they can't drift apart. Each field
+// carries the natural direction to use when it's first chosen (name ascending,
+// value/date/contact descending); clicking an already-active header flips it.
+export type CompanySortField =
   | "name"
+  | "owner"
+  | "tier"
   | "value"
   | "recent"
   | "actions"
-  | "newest"
-  | "oldest";
-export const COMPANY_SORT_OPTIONS: { value: CompanySort; label: string }[] = [
-  { value: "name", label: "Name (A–Z)" },
-  { value: "value", label: "Value (high–low)" },
-  { value: "recent", label: "Last contact" },
-  { value: "actions", label: "Open actions" },
-  { value: "newest", label: "Newest added" },
-  { value: "oldest", label: "Oldest added" },
+  | "added";
+export type CompanySortDir = "asc" | "desc";
+
+export const COMPANY_SORT_OPTIONS: {
+  value: CompanySortField;
+  label: string;
+  defaultDir: CompanySortDir;
+}[] = [
+  { value: "name", label: "Name", defaultDir: "asc" },
+  { value: "owner", label: "Owner", defaultDir: "asc" },
+  { value: "tier", label: "Tier", defaultDir: "asc" },
+  { value: "value", label: "Value", defaultDir: "desc" },
+  { value: "recent", label: "Last contact", defaultDir: "desc" },
+  { value: "actions", label: "Open actions", defaultDir: "desc" },
+  { value: "added", label: "Date added", defaultDir: "desc" },
 ];
+
+const SORT_FIELDS = new Map(COMPANY_SORT_OPTIONS.map((o) => [o.value, o]));
+
+// Legacy single-value sorts (before the field+dir split) → their equivalent
+// field/direction, so an old shared URL keeps working.
+const LEGACY_SORT: Record<string, { field: CompanySortField; dir: CompanySortDir }> = {
+  newest: { field: "added", dir: "desc" },
+  oldest: { field: "added", dir: "asc" },
+};
+
+/// PURE: resolve the raw `sort`/`dir` query params into a valid field +
+/// direction. An unknown field falls back to name; a missing/invalid direction
+/// falls back to the field's natural default. Kept here (not in the page) so the
+/// parsing stays unit-testable and the default directions live with the options.
+export function parseCompanySort(
+  rawSort: string,
+  rawDir: string,
+): { field: CompanySortField; dir: CompanySortDir } {
+  const legacy = LEGACY_SORT[rawSort];
+  if (legacy) return legacy;
+  const opt = SORT_FIELDS.get(rawSort as CompanySortField);
+  const field: CompanySortField = opt ? opt.value : "name";
+  const defaultDir = opt?.defaultDir ?? "asc";
+  const dir: CompanySortDir =
+    rawDir === "asc" || rawDir === "desc" ? rawDir : defaultDir;
+  return { field, dir };
+}
+
+export function defaultSortDir(field: CompanySortField): CompanySortDir {
+  return SORT_FIELDS.get(field)?.defaultDir ?? "asc";
+}
 
 // Last-contact staleness bucket — red past 90 days, amber past 60, green when
 // fresh, and "none" when there's no recorded contact. Mirrors the dashboard's

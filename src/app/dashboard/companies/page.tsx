@@ -8,9 +8,12 @@ import { ACTIVE_COMMITMENT_STATUSES } from "@/lib/commitments";
 import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import { readMemberTiers } from "@/lib/member-tiers";
 import {
+  defaultSortDir,
+  parseCompanySort,
   staleTone,
   tallyIntrosByCompany,
   tallyOpenActionsByCompany,
+  type CompanySortField,
   type StaleTone,
 } from "@/lib/company-list";
 import {
@@ -109,7 +112,10 @@ export default async function CompaniesPage({
   const tierFilter = one(sp.tier);
   const industryFilter = one(sp.industry);
   const likelihoodFilter = Number(one(sp.likelihood)) || 0;
-  const sort = one(sp.sort) || "name";
+  const { field: sortField, dir: sortDir } = parseCompanySort(
+    one(sp.sort),
+    one(sp.dir),
+  );
   const now = new Date();
 
   // Companies (RLS-scoped) plus the per-company open-action and introduction
@@ -236,24 +242,42 @@ export default async function CompaniesPage({
       likelihoodFilter ? (c.likelihood ?? 0) >= likelihoodFilter : true,
     );
 
+  // Each field's comparator in ascending order; the direction flips the sign
+  // below. Tier uses an Infinity sentinel so unranked rows always settle at the
+  // end; a missing owner sorts as "" (empty first ascending, so it flips with the
+  // direction like any other value).
+  type Row = (typeof filtered)[number];
+  function compareAsc(a: Row, b: Row): number {
+    switch (sortField) {
+      case "owner":
+        return (a.owner?.name ?? "").localeCompare(b.owner?.name ?? "");
+      case "tier": {
+        const ra = a.tier ? (tierRank.get(a.tier) ?? Infinity) : Infinity;
+        const rb = b.tier ? (tierRank.get(b.tier) ?? Infinity) : Infinity;
+        return ra - rb;
+      }
+      case "value":
+        return Number(a.annualValue) - Number(b.annualValue);
+      case "recent":
+        return (
+          (a.lastContactAt?.getTime() ?? 0) - (b.lastContactAt?.getTime() ?? 0)
+        );
+      case "actions":
+        return (
+          (openActionByCompany.get(a.id) ?? 0) -
+          (openActionByCompany.get(b.id) ?? 0)
+        );
+      case "added":
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      default:
+        return a.name.localeCompare(b.name);
+    }
+  }
+  const dirMul = sortDir === "desc" ? -1 : 1;
   const rows = [...filtered].sort((a, b) => {
-    if (sort === "value") return Number(b.annualValue) - Number(a.annualValue);
-    if (sort === "recent") {
-      const at = a.lastContactAt?.getTime() ?? 0;
-      const bt = b.lastContactAt?.getTime() ?? 0;
-      return bt - at;
-    }
-    if (sort === "actions") {
-      const ac = openActionByCompany.get(a.id) ?? 0;
-      const bc = openActionByCompany.get(b.id) ?? 0;
-      return bc - ac || a.name.localeCompare(b.name);
-    }
-    // "newest"/"oldest" sort by when the company was added to the network.
-    if (sort === "newest")
-      return b.createdAt.getTime() - a.createdAt.getTime();
-    if (sort === "oldest")
-      return a.createdAt.getTime() - b.createdAt.getTime();
-    return a.name.localeCompare(b.name);
+    const primary = compareAsc(a, b) * dirMul;
+    // Stable, readable tie-break: name A–Z regardless of the primary direction.
+    return primary !== 0 ? primary : a.name.localeCompare(b.name);
   });
 
   const totalValue = rows.reduce((t, c) => t + Number(c.annualValue), 0);
@@ -269,7 +293,9 @@ export default async function CompaniesPage({
       tier: tierFilter,
       industry: industryFilter,
       likelihood: likelihoodFilter ? String(likelihoodFilter) : "",
-      sort: sort === "name" ? "" : sort,
+      // Name-ascending is the default view, so it needs no params.
+      sort: sortField === "name" ? "" : sortField,
+      dir: sortDir === defaultSortDir(sortField) ? "" : sortDir,
     };
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries({ ...base, ...patch }))
@@ -282,6 +308,34 @@ export default async function CompaniesPage({
   // Clicking the active industry chip clears it.
   const industryHref = (name: string) =>
     makeHref({ industry: industryFilter === name ? "" : name });
+
+  // A clickable, direction-toggling column header. Clicking an inactive column
+  // sorts by its natural default direction; clicking the active one flips it. The
+  // arrow (↑ asc / ↓ desc) marks the active column. Passing the default dir as ""
+  // keeps that column's URL clean.
+  const sortHeader = (field: CompanySortField, label: string) => {
+    const active = sortField === field;
+    const defaultForField = defaultSortDir(field);
+    const nextDir = active
+      ? sortDir === "asc"
+        ? "desc"
+        : "asc"
+      : defaultForField;
+    return (
+      <Link
+        href={makeHref({
+          sort: field,
+          dir: nextDir === defaultForField ? "" : nextDir,
+        })}
+        className="inline-flex items-center gap-1 hover:text-ink"
+      >
+        {label}
+        {active ? (
+          <span aria-hidden>{sortDir === "asc" ? "\u2191" : "\u2193"}</span>
+        ) : null}
+      </Link>
+    );
+  };
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -383,27 +437,13 @@ export default async function CompaniesPage({
             <Table
               head={
                 <>
-                  <Th>Company</Th>
-                  <Th>Owner</Th>
-                  <Th>Tier</Th>
+                  <Th>{sortHeader("name", "Company")}</Th>
+                  <Th>{sortHeader("owner", "Owner")}</Th>
+                  <Th>{sortHeader("tier", "Tier")}</Th>
                   <Th>Tags</Th>
-                  <Th>Value</Th>
-                  <Th>Last contact</Th>
-                  <Th>
-                    <Link
-                      href={makeHref({
-                        sort: sort === "newest" ? "oldest" : "newest",
-                      })}
-                      className="inline-flex items-center gap-1 hover:text-ink"
-                    >
-                      Added
-                      {sort === "newest" ? (
-                        <span aria-hidden>{"\u2193"}</span>
-                      ) : sort === "oldest" ? (
-                        <span aria-hidden>{"\u2191"}</span>
-                      ) : null}
-                    </Link>
-                  </Th>
+                  <Th>{sortHeader("value", "Value")}</Th>
+                  <Th>{sortHeader("recent", "Last contact")}</Th>
+                  <Th>{sortHeader("added", "Added")}</Th>
                 </>
               }
             >
