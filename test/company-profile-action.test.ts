@@ -785,4 +785,46 @@ describe("createCompany", () => {
     expect(activities).toHaveLength(1);
     expect(activities[0].payload).toMatchObject({ from: null, to: "prospect" });
   });
+
+  test("assigns a valid in-org owner picked on the quick form", async () => {
+    const name = `Owned Co ${randomUUID()}`;
+    await createCompany(
+      fd({
+        name,
+        status: "prospect",
+        industry: "Manufacturing",
+        ownerUserId: secondStaffUser.id,
+      }),
+    );
+
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findFirst({ where: { name }, select: { ownerUserId: true } }),
+    );
+    expect(company!.ownerUserId).toBe(secondStaffUser.id);
+  });
+
+  test("leaves the owner unassigned when none is picked", async () => {
+    const name = `Ownerless Co ${randomUUID()}`;
+    await createCompany(
+      fd({ name, status: "prospect", industry: "Manufacturing", ownerUserId: "" }),
+    );
+
+    const company = await withOrg(orgA.id, (tx) =>
+      tx.company.findFirst({ where: { name }, select: { ownerUserId: true } }),
+    );
+    expect(company!.ownerUserId).toBeNull();
+  });
+
+  test("rejects an owner who is not a member of this organization", async () => {
+    await expect(
+      createCompany(
+        fd({
+          name: `Foreign Owner Co ${randomUUID()}`,
+          status: "prospect",
+          industry: "Manufacturing",
+          ownerUserId: outsiderUser.id,
+        }),
+      ),
+    ).rejects.toThrow("owner is not a member of this organization");
+  });
 });

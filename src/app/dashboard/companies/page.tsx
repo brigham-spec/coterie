@@ -368,6 +368,8 @@ export default async function CompaniesPage({
           <AddCompanyForm
             existing={companies.map((c) => ({ id: c.id, name: c.name }))}
             industries={industries.map((i) => i.name)}
+            staff={staff}
+            currentUserId={ctx.userId}
           />
         </AddDisclosure>
       </Card>

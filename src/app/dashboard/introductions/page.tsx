@@ -41,7 +41,11 @@ import {
   Tr,
 } from "@/components/ui";
 
-import { createIntroduction, updateIntroduction } from "./actions";
+import {
+  createIntroduction,
+  deleteIntroduction,
+  updateIntroduction,
+} from "./actions";
 import { confirmIntroAdvance } from "../companies/[id]/actions";
 import { IntroEmailDraft } from "./_intro-email";
 import { NewIntroOpportunities } from "./_new-intros";
@@ -91,6 +95,9 @@ export default async function IntroductionsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireOrgContext();
+  // Deleting a ledger row is admin-only (deleteIntroduction calls requireAdmin);
+  // gate the control so non-admins aren't offered a button that would be refused.
+  const isAdmin = ctx.role === "admin";
   const sp = await searchParams;
   const rawStage = one(sp.stage);
   const stageFilter = INTRO_STAGES.some((s) => s.value === rawStage) ? rawStage : "";
@@ -640,6 +647,17 @@ export default async function IntroductionsPage({
                         >
                           Draft email
                         </Link>
+                        {isAdmin ? (
+                          <form action={deleteIntroduction} className="mt-1.5">
+                            <input type="hidden" name="introId" value={i.id} />
+                            <button
+                              type="submit"
+                              className="text-[10.5px] font-medium tracking-[0.06em] text-red uppercase hover:underline"
+                            >
+                              Remove
+                            </button>
+                          </form>
+                        ) : null}
                       </Td>
                     </Tr>
                   );

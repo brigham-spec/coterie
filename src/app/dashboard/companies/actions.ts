@@ -22,6 +22,18 @@ function revalidateCompany(companyId: string): void {
   revalidatePath("/dashboard");
 }
 
+// An owner must be a member of THIS org. org_memberships carry no RLS, so scope
+// the check explicitly by (org, user). Shared by create + inline owner edit so
+// the security check stays identical.
+async function assertOrgOwner(orgId: string, ownerUserId: string): Promise<void> {
+  const membership = await prisma.orgMembership.findUnique({
+    where: { orgId_userId: { orgId, userId: ownerUserId } },
+    select: { userId: true },
+  });
+  if (membership == null)
+    throw new Error("owner is not a member of this organization");
+}
+
 // Create a company in the caller's tenant. org_id is stamped from the resolved
 // context, never from client input — RLS's WITH CHECK backstops that on write.
 
@@ -32,6 +44,8 @@ export async function createCompany(formData: FormData): Promise<void> {
   const status = String(formData.get("status") ?? "").trim();
   const industry = String(formData.get("industry") ?? "").trim();
   const annualValueRaw = String(formData.get("annualValue") ?? "").trim();
+  const ownerRaw = String(formData.get("ownerUserId") ?? "").trim();
+  const ownerUserId = ownerRaw === "" ? null : ownerRaw;
 
   if (!name || !status || !industry)
     throw new Error("name, status, and industry are required");
@@ -42,9 +56,11 @@ export async function createCompany(formData: FormData): Promise<void> {
   if (Number.isNaN(Number(annualValue)) || Number(annualValue) < 0)
     throw new Error("annualValue must be a non-negative number");
 
+  if (ownerUserId !== null) await assertOrgOwner(orgId, ownerUserId);
+
   await withOrg(orgId, async (tx) => {
     const company = await tx.company.create({
-      data: { orgId, name, status, industry, annualValue },
+      data: { orgId, name, status, industry, annualValue, ownerUserId },
     });
     // Seed the status history with the founding status (from: null) so the
     // profile timeline has a lifecycle row from day one, mirroring the entry
@@ -80,14 +96,7 @@ export async function setCompanyOwner(formData: FormData): Promise<void> {
 
   const raw = String(formData.get("ownerUserId") ?? "").trim();
   const ownerUserId = raw === "" ? null : raw;
-  if (ownerUserId !== null) {
-    const membership = await prisma.orgMembership.findUnique({
-      where: { orgId_userId: { orgId, userId: ownerUserId } },
-      select: { userId: true },
-    });
-    if (membership == null)
-      throw new Error("owner is not a member of this organization");
-  }
+  if (ownerUserId !== null) await assertOrgOwner(orgId, ownerUserId);
 
   const ok = await withOrg(orgId, async (tx) => {
     const r = await tx.company.updateMany({

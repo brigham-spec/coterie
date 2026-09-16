@@ -21,10 +21,18 @@ import { createCompany } from "./actions";
 export function AddCompanyForm({
   existing,
   industries,
+  staff,
+  currentUserId,
 }: {
   existing: ExistingCompany[];
   industries: string[];
+  staff: { id: string; name: string }[];
+  currentUserId: string;
 }) {
+  // Default the owner to the signed-in user when they're on staff — they're
+  // usually the one adding (and owning) the company, matching the list's
+  // default-to-my-book-of-business filter.
+  const ownsSelf = staff.some((s) => s.id === currentUserId);
   const [duplicate, setDuplicate] = useState<ExistingCompany | null>(null);
   // The normalized name we've already warned about; a matching second submit is
   // allowed through. Re-typing a different name re-arms the warning.
@@ -87,6 +95,18 @@ export function AddCompanyForm({
         placeholder="0"
         inputMode="decimal"
       />
+      <SelectField
+        name="ownerUserId"
+        label="Owner"
+        defaultValue={ownsSelf ? currentUserId : ""}
+      >
+        <option value="">Unassigned</option>
+        {staff.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.id === currentUserId ? `${s.name} (me)` : s.name}
+          </option>
+        ))}
+      </SelectField>
       <div className="col-span-2 flex justify-end">
         <Button type="submit" variant="primary">
           Add company
