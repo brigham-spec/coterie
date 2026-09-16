@@ -804,6 +804,7 @@ export default async function CompanyDetailPage({
           phone: c.phone,
           linkedin: c.linkedin,
           notes: c.notes,
+          bio: c.bio,
           tags: c.tags,
           isPrimary: c.isPrimary,
         }))}

@@ -38,6 +38,7 @@ export type ContactRow = {
   phone: string | null;
   linkedin: string | null;
   notes: string;
+  bio: string;
   tags: string[];
   isPrimary: boolean;
 };

@@ -13,6 +13,7 @@ import {
   setPrimaryContact,
 } from "@/app/dashboard/contacts/actions";
 import { ContactForm, type ContactRow } from "@/app/dashboard/contacts/_contact-form";
+import { ContactBio } from "@/app/dashboard/contacts/[id]/_bio";
 import type { ExistingContact } from "@/lib/duplicate-check";
 
 // Editable Contacts card (profile-parity P2). The company detail page was
@@ -77,6 +78,7 @@ export function ContactsCard({
 
 function ContactItem({ contact }: { contact: ContactRow }) {
   const [editing, setEditing] = useState(false);
+  const [showBio, setShowBio] = useState(false);
 
   if (editing) {
     return (
@@ -142,6 +144,13 @@ function ContactItem({ contact }: { contact: ContactRow }) {
           ) : null}
           <button
             type="button"
+            onClick={() => setShowBio((v) => !v)}
+            className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+          >
+            {showBio ? "Hide bio" : "Bio"}
+          </button>
+          <button
+            type="button"
             onClick={() => setEditing(true)}
             className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
           >
@@ -178,6 +187,14 @@ function ContactItem({ contact }: { contact: ContactRow }) {
 
       {contact.notes ? (
         <p className="text-xs whitespace-pre-wrap text-ink-2">{contact.notes}</p>
+      ) : null}
+
+      {showBio ? (
+        <ContactBio
+          contactId={contact.id}
+          linkedin={contact.linkedin}
+          bio={contact.bio}
+        />
       ) : null}
     </li>
   );

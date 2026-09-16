@@ -172,6 +172,7 @@ export default async function ContactDetailPage({
           phone: contact.phone,
           linkedin: contact.linkedin,
           notes: contact.notes,
+          bio: contact.bio,
           tags: contact.tags,
           isPrimary: contact.isPrimary,
         }}
