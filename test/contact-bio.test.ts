@@ -46,6 +46,14 @@ describe("parseContactBio", () => {
     const long = "a".repeat(1000);
     expect(parseContactBio(JSON.stringify({ bio: long }))!.length).toBe(800);
   });
+
+  test("strips web_search (cite ...> citation markup from the bio", () => {
+    const cited =
+      '<cite index="14-1">Jane Doe is the founder of Acme Mills.</cite> <cite index="12-3">She leads a Hudson Valley manufacturer.</cite>';
+    expect(parseContactBio(JSON.stringify({ bio: cited }))).toBe(
+      "Jane Doe is the founder of Acme Mills. She leads a Hudson Valley manufacturer.",
+    );
+  });
 });
 
 describe("buildContactBioPrompt", () => {

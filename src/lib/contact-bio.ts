@@ -29,9 +29,12 @@ export const BIO_MAX = 800;
 
 // PURE: coerce any JSON value to a trimmed, bounded string. The model is told to
 // use "" when it finds nothing; defends against the literal string "null" too.
+// The web_search tool wraps cited claims in <cite index="…">…</cite> markup that
+// bleeds into the bio text (and can surface with a "(" opening bracket) — strip
+// those tags so we store/show plain prose.
 function str(value: unknown, max = BIO_MAX): string {
   if (typeof value !== "string") return "";
-  const t = value.trim();
+  const t = value.replace(/[<(]\/?cite[^>)]*[>)]/gi, "").trim();
   return t.toLowerCase() === "null" ? "" : t.slice(0, max);
 }
 
@@ -86,6 +89,7 @@ Rules:
 - Ground every statement in a real, verifiable source from your search — never invent, infer, or embellish.
 - Make sure you are describing the RIGHT person (match the company and title above); if you cannot confidently identify them, return "".
 - Write in the third person, plain professional prose. No bullet points, no markdown.
+- Output plain text only — no citation markers, footnotes, URLs, or XML/HTML tags (e.g. no <cite> tags) in the bio.
 - Return "" if you cannot find enough verifiable information for a factual bio.
 
 Return ONLY a valid JSON object (no markdown, no prose):
