@@ -1,5 +1,6 @@
 "use server";
 
+import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
 
 import { requireAdmin, requireOrgContext } from "@/lib/auth";
@@ -7,6 +8,8 @@ import { withOrg } from "@/lib/tenant";
 import { softDeleteContact } from "@/lib/soft-delete";
 import { optionalUrl } from "@/lib/form-fields";
 import { CONTACT_TAGS } from "@/lib/tags";
+import { AiRateLimitError, enforceAiRateLimit } from "@/lib/ai-rate-limit";
+import { BIO_MAX, generateContactBio } from "@/lib/contact-bio";
 
 // Contact mutations for the tenant's companies. org_id is stamped from context
 // (RLS WITH CHECK backstops it). contacts.company_id is a plain FK on
@@ -167,6 +170,92 @@ export async function setPrimaryContact(formData: FormData): Promise<void> {
       where: { id: contactId },
       data: { isPrimary: true },
     });
+    return contact.companyId;
+  });
+
+  if (companyId == null) throw new Error("contact not found in this organization");
+  revalidateContact(companyId, contactId);
+}
+
+// Bio generation, sibling to the company enrich-from-web flow. The contact is
+// re-loaded withOrg-scoped from the id in the form (never a client payload), so a
+// foreign id resolves null and no other tenant is read. Its name / title /
+// company + saved LinkedIn URL ground a live web search in @/lib/contact-bio; the
+// Anthropic key never reaches the browser. Ephemeral: the bio is only proposed
+// here — nothing is written until the operator applies (via applyContactBio).
+
+export type ContactBioState =
+  | { status: "idle" }
+  | { status: "ok"; bio: string }
+  | { status: "error"; message: string };
+
+export async function generateContactBioAction(
+  _prev: ContactBioState,
+  formData: FormData,
+): Promise<ContactBioState> {
+  const contactId = String(formData.get("contactId") ?? "").trim();
+  if (!contactId) return { status: "error", message: "missing contact" };
+
+  const { orgId, orgName } = await requireOrgContext();
+
+  const contact = await withOrg(orgId, (tx) =>
+    tx.contact.findUnique({
+      where: { id: contactId },
+      select: {
+        name: true,
+        title: true,
+        linkedin: true,
+        company: { select: { name: true } },
+      },
+    }),
+  );
+
+  if (contact == null)
+    return { status: "error", message: "contact not found in this organization" };
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const bio = await generateContactBio({
+      orgName,
+      name: contact.name,
+      title: contact.title ?? "",
+      company: contact.company.name,
+      linkedin: contact.linkedin,
+    });
+    if (bio == null)
+      return { status: "error", message: "No verifiable bio details found on the web." };
+    return { status: "ok", bio };
+  } catch (err) {
+    console.error("contact bio generation failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return { status: "error", message: "Could not generate a bio. Try again." };
+  }
+}
+
+// Save the operator-approved (and possibly edited) bio to the contact row. The
+// contact is re-verified inside withOrg (RLS → a foreign id resolves null →
+// refused). An empty submission clears the field.
+export async function applyContactBio(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const contactId = String(formData.get("contactId") ?? "").trim();
+  if (!contactId) throw new Error("missing contact");
+
+  const bio = String(formData.get("bio") ?? "").trim().slice(0, BIO_MAX);
+
+  const companyId = await withOrg(orgId, async (tx) => {
+    const contact = await tx.contact.findUnique({
+      where: { id: contactId },
+      select: { companyId: true },
+    });
+    if (contact == null) return null;
+
+    await tx.contact.update({ where: { id: contactId }, data: { bio } });
     return contact.companyId;
   });
 

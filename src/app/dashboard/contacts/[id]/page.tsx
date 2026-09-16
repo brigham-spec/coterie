@@ -16,6 +16,7 @@ import {
   Tr,
 } from "@/components/ui";
 
+import { ContactBio } from "./_bio";
 import { ContactDetails } from "./_details";
 
 // Contact detail — a person's home in the network. Surfaces their own fields (title,
@@ -59,6 +60,7 @@ export default async function ContactDetailPage({
           phone: true,
           linkedin: true,
           notes: true,
+          bio: true,
           tags: true,
           isPrimary: true,
           company: { select: { id: true, name: true, status: true } },
@@ -173,6 +175,12 @@ export default async function ContactDetailPage({
           tags: contact.tags,
           isPrimary: contact.isPrimary,
         }}
+      />
+
+      <ContactBio
+        contactId={contact.id}
+        linkedin={contact.linkedin}
+        bio={contact.bio}
       />
 
       <Card>

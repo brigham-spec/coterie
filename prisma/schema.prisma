@@ -260,6 +260,9 @@ model Contact {
   /// The main relationship contact at the firm.
   isPrimary Boolean @default(false) @map("is_primary")
   notes     String  @default("")
+  /// A short professional bio, AI-generated from the contact's LinkedIn + web
+  /// search and operator-approved (see @/lib/contact-bio). "" until generated.
+  bio       String  @default("")
 
   // ── Slice 11.0 additive expansion ──
   /// Profile URL (demo `linkedin`).
