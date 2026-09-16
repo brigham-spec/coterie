@@ -114,6 +114,7 @@ describe("enrichFromWebAction", () => {
       dealSize: "$5M-$20M",
       agencyContacts: "Ulster County IDA",
       notesAppend: "Announced a Series B raise.",
+      contacts: [],
     };
     genSpy.mockResolvedValue(enrichment);
 
@@ -131,6 +132,8 @@ describe("enrichFromWebAction", () => {
     expect(context.industry).toBe("Manufacturing");
     expect(context.counties).toEqual(["Ulster"]);
     expect(context.website).toBe("https://acmemills.example");
+    // The existing on-file contact is passed so the model skips re-proposing it.
+    expect(context.existingContacts).toEqual(["Jane Doe"]);
   });
 
   test("surfaces an empty parse as a 'nothing new' error", async () => {
@@ -193,6 +196,37 @@ describe("applyWebEnrichment", () => {
     expect(company!.notes).toContain("Existing note.");
     expect(company!.notes).toContain("Announced a Series B raise.");
     expect(company!.notes).toMatch(/\[Web, \d{4}-\d{2}-\d{2}\]:/);
+  });
+
+  test("creates selected contacts, skipping any already on file", async () => {
+    const selection = {
+      contacts: [
+        // Duplicates the existing primary (Jane Doe) by name → skipped.
+        { name: "Jane Doe", title: "Owner", email: "", phone: "" },
+        { name: "Sam Green", title: "CFO", email: "sam@acme.example", phone: "845-555-0100" },
+      ],
+    };
+    const state = await applyWebEnrichment(
+      { status: "idle" },
+      fd({ companyId: companyAId, enrichment: JSON.stringify(selection) }),
+    );
+    // Only the one genuinely-new contact counts.
+    expect(state).toEqual({ status: "applied", count: 1 });
+
+    const contacts = await withOrg(orgA.id, (tx) =>
+      tx.contact.findMany({
+        where: { companyId: companyAId },
+        select: { name: true, title: true, email: true, phone: true },
+        orderBy: { name: "asc" },
+      }),
+    );
+    expect(contacts.map((c) => c.name)).toEqual(["Jane Doe", "Sam Green"]);
+    const sam = contacts.find((c) => c.name === "Sam Green");
+    expect(sam).toMatchObject({
+      title: "CFO",
+      email: "sam@acme.example",
+      phone: "845-555-0100",
+    });
   });
 
   test("rejects an empty selection", async () => {

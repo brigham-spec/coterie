@@ -15,13 +15,25 @@ import { extractJsonObject } from "@/lib/json-extract";
 // here so the Anthropic key never reaches the browser. The result is EPHEMERAL
 // and only the fields the operator selects are written (via applyWebEnrichment).
 //
-// Like enrich-from-meetings we do NOT propose new contacts or projects here; those
-// are relation writes with their own surfaces. This stays a pure profile-scalar
-// enrichment and its apply path touches only the company row.
+// Alongside the profile scalars we also surface NEW people found on the web as
+// proposed contacts (name / title / email / phone). Like the scalars they are
+// ephemeral — the operator reviews and applies, and only then does the apply path
+// create Contact rows. We do NOT propose projects here (those have their own
+// surface). The existing contacts on file are passed in so we don't re-propose them.
+
+// A person the web search surfaced who isn't already on the company's contact
+// list. Every field is a bounded string; only `name` is required on apply.
+export type WebContact = {
+  name: string;
+  title: string;
+  email: string;
+  phone: string;
+};
 
 // The company being enriched, plus its current field values and the public URLs
 // to research (website / primary-contact name), so the model can tell what's
-// already known and surface only genuinely new intelligence.
+// already known and surface only genuinely new intelligence. `existingContacts`
+// are the names already on file, so the model skips re-proposing them.
 export type EnrichWebContext = {
   orgName: string;
   companyName: string;
@@ -33,11 +45,13 @@ export type EnrichWebContext = {
   canOffer: string;
   dealSize: string;
   agencyContacts: string;
+  existingContacts: string[];
 };
 
-// The extracted enrichment. Every field is a string; "" means "nothing new".
+// The extracted enrichment. Every scalar is a string; "" means "nothing new".
 // `counties` is a comma-separated string here (split into String[] on apply).
 // `summary` is a one-line description of what was found (display-only, not written).
+// `contacts` are the newly-found people (empty when none).
 export type WebEnrichment = {
   summary: string;
   lookingFor: string;
@@ -47,7 +61,11 @@ export type WebEnrichment = {
   dealSize: string;
   agencyContacts: string;
   notesAppend: string;
+  contacts: WebContact[];
 };
+
+// Cap on proposed contacts so a chatty search can't flood the review list.
+const MAX_WEB_CONTACTS = 8;
 
 // PURE: coerce any JSON value to a trimmed, bounded string. The model is told to
 // use "" for empty, but defends against the literal string "null" too.
@@ -66,6 +84,7 @@ function str(value: unknown, max = 400): string {
 export function parseWebEnrichment(
   raw: string,
   currentIndustry: string,
+  existingContactNames: string[] = [],
 ): WebEnrichment | null {
   const json = extractJsonObject(raw);
   if (json == null) return null;
@@ -95,6 +114,7 @@ export function parseWebEnrichment(
     dealSize: str(obj.dealSize, 100),
     agencyContacts: str(obj.agencyContacts, 300),
     notesAppend: str(obj.notesAppend, 500),
+    contacts: parseWebContacts(obj.contacts, existingContactNames),
   };
 
   const empty =
@@ -104,9 +124,40 @@ export function parseWebEnrichment(
     enrichment.counties === "" &&
     enrichment.dealSize === "" &&
     enrichment.agencyContacts === "" &&
-    enrichment.notesAppend === "";
+    enrichment.notesAppend === "" &&
+    enrichment.contacts.length === 0;
   if (empty) return null;
   return enrichment;
+}
+
+/// PURE: coerce the model's `contacts` value into bounded WebContact rows. Each
+/// needs a non-empty name; entries whose name already appears on file (or a
+/// duplicate within the batch, case-insensitive) are dropped, and the list is
+/// capped so a chatty search can't flood the review.
+function parseWebContacts(
+  value: unknown,
+  existingContactNames: string[],
+): WebContact[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set(existingContactNames.map((n) => n.trim().toLowerCase()));
+  const contacts: WebContact[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    const name = str(e.name, 120);
+    if (name === "") continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    contacts.push({
+      name,
+      title: str(e.title, 120),
+      email: str(e.email, 200),
+      phone: str(e.phone, 40),
+    });
+    if (contacts.length >= MAX_WEB_CONTACTS) break;
+  }
+  return contacts;
 }
 
 /// PURE: the user prompt handed to the model (with the web_search tool). Gives the
@@ -123,6 +174,9 @@ export function buildEnrichWebPrompt(context: EnrichWebContext): string {
     context.lookingFor ? `Looking For: ${context.lookingFor}` : "",
     context.canOffer ? `Can Offer: ${context.canOffer}` : "",
     context.agencyContacts ? `Agency Contacts: ${context.agencyContacts}` : "",
+    context.existingContacts.length
+      ? `Known Contacts: ${context.existingContacts.join(", ")}`
+      : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -146,10 +200,11 @@ Rules:
 - Do NOT repeat information already captured; prefer "" over inventing anything.
 - For "counties", list the Hudson Valley, NY counties they are active in (comma-separated).
 - For "notesAppend", APPEND new context (1-2 sentences) — do not restate existing notes.
+- For "contacts", list key people at the organization found via search — leaders, decision-makers, or the right point of contact — EXCLUDING anyone under Known Contacts. Include title/email/phone only when verifiable. Use [] when no new people are found.
 - Ground every value in a real, verifiable source from your search.
 
 Return ONLY a valid JSON object (no markdown, no prose):
-{"summary":"1 sentence on what the search revealed","lookingFor":"what they need — connections, capital, expertise, agencies. Specific. Max 200 chars. \\"\\" if nothing new","canOffer":"what they bring — expertise, relationships, capabilities. Specific. Max 200 chars. \\"\\" if nothing new","industry":"primary sector, 3-5 words. \\"\\" if already set and accurate","counties":"HV counties active in, comma-separated. \\"\\" if nothing new","dealSize":"typical deal size. \\"\\" if nothing new","agencyContacts":"NYS agency / government relationships found. \\"\\" if nothing new","notesAppend":"1-2 sentences of new strategic context to append to notes. \\"\\" if nothing significant"}`;
+{"summary":"1 sentence on what the search revealed","lookingFor":"what they need — connections, capital, expertise, agencies. Specific. Max 200 chars. \\"\\" if nothing new","canOffer":"what they bring — expertise, relationships, capabilities. Specific. Max 200 chars. \\"\\" if nothing new","industry":"primary sector, 3-5 words. \\"\\" if already set and accurate","counties":"HV counties active in, comma-separated. \\"\\" if nothing new","dealSize":"typical deal size. \\"\\" if nothing new","agencyContacts":"NYS agency / government relationships found. \\"\\" if nothing new","notesAppend":"1-2 sentences of new strategic context to append to notes. \\"\\" if nothing significant","contacts":[{"name":"full name","title":"their role or \\"\\"","email":"email if found or \\"\\"","phone":"phone if found or \\"\\""}]}`;
 }
 
 const SYSTEM_PROMPT = `You enrich a member's profile using live web search. Return ONLY a single JSON object with the requested keys. Include only information found in real, verifiable sources — never invent, infer, or hallucinate. An empty string is always better than invented content.`;
@@ -163,7 +218,7 @@ export async function generateWebEnrichment(
   const client = new Anthropic();
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 1200,
+    max_tokens: 1500,
     system: SYSTEM_PROMPT,
     tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
     messages: [{ role: "user", content: buildEnrichWebPrompt(context) }],
@@ -174,5 +229,5 @@ export async function generateWebEnrichment(
     .map((block) => block.text)
     .join("");
 
-  return parseWebEnrichment(text, context.industry);
+  return parseWebEnrichment(text, context.industry, context.existingContacts);
 }

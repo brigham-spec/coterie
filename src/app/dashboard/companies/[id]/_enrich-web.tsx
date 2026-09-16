@@ -46,6 +46,11 @@ export function EnrichFromWeb({ companyId }: { companyId: string }) {
     applyInitial,
   );
   const [dropped, setDropped] = useState<Partial<Record<FieldKey, boolean>>>({});
+  // Proposed contacts (people found on the web) the operator has unchecked, keyed
+  // by their index in review.contacts.
+  const [droppedContacts, setDroppedContacts] = useState<Record<number, boolean>>(
+    {},
+  );
 
   const review =
     enrichState.status === "ok" && applyState.status !== "applied"
@@ -60,7 +65,12 @@ export function EnrichFromWeb({ companyId }: { companyId: string }) {
         return acc;
       }, {})
     : {};
-  const selectedCount = Object.keys(selection).length;
+  const selectedContacts = review
+    ? review.contacts.filter((_, i) => !droppedContacts[i])
+    : [];
+  // The apply action reads scalar fields and a `contacts` array from one payload.
+  const payload = { ...selection, contacts: selectedContacts };
+  const selectedCount = Object.keys(selection).length + selectedContacts.length;
 
   return (
     <CollapsibleCard
@@ -84,7 +94,7 @@ export function EnrichFromWeb({ companyId }: { companyId: string }) {
           <p className="text-xs text-red-ink">{enrichState.message}</p>
         ) : applyState.status === "applied" ? (
           <p className="text-xs text-ink-2">
-            Applied {applyState.count} field{applyState.count === 1 ? "" : "s"} to
+            Applied {applyState.count} update{applyState.count === 1 ? "" : "s"} to
             this profile.
           </p>
         ) : review ? null : (
@@ -101,7 +111,7 @@ export function EnrichFromWeb({ companyId }: { companyId: string }) {
             <input
               type="hidden"
               name="enrichment"
-              value={JSON.stringify(selection)}
+              value={JSON.stringify(payload)}
             />
 
             {review.summary ? (
@@ -139,6 +149,46 @@ export function EnrichFromWeb({ companyId }: { companyId: string }) {
                 );
               })}
             </div>
+
+            {review.contacts.length > 0 ? (
+              <div className="mt-4 border-t border-line pt-3">
+                <p className="mb-2 text-[9px] font-medium tracking-[0.08em] text-ink-3 uppercase">
+                  New contacts found
+                </p>
+                <div className="space-y-2">
+                  {review.contacts.map((c, i) => {
+                    const checked = !droppedContacts[i];
+                    const detail = [c.title, c.email, c.phone]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <label
+                        key={i}
+                        className="flex cursor-pointer gap-2 text-[11.5px] leading-relaxed text-ink-2"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setDroppedContacts((d) => ({ ...d, [i]: checked }))
+                          }
+                          className="mt-0.5 shrink-0"
+                        />
+                        <span>
+                          {c.name}
+                          {detail ? (
+                            <>
+                              <br />
+                              <span className="text-ink-3">{detail}</span>
+                            </>
+                          ) : null}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-3 flex justify-end">
               <Button

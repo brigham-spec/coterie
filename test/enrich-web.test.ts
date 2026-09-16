@@ -39,6 +39,7 @@ describe("parseWebEnrichment", () => {
       dealSize: "$5M-$20M",
       agencyContacts: "Ulster County IDA",
       notesAppend: "Announced a Series B raise; targeting a Q4 site decision.",
+      contacts: [],
     });
   });
 
@@ -104,6 +105,41 @@ describe("parseWebEnrichment", () => {
     expect(e!.counties).toBe("Orange, Sullivan");
     expect(e!.lookingFor).toBe("");
   });
+
+  test("keeps an enrichment carrying only new contacts", () => {
+    const e = parseWebEnrichment(
+      JSON.stringify({
+        contacts: [
+          { name: "Sam Green", title: "CEO", email: "sam@acme.example", phone: "" },
+        ],
+      }),
+      CURRENT_INDUSTRY,
+    );
+    expect(e).not.toBeNull();
+    expect(e!.contacts).toEqual([
+      { name: "Sam Green", title: "CEO", email: "sam@acme.example", phone: "" },
+    ]);
+  });
+
+  test("drops contacts already on file (case-insensitive) and nameless entries", () => {
+    const e = parseWebEnrichment(
+      JSON.stringify({
+        counties: "Ulster",
+        contacts: [
+          { name: "jane doe", title: "Owner" },
+          { title: "no name" },
+          { name: "Sam Green" },
+          { name: "Sam Green", title: "dup within batch" },
+        ],
+      }),
+      CURRENT_INDUSTRY,
+      ["Jane Doe"],
+    );
+    expect(e).not.toBeNull();
+    expect(e!.contacts).toEqual([
+      { name: "Sam Green", title: "", email: "", phone: "" },
+    ]);
+  });
 });
 
 describe("buildEnrichWebPrompt", () => {
@@ -118,6 +154,7 @@ describe("buildEnrichWebPrompt", () => {
     canOffer: "",
     dealSize: "",
     agencyContacts: "",
+    existingContacts: ["Jane Doe"],
   };
 
   test("embeds the current field values, the research URL, and the JSON shape", () => {
@@ -132,6 +169,9 @@ describe("buildEnrichWebPrompt", () => {
     // The exact JSON shape we consume is requested.
     expect(prompt).toContain('"agencyContacts"');
     expect(prompt).toContain('"notesAppend"');
+    expect(prompt).toContain('"contacts"');
+    // Contacts already on file are named so the model skips re-proposing them.
+    expect(prompt).toContain("Known Contacts: Jane Doe");
   });
 
   test("falls back to a name search when no website is set", () => {

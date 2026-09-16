@@ -55,6 +55,7 @@ import {
 } from "@/lib/enrich-meetings";
 import {
   generateWebEnrichment,
+  type WebContact,
   type WebEnrichment,
 } from "@/lib/enrich-web";
 import {
@@ -895,9 +896,8 @@ export async function enrichFromWebAction(
         canOffer: true,
         agencyContacts: true,
         contacts: {
-          where: { isPrimary: true },
-          take: 1,
-          select: { name: true },
+          orderBy: { isPrimary: "desc" },
+          select: { name: true, isPrimary: true },
         },
       },
     }),
@@ -911,7 +911,7 @@ export async function enrichFromWebAction(
     const enrichment = await generateWebEnrichment({
       orgName: company.name,
       companyName: company.name,
-      contactName: company.contacts[0]?.name ?? "",
+      contactName: company.contacts.find((c) => c.isPrimary)?.name ?? "",
       industry: company.industry,
       counties: company.counties,
       website: company.website,
@@ -919,6 +919,7 @@ export async function enrichFromWebAction(
       canOffer: company.canOffer ?? "",
       dealSize: company.dealSize ?? "",
       agencyContacts: company.agencyContacts ?? "",
+      existingContacts: company.contacts.map((c) => c.name),
     });
     if (enrichment == null)
       return {
@@ -958,6 +959,7 @@ type WebEnrichmentSelection = {
   dealSize?: string;
   agencyContacts?: string;
   notesAppend?: string;
+  contacts?: WebContact[];
 };
 
 // PURE: read the client's selection payload, keeping only non-empty string values
@@ -991,6 +993,25 @@ function readWebEnrichmentSelection(raw: string): WebEnrichmentSelection {
   if (dealSize !== undefined) selection.dealSize = dealSize;
   if (agencyContacts !== undefined) selection.agencyContacts = agencyContacts;
   if (notesAppend !== undefined) selection.notesAppend = notesAppend;
+
+  // Proposed contacts to create — coerced defensively (name required, bounded)
+  // just like the scalar fields, since this payload is client-supplied.
+  if (Array.isArray(obj.contacts)) {
+    const contacts: WebContact[] = [];
+    for (const entry of obj.contacts) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const e = entry as Record<string, unknown>;
+      const name = pick(e.name, 120);
+      if (name === undefined) continue;
+      contacts.push({
+        name,
+        title: pick(e.title, 120) ?? "",
+        email: pick(e.email, 200) ?? "",
+        phone: pick(e.phone, 40) ?? "",
+      });
+    }
+    if (contacts.length > 0) selection.contacts = contacts;
+  }
   return selection;
 }
 
@@ -1004,8 +1025,9 @@ export async function applyWebEnrichment(
   const selection = readWebEnrichmentSelection(
     String(formData.get("enrichment") ?? ""),
   );
-  const count = Object.keys(selection).length;
-  if (count === 0)
+  const proposedContacts = selection.contacts ?? [];
+  const scalarKeys = Object.keys(selection).filter((k) => k !== "contacts");
+  if (scalarKeys.length === 0 && proposedContacts.length === 0)
     return { status: "error", message: "Nothing selected to apply." };
 
   const { orgId } = await requireOrgContext();
@@ -1013,9 +1035,12 @@ export async function applyWebEnrichment(
   const applied = await withOrg(orgId, async (tx) => {
     const company = await tx.company.findUnique({
       where: { id: companyId },
-      select: { notes: true },
+      select: {
+        notes: true,
+        contacts: { select: { name: true, email: true } },
+      },
     });
-    if (company == null) return false;
+    if (company == null) return null;
 
     const data: {
       lookingFor?: string;
@@ -1043,17 +1068,55 @@ export async function applyWebEnrichment(
       data.notes = company.notes ? `${company.notes}\n\n${header}` : header;
     }
 
-    await tx.company.update({ where: { id: companyId }, data });
-    return true;
+    if (Object.keys(data).length > 0)
+      await tx.company.update({ where: { id: companyId }, data });
+
+    // Collect each proposed contact, skipping any that duplicate a name (or
+    // email) already on this company or earlier in the batch — a re-search
+    // shouldn't spawn duplicate rows — then create the survivors in one write.
+    const seenNames = new Set(
+      company.contacts.map((c) => c.name.trim().toLowerCase()),
+    );
+    const seenEmails = new Set(
+      company.contacts.map((c) => normalizeEmail(c.email)).filter((e) => e !== ""),
+    );
+    const toCreate: {
+      orgId: string;
+      companyId: string;
+      name: string;
+      title: string | null;
+      email: string | null;
+      phone: string | null;
+    }[] = [];
+    for (const c of proposedContacts) {
+      const nameKey = c.name.trim().toLowerCase();
+      const emailKey = normalizeEmail(c.email);
+      if (seenNames.has(nameKey)) continue;
+      if (emailKey !== "" && seenEmails.has(emailKey)) continue;
+      toCreate.push({
+        orgId,
+        companyId,
+        name: c.name,
+        title: c.title || null,
+        email: c.email || null,
+        phone: c.phone || null,
+      });
+      seenNames.add(nameKey);
+      if (emailKey !== "") seenEmails.add(emailKey);
+    }
+    if (toCreate.length > 0) await tx.contact.createMany({ data: toCreate });
+
+    return scalarKeys.length + toCreate.length;
   });
 
-  if (!applied)
+  if (applied == null)
     return { status: "error", message: "company not found in this organization" };
 
   revalidatePath(`/dashboard/companies/${companyId}`);
   revalidatePath("/dashboard/companies");
+  revalidatePath("/dashboard/contacts");
   revalidatePath("/dashboard");
-  return { status: "applied", count };
+  return { status: "applied", count: applied };
 }
 
 // Analyze-document (gap-audit cluster E). The operator uploads a PDF — an
