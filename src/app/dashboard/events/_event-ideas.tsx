@@ -5,7 +5,12 @@ import { useActionState } from "react";
 import { Button, Card, CardHeader, TagBadge } from "@/components/ui";
 import { getEventType } from "@/lib/event-stages";
 
-import { suggestEvents, type EventIdeasState } from "./actions";
+import {
+  saveEventIdea,
+  suggestEvents,
+  type EventIdeasState,
+  type SaveIdeaState,
+} from "./actions";
 import type {
   EventIdea,
   IdeaExternalGuest,
@@ -17,9 +22,29 @@ import type {
 // browser. Claude proposes distinct events grounded in the network's members,
 // active projects, and recent meetings — each with a "why now", a tiered invite
 // list, and an expected outcome. Results are ephemeral: re-run on demand; nothing
-// is stored (an operator turns an idea into a real event via the form above).
+// is stored — but any idea the host likes can be saved as a real planning-stage
+// event (its substance folded into the description), which drops into the table
+// below while the other ideas stay on screen.
 
 const initialState: EventIdeasState = { status: "idle" };
+const saveInitialState: SaveIdeaState = { status: "idle" };
+
+// Fold an idea's reasoning + curated guest list into a description string so none
+// of the AI's work is lost when it becomes a real event (the event has one
+// free-text description field; the host can trim it afterwards).
+function composeDescription(idea: EventIdea): string {
+  const lines: string[] = [];
+  if (idea.theme) lines.push(idea.theme);
+  if (idea.whyNow) lines.push(`Why now: ${idea.whyNow}`);
+  if (idea.anchor) lines.push(`Anchor: ${idea.anchor}`);
+  if (idea.expectedOutcome) lines.push(`Expected outcome: ${idea.expectedOutcome}`);
+  const guests = [...idea.tier1, ...idea.tier2].map((g) => g.name);
+  if (guests.length > 0) lines.push(`Suggested guests: ${guests.join(", ")}`);
+  const external = idea.tier3External.map((g) => g.org);
+  if (external.length > 0) lines.push(`External / prospects: ${external.join(", ")}`);
+  if (idea.agenda.length > 0) lines.push(`Agenda: ${idea.agenda.join("; ")}`);
+  return lines.join("\n");
+}
 
 export function EventIdeas() {
   const [state, formAction, isPending] = useActionState(
@@ -75,6 +100,9 @@ function IdeaCard({ idea }: { idea: EventIdea }) {
         <span className="text-[12.5px] font-semibold text-ink">{idea.title}</span>
         <TagBadge label={type.label} tone={type.tone} />
         <span className="text-[10px] text-ink-3">~{idea.idealSize} guests</span>
+        <span className="ml-auto">
+          <SaveIdeaButton idea={idea} />
+        </span>
       </div>
 
       {idea.whyNow ? (
@@ -119,6 +147,37 @@ function IdeaCard({ idea }: { idea: EventIdea }) {
         </div>
       ) : null}
     </li>
+  );
+}
+
+// Save one idea as a real planning-stage event. The idea's fields ride along as
+// hidden inputs (type is validated server-side against the canonical vocabulary);
+// on success the button latches to "Added" and the new event appears in the table
+// below via the action's revalidate.
+function SaveIdeaButton({ idea }: { idea: EventIdea }) {
+  const [state, formAction, isPending] = useActionState(
+    saveEventIdea,
+    saveInitialState,
+  );
+
+  if (state.status === "saved") {
+    return <span className="text-[10.5px] text-ink-3">Added to calendar</span>;
+  }
+
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="name" value={idea.title} />
+      <input type="hidden" name="type" value={idea.typeValue} />
+      <input type="hidden" name="venue" value={idea.suggestedVenue} />
+      <input type="hidden" name="capacity" value={String(idea.idealSize)} />
+      <input type="hidden" name="description" value={composeDescription(idea)} />
+      <Button type="submit" disabled={isPending}>
+        {isPending ? "Saving…" : "Save as event"}
+      </Button>
+      {state.status === "error" ? (
+        <span className="ml-2 text-[10.5px] text-red-ink">{state.message}</span>
+      ) : null}
+    </form>
   );
 }
 

@@ -45,6 +45,7 @@ const {
   setEventSponsor,
   generateBrief,
   updateGuestBrief,
+  saveEventIdea,
   draftOutreach,
   markOutreachSent,
   findEventTargets,
@@ -657,5 +658,42 @@ describe("event + guest-list actions", () => {
       tx.event.findUnique({ where: { id: orgBEventId } }),
     );
     expect(survived?.id).toBe(orgBEventId);
+  });
+
+  test("saves a liked event idea as a planning-stage event", async () => {
+    const state = await saveEventIdea(
+      { status: "idle" },
+      fd({
+        name: "Capital & Construction Salon",
+        type: "roundtable",
+        venue: "Member A HQ",
+        theme: "",
+        description: "Why now: two projects need capital.\nSuggested guests: Alice A",
+        capacity: "14",
+      }),
+    );
+    expect(state).toEqual({ status: "saved" });
+
+    const saved = await withOrg(orgA.id, (tx) =>
+      tx.event.findFirst({ where: { name: "Capital & Construction Salon" } }),
+    );
+    expect(saved?.type).toBe("roundtable");
+    expect(saved?.stage).toBe("planning");
+    expect(saved?.venue).toBe("Member A HQ");
+    expect(saved?.capacity).toBe(14);
+    expect(saved?.description).toContain("Suggested guests: Alice A");
+  });
+
+  test("refuses to save an idea with an unknown event type", async () => {
+    const state = await saveEventIdea(
+      { status: "idle" },
+      fd({ name: "Bad Idea", type: "not_a_type", capacity: "10" }),
+    );
+    expect(state.status).toBe("error");
+
+    const found = await withOrg(orgA.id, (tx) =>
+      tx.event.findFirst({ where: { name: "Bad Idea" } }),
+    );
+    expect(found).toBeNull();
   });
 });

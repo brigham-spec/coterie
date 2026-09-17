@@ -826,6 +826,59 @@ export async function suggestEvents(
   }
 }
 
+// Turn a liked event idea (ephemeral, from suggestEvents) into a real planning-stage
+// event. The idea's substance — why now, anchor, outcome, suggested guests, agenda —
+// is folded into the description on the client so none of it is lost; here we validate
+// the type against the canonical vocabulary and create the row (org_id stamped, RLS
+// WITH CHECK backstops it). No redirect: the events page revalidates so the new event
+// drops into the table below while the remaining ideas stay on screen to save too.
+
+export type SaveIdeaState =
+  | { status: "idle" }
+  | { status: "saved" }
+  | { status: "error"; message: string };
+
+export async function saveEventIdea(
+  _prev: SaveIdeaState,
+  formData: FormData,
+): Promise<SaveIdeaState> {
+  const { orgId } = await requireOrgContext();
+
+  const name = String(formData.get("name") ?? "").trim();
+  const type = String(formData.get("type") ?? "").trim();
+  const venue = String(formData.get("venue") ?? "").trim();
+  const theme = String(formData.get("theme") ?? "").trim();
+  const description = String(formData.get("description") ?? "")
+    .trim()
+    .slice(0, 2000);
+  const capacityRaw = String(formData.get("capacity") ?? "").trim();
+
+  if (!name) return { status: "error", message: "The idea has no title to save." };
+  if (!isEventType(type)) return { status: "error", message: "Unknown event type." };
+  const capacity =
+    capacityRaw !== "" && Number.isInteger(Number(capacityRaw))
+      ? Number(capacityRaw)
+      : null;
+
+  await withOrg(orgId, (tx) =>
+    tx.event.create({
+      data: {
+        orgId,
+        name,
+        type,
+        stage: "planning",
+        venue: venue === "" ? null : venue,
+        theme: theme === "" ? null : theme,
+        description,
+        capacity,
+      },
+    }),
+  );
+
+  revalidatePath("/dashboard/events");
+  return { status: "saved" };
+}
+
 // AI guest-list curation (ported from the prototype's "AI Suggest Guest List",
 // Coterie.html:8210). In ONE withOrg tx it loads the event, the network contacts
 // not yet on the list (with their company profile + a never-invited flag), the
