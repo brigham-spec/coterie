@@ -31,8 +31,8 @@ import {
   isRsvpState,
 } from "@/lib/event-stages";
 import {
+  BRIEF_MAX,
   generateGuestBriefs,
-  type GuestBrief,
   type GuestContext,
 } from "@/lib/event-brief";
 import {
@@ -567,12 +567,13 @@ export async function setEventSponsor(formData: FormData): Promise<void> {
 // Guest brief (slice 11.7, ported from the prototype's showGuestBriefModal). In ONE
 // withOrg tx (RLS-scoped to this tenant) it loads the event plus its attending
 // guests with their public-facing context, then the engine writes a short bio for
-// each. Like the other AI features it's a useActionState action returning state (not
-// throwing) so failures render inline; results are EPHEMERAL — nothing is stored.
+// each. The bios are SAVED to each invitee's `brief` column and revalidated onto the
+// page, where the host can edit them (updateGuestBrief); the action returns state
+// (not throwing) so failures/empty render inline.
 
 export type GuestBriefState =
   | { status: "idle" }
-  | { status: "ok"; briefs: GuestBrief[] }
+  | { status: "ok" }
   | { status: "empty" }
   | { status: "error"; message: string };
 
@@ -661,7 +662,20 @@ export async function generateBrief(
       userName,
       guests,
     );
-    return { status: "ok", briefs };
+    if (briefs.length === 0) return { status: "empty" };
+    // Persist each bio onto its invitee (RLS-scoped; the ids are our own guests,
+    // validated by the engine against the supplied roster). The page revalidates
+    // and re-renders from these saved briefs, which the host can then edit.
+    await withOrg(orgId, async (tx) => {
+      for (const b of briefs) {
+        await tx.eventInvitee.update({
+          where: { id: b.inviteeId },
+          data: { brief: b.bio },
+        });
+      }
+    });
+    revalidatePath(`/dashboard/events/${eventId}`);
+    return { status: "ok" };
   } catch (err) {
     console.error("guest brief failed", err);
     if (err instanceof AiRateLimitError)
@@ -672,6 +686,25 @@ export async function generateBrief(
       return { status: "error", message: "AI is busy right now. Try again shortly." };
     return { status: "error", message: "Could not write guest briefs. Try again." };
   }
+}
+
+// Edit a single guest's saved brief by hand. The updateMany is withOrg-scoped, so
+// a foreign invitee id matches nothing under the tenant policy (RLS no-op). Bounded
+// by BRIEF_MAX so a hand-edited brief can't grow past the generated cap.
+export async function updateGuestBrief(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+  const inviteeId = String(formData.get("inviteeId") ?? "").trim();
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  if (!inviteeId || !eventId) return;
+  const brief = String(formData.get("brief") ?? "")
+    .trim()
+    .slice(0, BRIEF_MAX);
+
+  await withOrg(orgId, (tx) =>
+    tx.eventInvitee.updateMany({ where: { id: inviteeId }, data: { brief } }),
+  );
+
+  revalidatePath(`/dashboard/events/${eventId}`);
 }
 
 // Event suggestions (gap-audit cluster D, ported from the prototype's

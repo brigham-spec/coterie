@@ -1010,6 +1010,10 @@ model EventInvitee {
   /// invited, confirmed, declined, attended, no_show
   rsvp          String  @default("invited")
   notes         String  @default("")
+  /// Saved guest brief — the short shareable bio the host generates (see
+  /// @/lib/event-brief) or writes by hand for this attending guest. Persisted
+  /// and editable after generation, like outreachDraft below.
+  brief         String  @default("")
   /// Outreach tracking (demo inv.outreachStatus/outreachDraft/outreachSentAt).
   /// none → not started, draft → an invitation has been drafted, sent → emailed.
   outreachStatus String    @default("none") @map("outreach_status")

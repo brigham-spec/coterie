@@ -10,6 +10,7 @@ import {
   RSVP_STATES,
   getEventType,
   getRsvpState,
+  isAttending,
 } from "@/lib/event-stages";
 import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import {
@@ -187,6 +188,17 @@ export default async function EventDetailPage({
       org: i.contact!.company?.name ?? null,
       status: i.outreachStatus,
       draft: i.outreachDraft,
+    }));
+
+  // Attending network guests with their saved brief — the pool the guest-brief
+  // panel writes/edits (external guests have no profile to ground a bio in).
+  const briefGuests = event.invitees
+    .filter((i) => isAttending(i.rsvp) && i.contactId != null && i.contact != null)
+    .map((i) => ({
+      inviteeId: i.id,
+      name: i.contact!.name,
+      org: i.contact!.company?.name ?? null,
+      brief: i.brief,
     }));
 
   // Network guests keyed by CONTACT id — the pool for follow-up "they owe" owners
@@ -453,7 +465,13 @@ export default async function EventDetailPage({
 
       <FindTargets eventId={event.id} />
 
-      <GuestBrief eventId={event.id} />
+      {/* Key by the guest-id set so a fresh generation/RSVP change (which
+          revalidates) reseeds the saved briefs without stranding stale rows. */}
+      <GuestBrief
+        key={briefGuests.map((g) => g.inviteeId).join(",")}
+        eventId={event.id}
+        guests={briefGuests}
+      />
 
       {/* Key by the guest-id set: the panel owns local draft state, so it must
           only remount when a guest is added or removed — an RSVP change (which

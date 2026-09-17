@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { parseGuestBriefs, type GuestContext } from "@/lib/event-brief";
+import { BRIEF_MAX, parseGuestBriefs, type GuestContext } from "@/lib/event-brief";
 
 // Unit test for the guest-brief PURE surface (slice 11.7). No Anthropic call —
 // guards the defensive parser that turns a chatty model reply into per-guest bios:
@@ -87,5 +87,11 @@ describe("parseGuestBriefs", () => {
     expect(parseGuestBriefs("not json", guests)).toEqual([]);
     expect(parseGuestBriefs("{}", guests)).toEqual([]);
     expect(parseGuestBriefs('{"inviteeId":"inv-1","bio":"x"}', guests)).toEqual([]);
+  });
+
+  it("bounds an overly long bio to BRIEF_MAX characters", () => {
+    const raw = JSON.stringify([{ inviteeId: "inv-1", bio: "a".repeat(1000) }]);
+    const out = parseGuestBriefs(raw, guests);
+    expect(out[0].bio.length).toBe(BRIEF_MAX);
   });
 });

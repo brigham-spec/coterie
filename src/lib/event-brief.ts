@@ -36,6 +36,10 @@ export type GuestContext = {
 // A generated bio keyed back to its invitee.
 export type GuestBrief = { inviteeId: string; name: string; bio: string };
 
+// One cap for a brief's length, shared by the parse bound and the persist bound
+// (updateGuestBrief) so a generated and a hand-edited brief can never drift apart.
+export const BRIEF_MAX = 600;
+
 function coerceBrief(
   item: unknown,
   validIds: ReadonlySet<string>,
@@ -46,7 +50,7 @@ function coerceBrief(
   const inviteeId = typeof o.inviteeId === "string" ? o.inviteeId : "";
   // Reject anything the model invented that isn't a supplied guest.
   if (!validIds.has(inviteeId)) return null;
-  const bio = typeof o.bio === "string" ? o.bio.trim() : "";
+  const bio = typeof o.bio === "string" ? o.bio.trim().slice(0, BRIEF_MAX) : "";
   if (bio === "") return null;
   return { inviteeId, name: nameById.get(inviteeId) ?? "", bio };
 }

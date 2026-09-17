@@ -44,6 +44,7 @@ const {
   removeInvitee,
   setEventSponsor,
   generateBrief,
+  updateGuestBrief,
   draftOutreach,
   markOutreachSent,
   findEventTargets,
@@ -175,8 +176,16 @@ describe("event + guest-list actions", () => {
     await expect(addInvitee(fd({ eventId, contactId: bContactId }))).rejects.toThrow();
   });
 
-  test("hands the engine only attending CRM guests as scoped context", async () => {
-    genSpy.mockResolvedValue([]);
+  test("briefs only attending CRM guests and SAVES each bio to its invitee", async () => {
+    // Echo a bio back for each supplied guest so we can assert it persisted.
+    genSpy.mockImplementation(
+      async (_event: unknown, _host: string, guests: GuestContext[]) =>
+        guests.map((g) => ({
+          inviteeId: g.inviteeId,
+          name: g.name,
+          bio: `Bio for ${g.name}`,
+        })),
+    );
     const eventId = await findEventId("Fall Dinner");
 
     // Alice confirms (should be briefed); Bob stays invited (skipped); the external
@@ -187,7 +196,7 @@ describe("event + guest-list actions", () => {
     await updateInviteeRsvp(fd({ eventId, inviteeId: aliceInvitee!.id, rsvp: "confirmed" }));
 
     const state = await generateBrief({ status: "idle" }, fd({ eventId }));
-    expect(state).toEqual({ status: "ok", briefs: [] });
+    expect(state).toEqual({ status: "ok" });
 
     expect(genSpy).toHaveBeenCalledTimes(1);
     const [event, host, guests] = genSpy.mock.calls[0] as [
@@ -202,6 +211,48 @@ describe("event + guest-list actions", () => {
     expect(guests[0].seeking).toBe("a capital partner");
     expect(guests[0].brings).toBe("land-use counsel");
     void event;
+
+    // The generated bio was saved onto Alice's invitee.
+    const saved = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findUnique({ where: { id: aliceInvitee!.id } }),
+    );
+    expect(saved!.brief).toBe("Bio for Alice A");
+  });
+
+  test("edits a saved brief by hand, bounded and tenant-scoped", async () => {
+    const eventId = await findEventId("Fall Dinner");
+    const aliceInvitee = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findFirst({ where: { eventId, contactId: aliceId } }),
+    );
+
+    // A hand edit overwrites the saved brief (trimmed).
+    await updateGuestBrief(
+      fd({ eventId, inviteeId: aliceInvitee!.id, brief: "  Alice leads land-use work.  " }),
+    );
+    const edited = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findUnique({ where: { id: aliceInvitee!.id } }),
+    );
+    expect(edited!.brief).toBe("Alice leads land-use work.");
+
+    // Overlong input is bounded to BRIEF_MAX (600).
+    await updateGuestBrief(
+      fd({ eventId, inviteeId: aliceInvitee!.id, brief: "x".repeat(1000) }),
+    );
+    const bounded = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findUnique({ where: { id: aliceInvitee!.id } }),
+    );
+    expect(bounded!.brief.length).toBe(600);
+
+    // Another tenant cannot edit this invitee's brief (RLS-scoped no-op).
+    mockCtx.orgId = orgB.id;
+    await updateGuestBrief(
+      fd({ eventId, inviteeId: aliceInvitee!.id, brief: "smuggled" }),
+    );
+    mockCtx.orgId = orgA.id;
+    const afterForeign = await withOrg(orgA.id, (tx) =>
+      tx.eventInvitee.findUnique({ where: { id: aliceInvitee!.id } }),
+    );
+    expect(afterForeign!.brief.length).toBe(600);
   });
 
   test("drafts an invitation for a CRM guest with tenant-scoped context", async () => {
