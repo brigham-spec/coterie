@@ -66,6 +66,7 @@ model Organization {
   membershipProposals    MembershipProposal[]
   valueDelivered         ValueDelivered[]
   affiliations           Affiliation[]
+  companyDocuments       CompanyDocument[]
   keyRelationships       KeyRelationship[]
   fundingSources         FundingSource[]
   introDismissals        IntroDismissal[]
@@ -209,6 +210,14 @@ model Company {
   /// so a large network cycles through rather than repeating the same head.
   lastSynthesizedAt DateTime? @map("last_synthesized_at") @db.Timestamptz(6)
 
+  // ── Secondary profile — additional business lines / capabilities synthesized
+  // from the company's affiliations + uploaded documents (see @/lib/secondary-
+  // profile). Fed into the intro engine as SUPPORTING signal only, weighted
+  // below the primary lookingFor/canOffer. All nullable ("" / null = none).
+  secondaryIndustry   String? @map("secondary_industry")
+  secondaryCanOffer   String? @map("secondary_can_offer")
+  secondaryLookingFor String? @map("secondary_looking_for")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -232,6 +241,7 @@ model Company {
   introSuggestionCaches IntroSuggestionCache[]
   eventConversions      EventConversion[]
   venueEvents           Event[]              @relation("EventVenueCompany")
+  documents             CompanyDocument[]
   timelineNotes         Note[]
   referredBy            Company?             @relation("CompanyReferral", fields: [referredById], references: [id], onDelete: SetNull)
   referrals             Company[]            @relation("CompanyReferral")
@@ -283,6 +293,7 @@ model Contact {
   ownedActionItems ActionItem[]      @relation("ActionItemOwnerContact")
   projectLinks     ProjectLink[]
   eventInvitees    EventInvitee[]
+  affiliations     Affiliation[]
   venueEvents      Event[]           @relation("EventVenueContact")
   /// The LinkedIn-tier row this contact was promoted from, if any.
   linkedinSource   LinkedinContact?  @relation("LinkedinPromotion")
@@ -1191,6 +1202,10 @@ model Affiliation {
   /// prototype's flat sub-record.
   counties   String @default("")
   dealSize   String @default("") @map("deal_size")
+  /// Optional person at the affiliated company — a real Contact in this tenant.
+  /// Composite FK (contact_id, org_id) so the link can only point in-org;
+  /// SetNull on contact delete (the affiliation survives, loses the person).
+  contactId  String? @map("contact_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1198,10 +1213,34 @@ model Affiliation {
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   // Composite FK includes org_id so an affiliation can only hang off an in-org member.
   company      Company      @relation(fields: [companyId, orgId], references: [id, orgId], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId, orgId], references: [id, orgId], onDelete: SetNull)
 
   @@index([orgId])
   @@index([companyId])
+  @@index([contactId])
   @@map("affiliations")
+}
+
+/// A document uploaded to a company profile and analyzed by the AI
+/// (see @/lib/analyze-document). We persist the AI's one-line summary + the
+/// original file name so the analysis stays visible after a refresh; the raw
+/// file bytes are not stored in v1 (a Vercel-Blob follow-up adds a re-openable
+/// file). Feeds the secondary-profile synthesis. Tenant-scoped (RLS).
+model CompanyDocument {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  fileName  String   @map("file_name")
+  summary   String   @default("")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Composite FK includes org_id so a document can only hang off an in-org company.
+  company      Company      @relation(fields: [companyId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([companyId])
+  @@map("company_documents")
 }
 
 /// Their Network (slice P6b) — key external contacts a strategic partner can

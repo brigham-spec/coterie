@@ -198,6 +198,14 @@ const INSERT_PLAN: readonly ImportStep[] = [
   {
     name: "affiliations",
     delegate: (tx) => tx.affiliation as unknown as BulkDelegate,
+    fkRefs: [
+      { field: "companyId", target: "companies" },
+      { field: "contactId", target: "contacts" },
+    ],
+  },
+  {
+    name: "companyDocuments",
+    delegate: (tx) => tx.companyDocument as unknown as BulkDelegate,
     fkRefs: [{ field: "companyId", target: "companies" }],
   },
   {

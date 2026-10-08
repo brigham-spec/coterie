@@ -23,11 +23,13 @@ import { MeetingPrep } from "./_meeting-prep";
 import { EnrichFromMeetings } from "./_enrich-meetings";
 import { EnrichFromWeb } from "./_enrich-web";
 import { AnalyzeDocument } from "./_analyze-document";
+import { DocumentsCard } from "./_documents-card";
 import { WhyJoin } from "./_why-join";
 import { IntroSuggestions } from "./_intros";
 import { DetailsCard } from "./_details-card";
 import { ContactsCard } from "./_contacts-card";
 import { AffiliationsCard } from "./_affiliations-card";
+import { SecondaryProfileCard } from "./_secondary-profile";
 import { PartnershipCard } from "./_partnership-card";
 import { TheirNetworkCard } from "./_their-network-card";
 import { ProposalsCard } from "./_proposals-card";
@@ -120,7 +122,11 @@ export default async function CompanyDetailPage({
           owner: { select: { name: true } },
           referredBy: { select: { id: true, name: true } },
           contacts: { orderBy: { name: "asc" } },
-          affiliations: { orderBy: { createdAt: "asc" } },
+          affiliations: {
+            orderBy: { createdAt: "asc" },
+            include: { contact: { select: { name: true } } },
+          },
+          documents: { orderBy: { createdAt: "desc" } },
           keyRelationships: {
             orderBy: { createdAt: "asc" },
             include: { linkedCompany: { select: { id: true, name: true } } },
@@ -765,6 +771,16 @@ export default async function CompanyDetailPage({
 
       <AnalyzeDocument companyId={company.id} />
 
+      <DocumentsCard
+        companyId={company.id}
+        documents={company.documents.map((d) => ({
+          id: d.id,
+          fileName: d.fileName,
+          summary: d.summary,
+          createdAt: d.createdAt,
+        }))}
+      />
+
       <CompanyBrief companyId={company.id} />
 
       <IntroSuggestions companyId={company.id} initial={introSuggestions} />
@@ -823,7 +839,17 @@ export default async function CompanyDetailPage({
           lookingFor: a.lookingFor,
           counties: a.counties,
           dealSize: a.dealSize,
+          contactId: a.contactId ?? "",
+          contactName: a.contact?.name ?? "",
         }))}
+        contacts={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
+      />
+
+      <SecondaryProfileCard
+        companyId={company.id}
+        secondaryIndustry={company.secondaryIndustry ?? ""}
+        secondaryCanOffer={company.secondaryCanOffer ?? ""}
+        secondaryLookingFor={company.secondaryLookingFor ?? ""}
       />
 
       {company.status === "strategic_partner" ? (

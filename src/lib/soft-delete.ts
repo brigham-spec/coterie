@@ -46,6 +46,7 @@ type CompanyTableKey =
   | "activities"
   | "membershipProposals"
   | "affiliations"
+  | "companyDocuments"
   | "keyRelationships"
   | "notes"
   | "actionItems"
@@ -103,6 +104,7 @@ async function snapshotCompany(
   const activities = await tx.activity.findMany({ where: { companyId } });
   const membershipProposals = await tx.membershipProposal.findMany({ where: { companyId } });
   const affiliations = await tx.affiliation.findMany({ where: { companyId } });
+  const companyDocuments = await tx.companyDocument.findMany({ where: { companyId } });
   const keyRelationships = await tx.keyRelationship.findMany({ where: { companyId } });
   const notes = await tx.note.findMany({ where: { companyId } });
   const actionItems = await tx.actionItem.findMany({
@@ -127,6 +129,7 @@ async function snapshotCompany(
     activities,
     membershipProposals,
     affiliations,
+    companyDocuments,
     keyRelationships,
     notes,
     actionItems,
@@ -283,6 +286,10 @@ async function restoreCompany(tx: Tx, tables: Record<string, unknown[]>): Promis
   await createManyIfAny(
     tx.affiliation as unknown as CreateManyDelegate,
     get("affiliations"),
+  );
+  await createManyIfAny(
+    tx.companyDocument as unknown as CreateManyDelegate,
+    get("companyDocuments"),
   );
   await createManyIfAny(
     tx.keyRelationship as unknown as CreateManyDelegate,

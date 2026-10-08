@@ -29,6 +29,9 @@ export type CompanyWithProfile = {
   tier: string | null;
   lookingFor: string | null;
   canOffer: string | null;
+  secondaryIndustry: string | null;
+  secondaryCanOffer: string | null;
+  secondaryLookingFor: string | null;
   networkTags: string[];
   counties: string[];
   contacts: Array<{ name: string; title: string | null; isPrimary: boolean }>;
@@ -45,6 +48,9 @@ export function toIntroProfile(c: CompanyWithProfile): IntroCompanyProfile {
     tier: c.tier,
     lookingFor: c.lookingFor,
     canOffer: c.canOffer,
+    secondaryIndustry: c.secondaryIndustry,
+    secondaryCanOffer: c.secondaryCanOffer,
+    secondaryLookingFor: c.secondaryLookingFor,
     networkTags: c.networkTags,
     counties: c.counties,
     primaryContact: primary

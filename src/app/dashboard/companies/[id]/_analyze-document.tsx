@@ -89,8 +89,10 @@ export function AnalyzeDocument({ companyId }: { companyId: string }) {
           <p className="mt-3 text-xs text-red-ink">{analyzeState.message}</p>
         ) : applyState.status === "applied" ? (
           <p className="text-xs text-ink-2">
-            Applied {applyState.count} field{applyState.count === 1 ? "" : "s"} to
-            this profile.
+            Document saved.
+            {applyState.count > 0
+              ? ` Applied ${applyState.count} field${applyState.count === 1 ? "" : "s"} to this profile.`
+              : ""}
           </p>
         ) : null}
 
@@ -98,6 +100,7 @@ export function AnalyzeDocument({ companyId }: { companyId: string }) {
           <form action={applyAction}>
             <input type="hidden" name="companyId" value={companyId} />
             <input type="hidden" name="fileName" value={review.fileName} />
+            <input type="hidden" name="docSummary" value={review.intel.docSummary} />
             <input type="hidden" name="intel" value={JSON.stringify(selection)} />
 
             <p className="mb-3 text-[11px] text-ink-3">
@@ -140,12 +143,12 @@ export function AnalyzeDocument({ companyId }: { companyId: string }) {
             </div>
 
             <div className="mt-3 flex justify-end">
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={applying || selectedCount === 0}
-              >
-                {applying ? "Applying…" : `Apply ${selectedCount} selected`}
+              <Button type="submit" variant="primary" disabled={applying}>
+                {applying
+                  ? "Saving…"
+                  : selectedCount === 0
+                    ? "Save document"
+                    : `Save document + ${selectedCount} field${selectedCount === 1 ? "" : "s"}`}
               </Button>
             </div>
           </form>

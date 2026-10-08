@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdmin, requireOrgContext } from "@/lib/auth";
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { withOrg } from "@/lib/tenant";
 import { softDeleteCompany } from "@/lib/soft-delete";
@@ -62,6 +63,10 @@ import {
   generateDocumentIntel,
   type DocumentIntel,
 } from "@/lib/analyze-document";
+import {
+  generateSecondaryProfile,
+  type SecondaryProfile,
+} from "@/lib/secondary-profile";
 import {
   generateEmailExtraction,
   parseEmailExtraction,
@@ -1206,12 +1211,15 @@ export async function analyzeDocumentAction(
   }
 }
 
-// Apply the operator's selected document-intel fields to the company row. The
-// client posts a hidden JSON payload of ONLY the checked fields plus the source
-// file name; we coerce it defensively, re-verify the company inside withOrg (RLS
-// → a foreign id resolves null → refused), and write only the provided scalars.
-// `counties` is split into the array column; `notesAppend` is appended (never
-// overwrites) with a dated "[Document]" header so the provenance is visible.
+// Apply the operator's selected document-intel fields to the company row AND
+// persist a CompanyDocument record (file name + one-line summary) so the analysis
+// stays visible after a refresh. The client posts a hidden JSON payload of ONLY
+// the checked fields plus the source file name and summary; we coerce it
+// defensively, re-verify the company inside withOrg (RLS → a foreign id resolves
+// null → refused), write only the provided scalars, and record the document.
+// Saving the document is allowed even when no fields are checked (the summary
+// alone is worth keeping). `counties` is split into the array column;
+// `notesAppend` is appended (never overwrites) with a dated "[Document]" header.
 
 export type ApplyDocumentIntelState =
   | { status: "idle" }
@@ -1270,9 +1278,11 @@ export async function applyDocumentIntel(
     String(formData.get("intel") ?? ""),
   );
   const fileName = String(formData.get("fileName") ?? "").trim().slice(0, 200);
+  const docSummary = String(formData.get("docSummary") ?? "").trim().slice(0, 300);
   const count = Object.keys(selection).length;
-  if (count === 0)
-    return { status: "error", message: "Nothing selected to apply." };
+  // Either a document to record or a field to apply — otherwise nothing to do.
+  if (count === 0 && fileName === "")
+    return { status: "error", message: "Nothing to save." };
 
   const { orgId } = await requireOrgContext();
 
@@ -1308,7 +1318,12 @@ export async function applyDocumentIntel(
       data.notes = company.notes ? `${company.notes}\n\n${header}` : header;
     }
 
-    await tx.company.update({ where: { id: companyId }, data });
+    if (count > 0) await tx.company.update({ where: { id: companyId }, data });
+    // Keep the analysis visible: persist the file name + one-line summary.
+    if (fileName !== "")
+      await tx.companyDocument.create({
+        data: { orgId, companyId, fileName, summary: docSummary },
+      });
     return true;
   });
 
@@ -1319,6 +1334,20 @@ export async function applyDocumentIntel(
   revalidatePath("/dashboard/companies");
   revalidatePath("/dashboard");
   return { status: "applied", count };
+}
+
+// Delete one persisted company document by row id. Re-scoped inside withOrg via
+// deleteMany({ id }) so a foreign id is an RLS 0-row no-op (never touches another
+// tenant's document).
+export async function deleteCompanyDocument(formData: FormData): Promise<void> {
+  const documentId = String(formData.get("documentId") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!documentId || !companyId) return;
+  const { orgId } = await requireOrgContext();
+  await withOrg(orgId, (tx) =>
+    tx.companyDocument.deleteMany({ where: { id: documentId } }),
+  );
+  revalidatePath(`/dashboard/companies/${companyId}`);
 }
 
 // ── Email correspondence (member-profile parity) ────────────────────────────
@@ -2003,6 +2032,25 @@ function readAffiliationFields(formData: FormData) {
   };
 }
 
+// Resolve the optional person this affiliation names. The contact must be one
+// of the member company's own contacts (same company + org) — a foreign or
+// stale id resolves to null and the link is simply dropped. Pass the id already
+// read from the form plus the tx so the lookup shares the org-scoped connection.
+async function resolveAffiliationContactId(
+  tx: Prisma.TransactionClient,
+  formData: FormData,
+  companyId: string,
+  orgId: string,
+): Promise<string | null> {
+  const contactId = String(formData.get("contactId") ?? "").trim();
+  if (!contactId) return null;
+  const contact = await tx.contact.findFirst({
+    where: { id: contactId, companyId, orgId },
+    select: { id: true },
+  });
+  return contact?.id ?? null;
+}
+
 export async function addAffiliation(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();
 
@@ -2019,8 +2067,20 @@ export async function addAffiliation(formData: FormData): Promise<void> {
     });
     if (company == null) return false;
 
+    const contactId = await resolveAffiliationContactId(
+      tx,
+      formData,
+      companyId,
+      orgId,
+    );
     await tx.affiliation.create({
-      data: { orgId, companyId, name, ...readAffiliationFields(formData) },
+      data: {
+        orgId,
+        companyId,
+        name,
+        contactId,
+        ...readAffiliationFields(formData),
+      },
     });
     return true;
   });
@@ -2045,9 +2105,15 @@ export async function updateAffiliation(formData: FormData): Promise<void> {
     });
     if (existing == null) return null;
 
+    const contactId = await resolveAffiliationContactId(
+      tx,
+      formData,
+      existing.companyId,
+      orgId,
+    );
     await tx.affiliation.update({
       where: { id: affiliationId },
-      data: { name, ...readAffiliationFields(formData) },
+      data: { name, contactId, ...readAffiliationFields(formData) },
     });
     return existing.companyId;
   });
@@ -2076,6 +2142,205 @@ export async function deleteAffiliation(formData: FormData): Promise<void> {
   if (companyId == null)
     throw new Error("affiliation not found in this organization");
   revalidateAffiliation(companyId);
+}
+
+// ── Secondary profile ───────────────────────────────────────────────────────
+// Additional business lines / capabilities synthesized from a member's
+// affiliations + uploaded-document summaries, surfaced as its own section and
+// fed into the intro engine as SUPPORTING signal (weighted below the primary
+// profile). Mirrors the enrich-web review-then-apply shape: `enrichSecondaryProfile`
+// proposes (ephemeral, AI runs OUTSIDE the tx), `applySecondaryProfile` writes only
+// the selected fields, and `updateSecondaryProfile` is a plain manual edit so the
+// section is hand-editable too.
+
+export type SecondaryProfileState =
+  | { status: "idle" }
+  | { status: "ok"; proposal: SecondaryProfile }
+  | { status: "error"; message: string };
+
+export async function enrichSecondaryProfile(
+  _prev: SecondaryProfileState,
+  formData: FormData,
+): Promise<SecondaryProfileState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const { orgId, orgName } = await requireOrgContext();
+
+  const company = await withOrg(orgId, async (tx) => {
+    const c = await tx.company.findUnique({
+      where: { id: companyId },
+      select: {
+        name: true,
+        industry: true,
+        lookingFor: true,
+        canOffer: true,
+      },
+    });
+    if (c == null) return null;
+    const affiliations = await tx.affiliation.findMany({
+      where: { companyId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        name: true,
+        role: true,
+        industry: true,
+        canOffer: true,
+        lookingFor: true,
+      },
+    });
+    const documents = await tx.companyDocument.findMany({
+      where: { companyId },
+      orderBy: { createdAt: "desc" },
+      select: { summary: true },
+    });
+    return { c, affiliations, documents };
+  });
+
+  if (company == null)
+    return { status: "error", message: "company not found in this organization" };
+
+  if (company.affiliations.length === 0 && company.documents.length === 0)
+    return {
+      status: "error",
+      message:
+        "Add affiliations or analyze a document first — the secondary profile is built from those.",
+    };
+
+  try {
+    await enforceAiRateLimit(orgId);
+    const proposal = await generateSecondaryProfile({
+      orgName,
+      companyName: company.c.name,
+      primaryIndustry: company.c.industry,
+      primaryLookingFor: company.c.lookingFor ?? "",
+      primaryCanOffer: company.c.canOffer ?? "",
+      affiliations: company.affiliations,
+      documentSummaries: company.documents
+        .map((d) => d.summary)
+        .filter((s) => s.trim() !== ""),
+    });
+    if (proposal == null)
+      return {
+        status: "error",
+        message: "Nothing additional found in the affiliations or documents.",
+      };
+    return { status: "ok", proposal };
+  } catch (err) {
+    console.error("secondary profile synthesis failed", err);
+    if (err instanceof AiRateLimitError)
+      return { status: "error", message: err.message };
+    if (err instanceof Anthropic.AuthenticationError)
+      return { status: "error", message: "AI is not configured. Check the API key." };
+    if (err instanceof Anthropic.RateLimitError)
+      return { status: "error", message: "AI is busy right now. Try again shortly." };
+    return {
+      status: "error",
+      message: "Could not synthesize the secondary profile. Try again.",
+    };
+  }
+}
+
+export type ApplySecondaryProfileState =
+  | { status: "idle" }
+  | { status: "applied"; count: number }
+  | { status: "error"; message: string };
+
+type SecondaryProfileSelection = {
+  secondaryIndustry?: string;
+  secondaryCanOffer?: string;
+  secondaryLookingFor?: string;
+};
+
+// PURE: read the client's selection payload, keeping only non-empty string values
+// for the three secondary fields. Anything malformed collapses to {}.
+function readSecondaryProfileSelection(raw: string): SecondaryProfileSelection {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const obj = parsed as Record<string, unknown>;
+  const pick = (v: unknown, max: number): string | undefined => {
+    if (typeof v !== "string") return undefined;
+    const t = v.trim();
+    return t === "" ? undefined : t.slice(0, max);
+  };
+  const selection: SecondaryProfileSelection = {};
+  const industry = pick(obj.secondaryIndustry, 120);
+  const canOffer = pick(obj.secondaryCanOffer, 300);
+  const lookingFor = pick(obj.secondaryLookingFor, 300);
+  if (industry !== undefined) selection.secondaryIndustry = industry;
+  if (canOffer !== undefined) selection.secondaryCanOffer = canOffer;
+  if (lookingFor !== undefined) selection.secondaryLookingFor = lookingFor;
+  return selection;
+}
+
+export async function applySecondaryProfile(
+  _prev: ApplySecondaryProfileState,
+  formData: FormData,
+): Promise<ApplySecondaryProfileState> {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) return { status: "error", message: "missing company" };
+
+  const selection = readSecondaryProfileSelection(
+    String(formData.get("proposal") ?? ""),
+  );
+  const keys = Object.keys(selection);
+  if (keys.length === 0)
+    return { status: "error", message: "Nothing selected to apply." };
+
+  const { orgId } = await requireOrgContext();
+
+  const ok = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (company == null) return false;
+    await tx.company.update({ where: { id: companyId }, data: selection });
+    return true;
+  });
+
+  if (!ok)
+    return { status: "error", message: "company not found in this organization" };
+
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard");
+  return { status: "applied", count: keys.length };
+}
+
+// Plain manual edit of the three secondary fields (so the section is hand-editable
+// like the details card). Empty inputs clear the respective field.
+export async function updateSecondaryProfile(formData: FormData): Promise<void> {
+  const { orgId } = await requireOrgContext();
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!companyId) throw new Error("missing company");
+
+  const str = (key: string, max: number) =>
+    String(formData.get(key) ?? "").trim().slice(0, max);
+  const data = {
+    secondaryIndustry: str("secondaryIndustry", 120),
+    secondaryCanOffer: str("secondaryCanOffer", 300),
+    secondaryLookingFor: str("secondaryLookingFor", 300),
+  };
+
+  const ok = await withOrg(orgId, async (tx) => {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (company == null) return false;
+    await tx.company.update({ where: { id: companyId }, data });
+    return true;
+  });
+
+  if (!ok) throw new Error("company not found in this organization");
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard");
 }
 
 // ── P6a: partnership section (strategic_partner companies only) ─────────────

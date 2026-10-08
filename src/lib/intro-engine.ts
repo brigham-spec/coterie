@@ -27,6 +27,12 @@ export type IntroCompanyProfile = {
   tier: string | null;
   lookingFor: string | null;
   canOffer: string | null;
+  // Secondary profile — additional business lines / capabilities synthesized from
+  // the company's affiliations + documents. Supporting signal only, weighted BELOW
+  // the primary lookingFor/canOffer (see the prompt rules).
+  secondaryIndustry: string | null;
+  secondaryCanOffer: string | null;
+  secondaryLookingFor: string | null;
   networkTags: string[];
   counties: string[];
   primaryContact: { name: string; title: string | null } | null;
@@ -206,6 +212,8 @@ Score each candidate you include, 5 down to 3:
 3 — a complementary fit: each has something the other is looking for.
 Only include candidates scoring 3 or higher. Omit weak or generic matches entirely; returning fewer, stronger suggestions is better than padding.
 
+A company may also carry SECONDARY capabilities (secondaryIndustry / secondaryCanOffer / secondaryLookingFor) drawn from its affiliations and documents. Treat these as supporting signal only — weighted BELOW the primary lookingFor / canOffer. A secondary-only overlap may add color or nudge wording, but must NEVER by itself justify a 4 or 5; the primary profile carries the match.
+
 Ground every claim in the supplied data — do not invent needs, projects, people, capabilities, or history that is not present. Reference the focus and candidate by what the data actually says (lookingFor, canOffer, networkTags, projects). If a RECENT MEETING INTELLIGENCE block is present, treat it as the freshest signal of what the focus needs right now — let it sharpen "whyNow" and surface newly-expressed needs the static profile has not caught up to.
 
 Return ONLY a JSON array (no prose, no markdown code fences). Each element:
@@ -337,6 +345,8 @@ Score each pairing you include, 5 down to 3:
 4 — a specific needed capability on one side, matched by the other, with concrete evidence in the supplied data.
 3 — a complementary fit: each has something the other is looking for.
 Only include pairings scoring 3 or higher. Return fewer, stronger pairings rather than padding; do not repeat a pair.
+
+A company may also carry SECONDARY capabilities (secondaryIndustry / secondaryCanOffer / secondaryLookingFor) drawn from its affiliations and documents. Treat these as supporting signal only — weighted BELOW the primary lookingFor / canOffer. A secondary-only overlap may add color or nudge wording, but must NEVER by itself justify a 4 or 5; the primary profile carries the match.
 
 Ground every claim in the supplied data — do not invent needs, projects, people, capabilities, or history that is not present. Reference each company by what the data actually says (lookingFor, canOffer, networkTags, projects). If a RECENT MEETING INTELLIGENCE block is present, treat it as the freshest signal of what companies need right now — let it drive "whyNow" and surface time-sensitive pairings the static profiles have not caught up to.
 

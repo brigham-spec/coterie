@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
-import { Button, Field, Textarea } from "@/components/ui";
+import { Button, Field, SelectField, Textarea } from "@/components/ui";
 import { CollapsibleCard } from "@/components/collapsible-card";
 
 import {
@@ -30,14 +31,21 @@ export type AffiliationRow = {
   lookingFor: string;
   counties: string;
   dealSize: string;
+  contactId: string;
+  contactName: string;
 };
+
+// A member-company contact the affiliation can optionally name as its person.
+export type AffiliationContactOption = { id: string; name: string };
 
 export function AffiliationsCard({
   companyId,
   affiliations,
+  contacts,
 }: {
   companyId: string;
   affiliations: AffiliationRow[];
+  contacts: AffiliationContactOption[];
 }) {
   const [adding, setAdding] = useState(false);
 
@@ -60,6 +68,7 @@ export function AffiliationsCard({
           <AffiliationForm
             action={addAffiliation}
             hidden={{ companyId }}
+            contacts={contacts}
             submitLabel="Add affiliation"
             onDone={() => setAdding(false)}
           />
@@ -74,7 +83,7 @@ export function AffiliationsCard({
       ) : (
         <ul className="divide-y divide-line">
           {affiliations.map((a) => (
-            <AffiliationItem key={a.id} affiliation={a} />
+            <AffiliationItem key={a.id} affiliation={a} contacts={contacts} />
           ))}
         </ul>
       )}
@@ -82,7 +91,13 @@ export function AffiliationsCard({
   );
 }
 
-function AffiliationItem({ affiliation }: { affiliation: AffiliationRow }) {
+function AffiliationItem({
+  affiliation,
+  contacts,
+}: {
+  affiliation: AffiliationRow;
+  contacts: AffiliationContactOption[];
+}) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -92,6 +107,7 @@ function AffiliationItem({ affiliation }: { affiliation: AffiliationRow }) {
           action={updateAffiliation}
           hidden={{ affiliationId: affiliation.id }}
           defaults={affiliation}
+          contacts={contacts}
           submitLabel="Save changes"
           onDone={() => setEditing(false)}
         />
@@ -113,6 +129,14 @@ function AffiliationItem({ affiliation }: { affiliation: AffiliationRow }) {
             </span>
             {affiliation.role ? (
               <span className="text-[11px] text-ink-3">{affiliation.role}</span>
+            ) : null}
+            {affiliation.contactId ? (
+              <Link
+                href={`/dashboard/contacts/${affiliation.contactId}`}
+                className="text-[10px] text-ink-3 hover:text-gold hover:underline"
+              >
+                {affiliation.contactName || "Contact"}
+              </Link>
             ) : null}
             {affiliation.website ? (
               <a
@@ -181,12 +205,14 @@ function AffiliationForm({
   action,
   hidden,
   defaults,
+  contacts,
   submitLabel,
   onDone,
 }: {
   action: (formData: FormData) => Promise<void>;
   hidden: Record<string, string>;
   defaults?: AffiliationRow;
+  contacts: AffiliationContactOption[];
   submitLabel: string;
   onDone: () => void;
 }) {
@@ -225,6 +251,20 @@ function AffiliationForm({
           label="LinkedIn"
           defaultValue={defaults?.linkedin ?? ""}
         />
+        {contacts.length > 0 ? (
+          <SelectField
+            name="contactId"
+            label="Contact"
+            defaultValue={defaults?.contactId ?? ""}
+          >
+            <option value="">None</option>
+            {contacts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </SelectField>
+        ) : null}
         <Field
           name="counties"
           label="Geography"

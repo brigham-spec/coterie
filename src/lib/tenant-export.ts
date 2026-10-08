@@ -51,6 +51,7 @@ const TABLES: readonly TableLoader[] = [
   { name: "valueDelivered", load: (tx) => tx.valueDelivered.findMany() },
   { name: "notes", load: (tx) => tx.note.findMany() },
   { name: "affiliations", load: (tx) => tx.affiliation.findMany() },
+  { name: "companyDocuments", load: (tx) => tx.companyDocument.findMany() },
   { name: "keyRelationships", load: (tx) => tx.keyRelationship.findMany() },
 ];
 
