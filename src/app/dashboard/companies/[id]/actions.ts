@@ -1467,6 +1467,49 @@ export async function saveEmailMessage(
   return { status: "saved" };
 }
 
+// Edit a saved manual email row (user: "I should be able to edit the extracted
+// email highlights"). Mirrors saveEmailMessage's re-coerce, plus the manual-row
+// guard from deleteEmailCorrespondence: only manual: rows match, so synced rows
+// (owned by the org Zapier sync, which rewrites their highlights each re-sync)
+// and foreign ids resolve to a 0-row no-op under RLS. doneActionItems/syncedAt
+// are deliberately left untouched.
+export async function updateEmailMessage(
+  _prev: SaveEmailMessageState,
+  formData: FormData,
+): Promise<SaveEmailMessageState> {
+  const id = String(formData.get("id") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  if (!id || !companyId) return { status: "error", message: "missing email" };
+
+  const extraction = parseEmailExtraction(String(formData.get("extraction") ?? ""));
+  if (extraction == null) return { status: "error", message: "Nothing to save." };
+
+  const { orgId } = await requireOrgContext();
+
+  const { count } = await withOrg(orgId, (tx) =>
+    tx.emailMessage.updateMany({
+      where: { id, externalKey: { startsWith: "manual:" } },
+      data: {
+        fromName: extraction.fromName,
+        fromEmail: extraction.fromEmail,
+        subject: extraction.subject,
+        summary: extraction.summary,
+        projects: extraction.projects,
+        actionItems: extraction.actionItems,
+        sentiment: extraction.sentiment,
+        emailDate: extraction.emailDate,
+      },
+    }),
+  );
+
+  if (count === 0)
+    return { status: "error", message: "Email not found in this organization." };
+
+  revalidatePath(`/dashboard/companies/${companyId}`);
+  revalidatePath("/dashboard/email");
+  return { status: "saved" };
+}
+
 export type ToggleEmailItemState =
   | { status: "saved" }
   | { status: "error"; message: string };

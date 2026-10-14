@@ -17,6 +17,7 @@ import { RSVP_CONFIRMED, RSVP_ATTENDED } from "@/lib/event-stages";
 import { deriveValueEntries } from "@/lib/value-delivered";
 import { PageTitle, TagBadge } from "@/components/ui";
 import { CollapsibleCard } from "@/components/collapsible-card";
+import { CardReorder } from "./_card-reorder";
 
 import { CompanyBrief } from "./_brief";
 import { MeetingPrep } from "./_meeting-prep";
@@ -718,323 +719,448 @@ export default async function CompanyDetailPage({
         ) : null}
       </div>
 
-      <DetailsCard
-        company={{
-          id: company.id,
-          name: company.name,
-          status: company.status,
-          tier: company.tier,
-          tierLocked: company.tierLocked,
-          likelihood: company.likelihood,
-          referredById: company.referredById,
-          referredByExternal: company.referredByExternal,
-          referredByName: company.referredBy?.name ?? null,
-          consulting: company.consulting,
-          temperature: company.temperature,
-          industry: company.industry,
-          annualValue: Number(company.annualValue),
-          website: company.website,
-          linkedin: company.linkedin,
-          emailDomain: company.emailDomain,
-          primaryEmail:
-            company.contacts.find((c) => c.isPrimary)?.email ??
-            company.contacts.find((c) => c.email)?.email ??
-            null,
-          source: company.source,
-          memberSince: company.memberSince,
-          dealSize: company.dealSize,
-          counties: company.counties,
-          lookingFor: company.lookingFor,
-          canOffer: company.canOffer,
-          agencyContacts: company.agencyContacts,
-          venue: company.venue,
-          notes: company.notes,
-          networkTags: company.networkTags,
-          ownerName: company.owner?.name ?? null,
-          ownerUserId: company.ownerUserId,
-        }}
-        staff={staff}
-        tierDefs={tierDefs}
-        referralOptions={referralOptions}
-        industries={industries}
-      />
-
-      {company.status === "prospect" ? (
-        <WhyJoin companyId={company.id} />
-      ) : null}
-
-      <MeetingPrep companyId={company.id} />
-
-      <EnrichFromMeetings companyId={company.id} />
-
-      <EnrichFromWeb companyId={company.id} />
-
-      <AnalyzeDocument companyId={company.id} />
-
-      <DocumentsCard
-        companyId={company.id}
-        documents={company.documents.map((d) => ({
-          id: d.id,
-          fileName: d.fileName,
-          summary: d.summary,
-          createdAt: d.createdAt,
-        }))}
-      />
-
-      <CompanyBrief companyId={company.id} />
-
-      <IntroSuggestions companyId={company.id} initial={introSuggestions} />
-
-      <IntroductionsCard
-        companyId={company.id}
-        intros={introductions.map((i) => ({
-          id: i.id,
-          status: i.status,
-          outcome: i.outcome,
-          partyAName: i.partyA.name,
-          partyACompanyName: i.partyA.company.name,
-          partyBName: i.partyB.name,
-          partyBCompanyName: i.partyB.company.name,
-        }))}
-        pendingIntros={pendingIntros.map((d) => ({
-          introId: d.introId,
-          partyALabel: d.partyALabel,
-          partyBLabel: d.partyBLabel,
-          suggestedStage: d.suggestedStage,
-          meetingTitle: d.meetingTitle,
-          meetingDate: d.meetingDate,
-        }))}
-        partyAOptions={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
-        partyBOptions={networkOptions}
-      />
-
-      <ContactsCard
-        companyId={company.id}
-        existing={existingContacts}
-        contacts={company.contacts.map((c) => ({
-          id: c.id,
-          name: c.name,
-          title: c.title,
-          email: c.email,
-          additionalEmails: c.additionalEmails,
-          phone: c.phone,
-          linkedin: c.linkedin,
-          notes: c.notes,
-          bio: c.bio,
-          tags: c.tags,
-          isPrimary: c.isPrimary,
-        }))}
-      />
-
-      <AffiliationsCard
-        companyId={company.id}
-        affiliations={company.affiliations.map((a) => ({
-          id: a.id,
-          name: a.name,
-          role: a.role,
-          industry: a.industry,
-          website: a.website,
-          linkedin: a.linkedin,
-          canOffer: a.canOffer,
-          lookingFor: a.lookingFor,
-          counties: a.counties,
-          dealSize: a.dealSize,
-          contactId: a.contactId ?? "",
-          contactName: a.contact?.name ?? "",
-        }))}
-        contacts={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
-      />
-
-      <SecondaryProfileCard
-        companyId={company.id}
-        secondaryIndustry={company.secondaryIndustry ?? ""}
-        secondaryCanOffer={company.secondaryCanOffer ?? ""}
-        secondaryLookingFor={company.secondaryLookingFor ?? ""}
-      />
-
-      {company.status === "strategic_partner" ? (
-        <>
-          <PartnershipCard
-            companyId={company.id}
-            partnership={{
-              website: company.website ?? "",
-              partnerCategory: company.partnerCategory,
-              partnerRelationship: company.partnerRelationship,
-              partnerSummary: company.partnerSummary,
-              collaborationNotes: company.collaborationNotes,
-            }}
-          />
-          <TheirNetworkCard
-            companyId={company.id}
-            relationships={company.keyRelationships.map((r) => ({
-              id: r.id,
-              name: r.name,
-              title: r.title,
-              org: r.org,
-              relevance: r.relevance,
-              email: r.email,
-              phone: r.phone,
-              linkedCompanyId: r.linkedCompanyId,
-              linkedCompanyName: r.linkedCompany?.name ?? null,
-            }))}
-            linkOptions={linkOptions}
-          />
-        </>
-      ) : null}
-
-      <ProposalsCard
-        companyId={company.id}
-        proposals={company.membershipProposals.map((p) => ({
-          id: p.id,
-          tier: p.tier,
-          amount: p.amount == null ? null : Number(p.amount),
-          status: p.status,
-          sentOn: p.sentOn,
-          driveUrl: p.driveUrl,
-          notes: p.notes,
-        }))}
-      />
-
-      <ValueDeliveredCard
-        companyId={company.id}
-        entries={valueDelivered.map((v) => ({
-          id: v.id,
-          kind: v.kind,
-          amount: v.amount == null ? null : Number(v.amount),
-          summary: v.summary,
-          outcome: v.outcome,
-          occurredAt: v.occurredAt,
-          introLabel: v.introduction
-            ? `${v.introduction.partyA.name} ↔ ${v.introduction.partyB.name}`
-            : null,
-        }))}
-        derived={derivedValue}
-        intros={introductions.map((i) => ({
-          id: i.id,
-          label: `${i.partyA.name} ↔ ${i.partyB.name}`,
-        }))}
-      />
-
-      <ProjectsCard
-        companyId={company.id}
-        links={company.projectLinks.map((l) => ({
-          linkId: l.id,
-          projectId: l.project.id,
-          projectName: l.project.name,
-          projectStage: l.project.stage,
-          role: l.role,
-        }))}
-        // Every org project this company isn't already linked to.
-        linkable={projects.filter(
-          (p) => !company.projectLinks.some((l) => l.project.id === p.id),
-        )}
-      />
-
-      {venueEvents.length > 0 ? (
-        <CollapsibleCard id="company-venue-hosted" title="Venue hosted for us">
-          <ul className="divide-y divide-line">
-            {venueEvents.map((ev) => (
-              <li key={ev.id} className="px-4 py-3 text-xs">
-                <Link
-                  href={`/dashboard/events/${ev.id}`}
-                  className="font-medium text-ink hover:text-gold"
-                >
-                  {ev.name}
-                </Link>
-                <div className="mt-0.5 text-ink-3">
-                  {[
-                    ev.date == null ? null : venueDateFmt.format(ev.date),
-                    ev.venue,
-                    ev.venueContact == null
-                      ? null
-                      : `arranged by ${ev.venueContact.name}`,
-                  ]
-                    .filter((v): v is string => v != null && v !== "")
-                    .join(" · ")}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </CollapsibleCard>
-      ) : null}
-
-      <MeetingsCard
-        companyId={company.id}
-        meetings={meetingRows}
-        contacts={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
-        staff={staff}
-        networkContacts={networkOptions}
-        firefliesConnected={firefliesConnected}
-      />
-
-      <SecondDegreeCard
-        companyId={company.id}
-        people={secondDegree.map((p) => ({
-          id: p.id,
-          name: p.inferredName?.trim() || p.email,
-          email: p.email,
-          seenCount: p.seenCount,
-          lastMeetingTitle: p.lastMeetingTitle,
-        }))}
-      />
-
-      <EmailCorrespondence companyId={company.id} messages={emailRows} />
-
-      <SavedArticlesCard
-        companyId={company.id}
-        articles={newsItems.map((n) => ({
-          id: n.id,
-          headline: n.headline,
-          url: n.url,
-          summary: n.summary,
-          capturedAt: n.capturedAt,
-          projectId: n.projectId,
-          projectName: n.project?.name ?? null,
-        }))}
-        // The article can be pinned to any project this company participates in
-        // (deduped — a company may hold several roles on one project).
-        projectOptions={[
-          ...new Map(
-            company.projectLinks.map((l) => [
-              l.project.id,
-              { id: l.project.id, name: l.project.name },
-            ]),
-          ).values(),
+      <CardReorder
+        cards={[
+          {
+            id: "details",
+            node: (
+              <DetailsCard
+                company={{
+                  id: company.id,
+                  name: company.name,
+                  status: company.status,
+                  tier: company.tier,
+                  tierLocked: company.tierLocked,
+                  likelihood: company.likelihood,
+                  referredById: company.referredById,
+                  referredByExternal: company.referredByExternal,
+                  referredByName: company.referredBy?.name ?? null,
+                  consulting: company.consulting,
+                  temperature: company.temperature,
+                  industry: company.industry,
+                  annualValue: Number(company.annualValue),
+                  website: company.website,
+                  linkedin: company.linkedin,
+                  emailDomain: company.emailDomain,
+                  primaryEmail:
+                    company.contacts.find((c) => c.isPrimary)?.email ??
+                    company.contacts.find((c) => c.email)?.email ??
+                    null,
+                  source: company.source,
+                  memberSince: company.memberSince,
+                  dealSize: company.dealSize,
+                  counties: company.counties,
+                  lookingFor: company.lookingFor,
+                  canOffer: company.canOffer,
+                  agencyContacts: company.agencyContacts,
+                  venue: company.venue,
+                  notes: company.notes,
+                  networkTags: company.networkTags,
+                  ownerName: company.owner?.name ?? null,
+                  ownerUserId: company.ownerUserId,
+                }}
+                staff={staff}
+                tierDefs={tierDefs}
+                referralOptions={referralOptions}
+                industries={industries}
+              />
+            ),
+          },
+          ...(company.status === "prospect"
+            ? [
+                {
+                  id: "why-join",
+                  node: <WhyJoin companyId={company.id} />,
+                },
+              ]
+            : []),
+          {
+            id: "meeting-prep",
+            node: <MeetingPrep companyId={company.id} />,
+          },
+          {
+            id: "enrich-meetings",
+            node: <EnrichFromMeetings companyId={company.id} />,
+          },
+          {
+            id: "enrich-web",
+            node: <EnrichFromWeb companyId={company.id} />,
+          },
+          {
+            id: "analyze-document",
+            node: <AnalyzeDocument companyId={company.id} />,
+          },
+          {
+            id: "documents",
+            node: (
+              <DocumentsCard
+                companyId={company.id}
+                documents={company.documents.map((d) => ({
+                  id: d.id,
+                  fileName: d.fileName,
+                  summary: d.summary,
+                  createdAt: d.createdAt,
+                }))}
+              />
+            ),
+          },
+          {
+            id: "brief",
+            node: <CompanyBrief companyId={company.id} />,
+          },
+          {
+            id: "intro-suggestions",
+            node: (
+              <IntroSuggestions companyId={company.id} initial={introSuggestions} />
+            ),
+          },
+          {
+            id: "introductions",
+            node: (
+              <IntroductionsCard
+                companyId={company.id}
+                intros={introductions.map((i) => ({
+                  id: i.id,
+                  status: i.status,
+                  outcome: i.outcome,
+                  partyAName: i.partyA.name,
+                  partyACompanyName: i.partyA.company.name,
+                  partyBName: i.partyB.name,
+                  partyBCompanyName: i.partyB.company.name,
+                }))}
+                pendingIntros={pendingIntros.map((d) => ({
+                  introId: d.introId,
+                  partyALabel: d.partyALabel,
+                  partyBLabel: d.partyBLabel,
+                  suggestedStage: d.suggestedStage,
+                  meetingTitle: d.meetingTitle,
+                  meetingDate: d.meetingDate,
+                }))}
+                partyAOptions={company.contacts.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                }))}
+                partyBOptions={networkOptions}
+              />
+            ),
+          },
+          {
+            id: "contacts",
+            node: (
+              <ContactsCard
+                companyId={company.id}
+                existing={existingContacts}
+                contacts={company.contacts.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  title: c.title,
+                  email: c.email,
+                  additionalEmails: c.additionalEmails,
+                  phone: c.phone,
+                  linkedin: c.linkedin,
+                  notes: c.notes,
+                  bio: c.bio,
+                  tags: c.tags,
+                  isPrimary: c.isPrimary,
+                }))}
+              />
+            ),
+          },
+          {
+            id: "affiliations",
+            node: (
+              <AffiliationsCard
+                companyId={company.id}
+                affiliations={company.affiliations.map((a) => ({
+                  id: a.id,
+                  name: a.name,
+                  role: a.role,
+                  industry: a.industry,
+                  website: a.website,
+                  linkedin: a.linkedin,
+                  canOffer: a.canOffer,
+                  lookingFor: a.lookingFor,
+                  counties: a.counties,
+                  dealSize: a.dealSize,
+                  contactId: a.contactId ?? "",
+                  contactName: a.contact?.name ?? "",
+                }))}
+                contacts={company.contacts.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                }))}
+              />
+            ),
+          },
+          {
+            id: "secondary-profile",
+            node: (
+              <SecondaryProfileCard
+                companyId={company.id}
+                secondaryIndustry={company.secondaryIndustry ?? ""}
+                secondaryCanOffer={company.secondaryCanOffer ?? ""}
+                secondaryLookingFor={company.secondaryLookingFor ?? ""}
+              />
+            ),
+          },
+          ...(company.status === "strategic_partner"
+            ? [
+                {
+                  id: "partnership",
+                  node: (
+                    <PartnershipCard
+                      companyId={company.id}
+                      partnership={{
+                        website: company.website ?? "",
+                        partnerCategory: company.partnerCategory,
+                        partnerRelationship: company.partnerRelationship,
+                        partnerSummary: company.partnerSummary,
+                        collaborationNotes: company.collaborationNotes,
+                      }}
+                    />
+                  ),
+                },
+                {
+                  id: "their-network",
+                  node: (
+                    <TheirNetworkCard
+                      companyId={company.id}
+                      relationships={company.keyRelationships.map((r) => ({
+                        id: r.id,
+                        name: r.name,
+                        title: r.title,
+                        org: r.org,
+                        relevance: r.relevance,
+                        email: r.email,
+                        phone: r.phone,
+                        linkedCompanyId: r.linkedCompanyId,
+                        linkedCompanyName: r.linkedCompany?.name ?? null,
+                      }))}
+                      linkOptions={linkOptions}
+                    />
+                  ),
+                },
+              ]
+            : []),
+          {
+            id: "proposals",
+            node: (
+              <ProposalsCard
+                companyId={company.id}
+                proposals={company.membershipProposals.map((p) => ({
+                  id: p.id,
+                  tier: p.tier,
+                  amount: p.amount == null ? null : Number(p.amount),
+                  status: p.status,
+                  sentOn: p.sentOn,
+                  driveUrl: p.driveUrl,
+                  notes: p.notes,
+                }))}
+              />
+            ),
+          },
+          {
+            id: "value-delivered",
+            node: (
+              <ValueDeliveredCard
+                companyId={company.id}
+                entries={valueDelivered.map((v) => ({
+                  id: v.id,
+                  kind: v.kind,
+                  amount: v.amount == null ? null : Number(v.amount),
+                  summary: v.summary,
+                  outcome: v.outcome,
+                  occurredAt: v.occurredAt,
+                  introLabel: v.introduction
+                    ? `${v.introduction.partyA.name} ↔ ${v.introduction.partyB.name}`
+                    : null,
+                }))}
+                derived={derivedValue}
+                intros={introductions.map((i) => ({
+                  id: i.id,
+                  label: `${i.partyA.name} ↔ ${i.partyB.name}`,
+                }))}
+              />
+            ),
+          },
+          {
+            id: "projects",
+            node: (
+              <ProjectsCard
+                companyId={company.id}
+                links={company.projectLinks.map((l) => ({
+                  linkId: l.id,
+                  projectId: l.project.id,
+                  projectName: l.project.name,
+                  projectStage: l.project.stage,
+                  role: l.role,
+                }))}
+                // Every org project this company isn't already linked to.
+                linkable={projects.filter(
+                  (p) => !company.projectLinks.some((l) => l.project.id === p.id),
+                )}
+              />
+            ),
+          },
+          ...(venueEvents.length > 0
+            ? [
+                {
+                  id: "venue-hosted",
+                  node: (
+                    <CollapsibleCard
+                      id="company-venue-hosted"
+                      title="Venue hosted for us"
+                    >
+                      <ul className="divide-y divide-line">
+                        {venueEvents.map((ev) => (
+                          <li key={ev.id} className="px-4 py-3 text-xs">
+                            <Link
+                              href={`/dashboard/events/${ev.id}`}
+                              className="font-medium text-ink hover:text-gold"
+                            >
+                              {ev.name}
+                            </Link>
+                            <div className="mt-0.5 text-ink-3">
+                              {[
+                                ev.date == null
+                                  ? null
+                                  : venueDateFmt.format(ev.date),
+                                ev.venue,
+                                ev.venueContact == null
+                                  ? null
+                                  : `arranged by ${ev.venueContact.name}`,
+                              ]
+                                .filter((v): v is string => v != null && v !== "")
+                                .join(" · ")}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </CollapsibleCard>
+                  ),
+                },
+              ]
+            : []),
+          {
+            id: "meetings",
+            node: (
+              <MeetingsCard
+                companyId={company.id}
+                meetings={meetingRows}
+                contacts={company.contacts.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                }))}
+                staff={staff}
+                networkContacts={networkOptions}
+                firefliesConnected={firefliesConnected}
+              />
+            ),
+          },
+          {
+            id: "second-degree",
+            node: (
+              <SecondDegreeCard
+                companyId={company.id}
+                people={secondDegree.map((p) => ({
+                  id: p.id,
+                  name: p.inferredName?.trim() || p.email,
+                  email: p.email,
+                  seenCount: p.seenCount,
+                  lastMeetingTitle: p.lastMeetingTitle,
+                }))}
+              />
+            ),
+          },
+          {
+            id: "email",
+            node: (
+              <EmailCorrespondence companyId={company.id} messages={emailRows} />
+            ),
+          },
+          {
+            id: "saved-articles",
+            node: (
+              <SavedArticlesCard
+                companyId={company.id}
+                articles={newsItems.map((n) => ({
+                  id: n.id,
+                  headline: n.headline,
+                  url: n.url,
+                  summary: n.summary,
+                  capturedAt: n.capturedAt,
+                  projectId: n.projectId,
+                  projectName: n.project?.name ?? null,
+                }))}
+                // The article can be pinned to any project this company
+                // participates in (deduped — a company may hold several roles on
+                // one project).
+                projectOptions={[
+                  ...new Map(
+                    company.projectLinks.map((l) => [
+                      l.project.id,
+                      { id: l.project.id, name: l.project.name },
+                    ]),
+                  ).values(),
+                ]}
+              />
+            ),
+          },
+          ...(invoicesEnabled
+            ? [
+                {
+                  id: "invoices",
+                  node: (
+                    <InvoicesCard
+                      companyId={company.id}
+                      invoices={invoices.map((inv) => {
+                        const { status, balance } = deriveInvoiceBalance(
+                          inv.status,
+                          inv.amount,
+                          sumPayments(inv.payments),
+                        );
+                        return {
+                          id: inv.id,
+                          invoiceNumber: inv.invoiceNumber,
+                          amount: Number(inv.amount),
+                          balance: Number(balance),
+                          status,
+                          dueOn: inv.dueOn,
+                        };
+                      })}
+                    />
+                  ),
+                },
+              ]
+            : []),
+          {
+            id: "commitments",
+            node: (
+              <CommitmentsCard
+                companyId={company.id}
+                currentUserId={ctx.userId}
+                commitments={commitments}
+                staff={staff}
+                contacts={company.contacts.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                }))}
+                projects={projects}
+                moveTargets={referralOptions.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                }))}
+              />
+            ),
+          },
+          {
+            id: "timeline",
+            node: (
+              <RelationshipTimeline companyId={company.id} entries={timeline} />
+            ),
+          },
         ]}
       />
-
-      {invoicesEnabled ? (
-        <InvoicesCard
-          companyId={company.id}
-          invoices={invoices.map((inv) => {
-            const { status, balance } = deriveInvoiceBalance(
-              inv.status,
-              inv.amount,
-              sumPayments(inv.payments),
-            );
-            return {
-              id: inv.id,
-              invoiceNumber: inv.invoiceNumber,
-              amount: Number(inv.amount),
-              balance: Number(balance),
-              status,
-              dueOn: inv.dueOn,
-            };
-          })}
-        />
-      ) : null}
-
-      <CommitmentsCard
-        companyId={company.id}
-        currentUserId={ctx.userId}
-        commitments={commitments}
-        staff={staff}
-        contacts={company.contacts.map((c) => ({ id: c.id, name: c.name }))}
-        projects={projects}
-        moveTargets={referralOptions.map((c) => ({ id: c.id, name: c.name }))}
-      />
-
-      <RelationshipTimeline companyId={company.id} entries={timeline} />
     </div>
   );
 }

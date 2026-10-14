@@ -26,6 +26,7 @@ export function CollapsibleCard({
   id,
   title,
   action,
+  peek,
   defaultOpen = true,
   className,
   children,
@@ -33,6 +34,9 @@ export function CollapsibleCard({
   id: string;
   title: ReactNode;
   action?: ReactNode;
+  // Optional content shown in the header ONLY while the card is collapsed (a
+  // "peek" of what's inside, e.g. the primary contact). Hidden once expanded.
+  peek?: ReactNode;
   defaultOpen?: boolean;
   className?: string;
   children: ReactNode;
@@ -62,29 +66,40 @@ export function CollapsibleCard({
         className,
       )}
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-line bg-surface-2 px-4 py-3 select-none [&::-webkit-details-marker]:hidden">
-        <span className="flex min-w-0 items-center gap-2">
-          <svg
-            viewBox="0 0 16 16"
-            aria-hidden
-            className="size-3 shrink-0 text-ink-3 transition-transform group-open/cc:rotate-90"
-          >
-            <path
-              d="M6 4l4 4-4 4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span className="truncate font-serif text-[14px] leading-none text-ink">
-            {title}
+      <summary className="flex cursor-pointer list-none flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3 select-none [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center justify-between gap-2">
+          <span className="flex min-w-0 items-center gap-2">
+            <svg
+              viewBox="0 0 16 16"
+              aria-hidden
+              className="size-3 shrink-0 text-ink-3 transition-transform group-open/cc:rotate-90"
+            >
+              <path
+                d="M6 4l4 4-4 4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="truncate font-serif text-[14px] leading-none text-ink">
+              {title}
+            </span>
           </span>
+          {action ? (
+            // Keep header actions (Add / Edit) from toggling the card.
+            <span onClick={(e) => e.stopPropagation()}>{action}</span>
+          ) : null}
         </span>
-        {action ? (
-          // Keep header actions (Add / Edit) from toggling the card.
-          <span onClick={(e) => e.stopPropagation()}>{action}</span>
+        {peek ? (
+          // Collapsed-only preview; clicks inside (e.g. a link) must not toggle.
+          <span
+            className="group-open/cc:hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {peek}
+          </span>
         ) : null}
       </summary>
       {children}

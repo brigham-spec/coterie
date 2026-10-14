@@ -35,10 +35,30 @@ export function ContactsCard({
 }) {
   const [adding, setAdding] = useState(false);
 
+  // When collapsed, peek the primary contact (falling back to the first row) so
+  // the firm's main point of contact stays visible without expanding the card.
+  const primary = contacts.find((c) => c.isPrimary) ?? contacts[0];
+
   return (
     <CollapsibleCard
       id="company-contacts"
       title="Contacts"
+      peek={
+        primary ? (
+          <span className="flex items-center gap-2 text-[11px] text-ink-3">
+            <Link
+              href={`/dashboard/contacts/${primary.id}`}
+              className="font-medium text-ink hover:text-gold hover:underline"
+            >
+              {primary.name}
+            </Link>
+            <span className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase">
+              Primary
+            </span>
+            {primary.title ? <span>· {primary.title}</span> : null}
+          </span>
+        ) : null
+      }
       action={
         <button
           type="button"

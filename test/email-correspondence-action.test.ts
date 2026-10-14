@@ -31,6 +31,7 @@ const {
   saveEmailMessage,
   deleteEmailCorrespondence,
   toggleEmailActionItem,
+  updateEmailMessage,
 } = await import("@/app/dashboard/companies/[id]/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
@@ -307,6 +308,142 @@ describe("toggleEmailActionItem", () => {
       tx.emailMessage.findUnique({ where: { id: foreignId } }),
     );
     expect(row?.doneActionItems).toEqual([]);
+  });
+});
+
+describe("updateEmailMessage", () => {
+  test("edits a saved manual row, re-coercing through the bounds", async () => {
+    const id = randomUUID();
+    await withOrg(orgA.id, (tx) =>
+      tx.emailMessage.create({
+        data: {
+          id,
+          orgId: orgA.id,
+          companyId: companyAId,
+          externalKey: `manual:${randomUUID()}`,
+          subject: "Old subject",
+          summary: "Old summary",
+          actionItems: "a; b; c",
+          doneActionItems: [1],
+          syncedAt: new Date(),
+        },
+      }),
+    );
+
+    const state = await updateEmailMessage(
+      { status: "idle" },
+      fd({
+        id,
+        companyId: companyAId,
+        extraction: JSON.stringify({
+          subject: "New subject",
+          summary: "New summary",
+          projects: "Kingston Mill",
+          actionItems: "a; b; c",
+          sentiment: "WILD", // not in vocab → collapsed to ""
+          fromName: "Jane Doe",
+          fromEmail: "jane@acmemills.example",
+          emailDate: "2026-07-01",
+        }),
+      }),
+    );
+    expect(state).toEqual({ status: "saved" });
+
+    const row = await withOrg(orgA.id, (tx) =>
+      tx.emailMessage.findUnique({ where: { id } }),
+    );
+    expect(row?.subject).toBe("New subject");
+    expect(row?.summary).toBe("New summary");
+    expect(row?.projects).toBe("Kingston Mill");
+    expect(row?.sentiment).toBe(""); // bounds scrubbed the off-vocab value
+    // doneActionItems is left untouched by the update.
+    expect(row?.doneActionItems).toEqual([1]);
+
+    await withOrg(orgA.id, (tx) => tx.emailMessage.deleteMany({ where: { id } }));
+  });
+
+  test("refuses a synced row (manual-only guard, no write)", async () => {
+    const id = randomUUID();
+    await withOrg(orgA.id, (tx) =>
+      tx.emailMessage.create({
+        data: {
+          id,
+          orgId: orgA.id,
+          companyId: companyAId,
+          externalKey: `thread-${randomUUID()}`,
+          subject: "Synced by Zapier",
+          syncedAt: new Date(),
+        },
+      }),
+    );
+
+    const state = await updateEmailMessage(
+      { status: "idle" },
+      fd({
+        id,
+        companyId: companyAId,
+        extraction: JSON.stringify({ subject: "tampered", summary: "x" }),
+      }),
+    );
+    expect(state).toEqual({
+      status: "error",
+      message: "Email not found in this organization.",
+    });
+
+    const row = await withOrg(orgA.id, (tx) =>
+      tx.emailMessage.findUnique({ where: { id } }),
+    );
+    expect(row?.subject).toBe("Synced by Zapier");
+
+    await withOrg(orgA.id, (tx) => tx.emailMessage.deleteMany({ where: { id } }));
+  });
+
+  test("refuses a foreign tenant's row (RLS → no-op)", async () => {
+    const id = randomUUID();
+    await withOrg(orgB.id, (tx) =>
+      tx.emailMessage.create({
+        data: {
+          id,
+          orgId: orgB.id,
+          companyId: companyBId,
+          externalKey: `manual:${randomUUID()}`,
+          subject: "Beta only",
+          syncedAt: new Date(),
+        },
+      }),
+    );
+
+    const state = await updateEmailMessage(
+      { status: "idle" },
+      fd({
+        id,
+        companyId: companyBId,
+        extraction: JSON.stringify({ subject: "leaked", summary: "x" }),
+      }),
+    );
+    expect(state).toEqual({
+      status: "error",
+      message: "Email not found in this organization.",
+    });
+
+    const row = await withOrg(orgB.id, (tx) =>
+      tx.emailMessage.findUnique({ where: { id } }),
+    );
+    expect(row?.subject).toBe("Beta only");
+
+    await withOrg(orgB.id, (tx) => tx.emailMessage.deleteMany({ where: { id } }));
+  });
+
+  test("rejects an extraction with neither subject nor summary", async () => {
+    const state = await updateEmailMessage(
+      { status: "idle" },
+      fd({
+        id: randomUUID(),
+        companyId: companyAId,
+        extraction: JSON.stringify({ actionItems: "nothing" }),
+      }),
+    );
+    expect(state).toEqual({ status: "error", message: "Nothing to save." });
   });
 });
 

@@ -1,16 +1,17 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 
-import { Button, TagBadge, Textarea } from "@/components/ui";
+import { Button, Field, SelectField, TagBadge, Textarea } from "@/components/ui";
 import { CollapsibleCard } from "@/components/collapsible-card";
-import { parseActionItems, sentimentTone } from "@/lib/email-intel";
+import { SENTIMENTS, parseActionItems, sentimentTone } from "@/lib/email-intel";
 
 import {
   deleteEmailCorrespondence,
   extractEmailThreadAction,
   saveEmailMessage,
   toggleEmailActionItem,
+  updateEmailMessage,
   type ExtractEmailState,
   type SaveEmailMessageState,
 } from "./actions";
@@ -26,7 +27,10 @@ import {
 const extractInitial: ExtractEmailState = { status: "idle" };
 const saveInitial: SaveEmailMessageState = { status: "idle" };
 
-// The reviewed extraction, derived from the action's success state.
+// The reviewed extraction, derived from the action's success state — this is
+// the EmailExtraction shape (8 string fields), reused as the editable field set
+// for both the review panel and the saved-row editor. A stored EmailRow is a
+// superset of it, so it can seed the editor directly.
 type Draft = Extract<ExtractEmailState, { status: "ok" }>["extraction"];
 
 export type EmailRow = {
@@ -134,6 +138,74 @@ export function EmailCorrespondence({
   );
 }
 
+// The editable field set, controlled from a draft held by the parent form. The
+// hidden `extraction` input (serialized by the parent) is what the server
+// re-coerces through parseEmailExtraction, so these inputs are display + edit
+// only — no name attributes needed.
+function EmailFields({
+  value,
+  onChange,
+}: {
+  value: Draft;
+  onChange: (next: Draft) => void;
+}) {
+  const set = <K extends keyof Draft>(key: K, v: string) =>
+    onChange({ ...value, [key]: v });
+  return (
+    <>
+      <Field
+        label="Subject"
+        value={value.subject}
+        onChange={(e) => set("subject", e.target.value)}
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <Field
+          label="From name"
+          value={value.fromName}
+          onChange={(e) => set("fromName", e.target.value)}
+        />
+        <Field
+          label="From email"
+          value={value.fromEmail}
+          onChange={(e) => set("fromEmail", e.target.value)}
+        />
+      </div>
+      <Field
+        label="Date"
+        value={value.emailDate}
+        onChange={(e) => set("emailDate", e.target.value)}
+      />
+      <Textarea
+        label="Summary"
+        value={value.summary}
+        onChange={(e) => set("summary", e.target.value)}
+      />
+      <Textarea
+        label="Projects"
+        value={value.projects}
+        onChange={(e) => set("projects", e.target.value)}
+      />
+      <Textarea
+        label="Action items"
+        value={value.actionItems}
+        onChange={(e) => set("actionItems", e.target.value)}
+      />
+      <SelectField
+        label="Sentiment"
+        value={value.sentiment}
+        onChange={(e) => set("sentiment", e.target.value)}
+      >
+        <option value="">—</option>
+        {SENTIMENTS.map((s) => (
+          <option key={s} value={s}>
+            {s[0].toUpperCase() + s.slice(1)}
+          </option>
+        ))}
+      </SelectField>
+    </>
+  );
+}
+
 function EmailReview({
   companyId,
   draft,
@@ -145,33 +217,13 @@ function EmailReview({
   saveAction: (formData: FormData) => void;
   saving: boolean;
 }) {
-  const rows: { label: string; value: string }[] = [
-    { label: "Subject", value: draft.subject },
-    { label: "From", value: [draft.fromName, draft.fromEmail].filter(Boolean).join(" · ") },
-    { label: "Date", value: draft.emailDate },
-    { label: "Summary", value: draft.summary },
-    { label: "Projects", value: draft.projects },
-    { label: "Action items", value: draft.actionItems },
-    { label: "Sentiment", value: draft.sentiment },
-  ];
+  const [edited, setEdited] = useState<Draft>(draft);
   return (
     <form action={saveAction} className="flex flex-col gap-3">
       <input type="hidden" name="companyId" value={companyId} />
-      <input type="hidden" name="extraction" value={JSON.stringify(draft)} />
+      <input type="hidden" name="extraction" value={JSON.stringify(edited)} />
 
-      <div className="space-y-2">
-        {rows.map((r) =>
-          r.value ? (
-            <div key={r.label} className="text-[11.5px] leading-relaxed text-ink-2">
-              <span className="text-[9px] font-medium tracking-[0.08em] text-ink-3 uppercase">
-                {r.label}
-              </span>
-              <br />
-              {r.value}
-            </div>
-          ) : null,
-        )}
-      </div>
+      <EmailFields value={edited} onChange={setEdited} />
 
       <div className="flex justify-end">
         <Button type="submit" variant="primary" disabled={saving}>
@@ -189,6 +241,22 @@ function EmailItem({
   companyId: string;
   message: EmailRow;
 }) {
+  const [editing, setEditing] = useState(false);
+
+  // Only manual (pasted) rows are editable — synced rows are owned by the org
+  // Zapier sync, which overwrites their highlights on every re-sync.
+  if (editing && message.isManual) {
+    return (
+      <li className="p-4">
+        <EmailEditForm
+          companyId={companyId}
+          message={message}
+          onDone={() => setEditing(false)}
+        />
+      </li>
+    );
+  }
+
   const items = parseActionItems(message.actionItems);
   return (
     <li className="flex flex-col gap-1.5 p-4">
@@ -210,16 +278,25 @@ function EmailItem({
             <TagBadge label={message.sentiment} tone={sentimentTone(message.sentiment)} />
           ) : null}
           {message.isManual ? (
-            <form action={deleteEmailCorrespondence}>
-              <input type="hidden" name="id" value={message.id} />
-              <input type="hidden" name="companyId" value={companyId} />
+            <>
               <button
-                type="submit"
-                className="text-[10px] font-medium tracking-[0.06em] text-red uppercase hover:underline"
+                type="button"
+                onClick={() => setEditing(true)}
+                className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
               >
-                Remove
+                Edit
               </button>
-            </form>
+              <form action={deleteEmailCorrespondence}>
+                <input type="hidden" name="id" value={message.id} />
+                <input type="hidden" name="companyId" value={companyId} />
+                <button
+                  type="submit"
+                  className="text-[10px] font-medium tracking-[0.06em] text-red uppercase hover:underline"
+                >
+                  Remove
+                </button>
+              </form>
+            </>
           ) : null}
         </div>
       </div>
@@ -241,6 +318,54 @@ function EmailItem({
         />
       ) : null}
     </li>
+  );
+}
+
+// Inline editor for a saved manual row. Mirrors EmailReview — a local draft
+// feeds the hidden `extraction` JSON, re-coerced server-side by the same
+// parseEmailExtraction bounds. Closes on a successful save.
+function EmailEditForm({
+  companyId,
+  message,
+  onDone,
+}: {
+  companyId: string;
+  message: EmailRow;
+  onDone: () => void;
+}) {
+  const [state, action, pending] = useActionState(
+    updateEmailMessage,
+    saveInitial,
+  );
+  const [edited, setEdited] = useState<Draft>(message);
+
+  // Close on a successful save. This fires once: onDone() unmounts the form (the
+  // row returns to its read-only branch), so the stale "saved" can't re-trigger.
+  useEffect(() => {
+    if (state.status === "saved") onDone();
+  }, [state.status, onDone]);
+
+  return (
+    <form action={action} className="flex flex-col gap-3">
+      <input type="hidden" name="id" value={message.id} />
+      <input type="hidden" name="companyId" value={companyId} />
+      <input type="hidden" name="extraction" value={JSON.stringify(edited)} />
+
+      <EmailFields value={edited} onChange={setEdited} />
+
+      {state.status === "error" ? (
+        <p className="text-xs text-red-ink">{state.message}</p>
+      ) : null}
+
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="default" onClick={onDone} disabled={pending}>
+          Cancel
+        </Button>
+        <Button type="submit" variant="primary" disabled={pending}>
+          {pending ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
+    </form>
   );
 }
 

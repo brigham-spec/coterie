@@ -43,6 +43,11 @@ export function toMatchCompany(company: {
   };
 }
 
+// The sentiment vocabulary — the single source for the editor's select options
+// and sentimentTone below. (extract-email.ts validates the same set at its parse
+// boundary.)
+export const SENTIMENTS = ["positive", "neutral", "negative"] as const;
+
 // Map a sentiment string to a TagBadge tone (positive → teal, negative → red,
 // else slate). Shared by the org-level inbox and the per-company profile card.
 export function sentimentTone(sentiment: string): "teal" | "red" | "slate" {
