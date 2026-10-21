@@ -31,6 +31,13 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
+// Where a commitment came from — drives the muted source label. Only the
+// meeting arm carries data (its title); email/manual render fixed strings.
+export type CommitmentSource =
+  | { kind: "meeting"; label: string }
+  | { kind: "email" }
+  | { kind: "manual" };
+
 export type CommitmentRow = {
   id: string;
   text: string;
@@ -39,7 +46,15 @@ export type CommitmentRow = {
   ownerUserId: string | null;
   ownerName: string | null;
   projectName: string | null;
+  source: CommitmentSource;
 };
+
+// The muted "from …" label shown under each commitment.
+function sourceLabel(source: CommitmentSource): string {
+  if (source.kind === "manual") return "logged manually";
+  if (source.kind === "email") return "from email";
+  return `from ${source.label}`;
+}
 
 type Owner = { id: string; name: string };
 type Project = { id: string; name: string };
@@ -277,6 +292,7 @@ function CommitmentItem({
         {item.ownerName ? <span>{item.ownerName}</span> : null}
         {item.projectName ? <span>· {item.projectName}</span> : null}
         {item.dueDate ? <span>· due {dateFmt.format(item.dueDate)}</span> : null}
+        <span className="text-ink-3 italic">· {sourceLabel(item.source)}</span>
       </div>
       <div className="mt-1 flex items-center gap-2">
         <form action={updateCommitmentStatus}>

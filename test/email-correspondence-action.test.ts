@@ -32,10 +32,19 @@ const {
   deleteEmailCorrespondence,
   toggleEmailActionItem,
   updateEmailMessage,
+  promoteEmailActionItem,
 } = await import("@/app/dashboard/companies/[id]/actions");
 
 const orgA = { id: randomUUID(), name: `TENANT_A_${randomUUID()}` };
 const orgB = { id: randomUUID(), name: `TENANT_B_${randomUUID()}` };
+
+// A staff user of orgA — the default owner of a promoted email commitment.
+const staffUser = {
+  id: randomUUID(),
+  clerkId: `clerk_${randomUUID()}`,
+  email: `staff_${randomUUID()}@example.com`,
+  name: "Staff Member",
+};
 
 const companyAId = randomUUID();
 const contactAId = randomUUID();
@@ -47,6 +56,10 @@ beforeAll(async () => {
       { ...orgA, orgType: "edc" },
       { ...orgB, orgType: "chamber" },
     ],
+  });
+  await prisma.user.create({ data: staffUser });
+  await prisma.orgMembership.create({
+    data: { orgId: orgA.id, userId: staffUser.id, role: "staff" },
   });
 
   await withOrg(orgA.id, async (tx) => {
@@ -87,10 +100,12 @@ beforeAll(async () => {
 
   mockCtx.orgId = orgA.id;
   mockCtx.orgName = orgA.name;
+  mockCtx.userId = staffUser.id;
 });
 
 afterAll(async () => {
   await prisma.organization.deleteMany({ where: { id: { in: [orgA.id, orgB.id] } } });
+  await prisma.user.deleteMany({ where: { id: staffUser.id } });
   await prisma.$disconnect();
 });
 
@@ -444,6 +459,90 @@ describe("updateEmailMessage", () => {
       }),
     );
     expect(state).toEqual({ status: "error", message: "Nothing to save." });
+  });
+});
+
+describe("promoteEmailActionItem", () => {
+  test("promotes an email follow-up into a tracked we-owe commitment", async () => {
+    const emailId = randomUUID();
+    await withOrg(orgA.id, (tx) =>
+      tx.emailMessage.create({
+        data: {
+          id: emailId,
+          orgId: orgA.id,
+          companyId: companyAId,
+          externalKey: `manual:${randomUUID()}`,
+          subject: "Follow-ups",
+          actionItems: "Send the PILOT term sheet",
+          syncedAt: new Date(),
+        },
+      }),
+    );
+
+    const state = await promoteEmailActionItem(
+      fd({
+        emailId,
+        companyId: companyAId,
+        text: "Send the PILOT term sheet",
+      }),
+    );
+    expect(state).toEqual({ status: "saved" });
+
+    const items = await withOrg(orgA.id, (tx) =>
+      tx.actionItem.findMany({ where: { emailMessageId: emailId } }),
+    );
+    expect(items).toHaveLength(1);
+    const item = items[0];
+    expect(item.text).toBe("Send the PILOT term sheet");
+    expect(item.companyId).toBe(companyAId);
+    expect(item.status).toBe("open");
+    // Defaults to "we owe": owned by the acting staff member, no contact owner.
+    expect(item.ownerUserId).toBe(staffUser.id);
+    expect(item.ownerContactId).toBeNull();
+
+    await withOrg(orgA.id, async (tx) => {
+      await tx.actionItem.deleteMany({ where: { id: item.id } });
+      await tx.emailMessage.deleteMany({ where: { id: emailId } });
+    });
+  });
+
+  test("rejects empty text without a write", async () => {
+    const state = await promoteEmailActionItem(
+      fd({ emailId: randomUUID(), companyId: companyAId, text: "   " }),
+    );
+    expect(state).toEqual({ status: "error", message: "Invalid action item." });
+  });
+
+  test("refuses a foreign tenant's email (RLS → not found)", async () => {
+    const emailId = randomUUID();
+    await withOrg(orgB.id, (tx) =>
+      tx.emailMessage.create({
+        data: {
+          id: emailId,
+          orgId: orgB.id,
+          companyId: companyBId,
+          externalKey: `manual:${randomUUID()}`,
+          subject: "Beta only",
+          actionItems: "secret follow-up",
+          syncedAt: new Date(),
+        },
+      }),
+    );
+
+    const state = await promoteEmailActionItem(
+      fd({ emailId, companyId: companyBId, text: "secret follow-up" }),
+    );
+    expect(state).toEqual({
+      status: "error",
+      message: "Email not found in this organization.",
+    });
+
+    const items = await withOrg(orgB.id, (tx) =>
+      tx.actionItem.findMany({ where: { emailMessageId: emailId } }),
+    );
+    expect(items).toHaveLength(0);
+
+    await withOrg(orgB.id, (tx) => tx.emailMessage.deleteMany({ where: { id: emailId } }));
   });
 });
 

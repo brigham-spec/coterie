@@ -9,6 +9,7 @@ import { SENTIMENTS, parseActionItems, sentimentTone } from "@/lib/email-intel";
 import {
   deleteEmailCorrespondence,
   extractEmailThreadAction,
+  promoteEmailActionItem,
   saveEmailMessage,
   toggleEmailActionItem,
   updateEmailMessage,
@@ -45,6 +46,9 @@ export type EmailRow = {
   fromName: string;
   fromEmail: string;
   isManual: boolean;
+  // Texts of this email's follow-ups already promoted into commitments — drives
+  // the "Added" state so a bullet isn't promoted twice.
+  promotedActionItems: string[];
 };
 
 export function EmailCorrespondence({
@@ -315,6 +319,7 @@ function EmailItem({
           messageId={message.id}
           items={items}
           done={message.doneActionItems}
+          promoted={message.promotedActionItems}
         />
       ) : null}
     </li>
@@ -371,27 +376,37 @@ function EmailEditForm({
 
 // The email's action items as checkable follow-ups (Email item 9). Local state
 // flips the checkbox instantly; the server action persists the checked index set
-// per tenant (the page revalidation reconciles the authoritative order).
+// per tenant (the page revalidation reconciles the authoritative order). Each
+// unpromoted bullet also carries an "Add to commitments" button that promotes it
+// into a tracked commitment (owned by the acting staff member, "we owe"); once
+// promoted it shows a muted "Added" tag instead (matched by text).
 function EmailActionItems({
   companyId,
   messageId,
   items,
   done,
+  promoted,
 }: {
   companyId: string;
   messageId: string;
   items: string[];
   done: number[];
+  promoted: string[];
 }) {
   const [doneSet, setDoneSet] = useState<Set<number>>(() => new Set(done));
   const [, startToggle] = useTransition();
+  // Texts promoted this session (optimistic), merged with those already promoted
+  // on the server — so a bullet flips to "Added" the moment the button is clicked.
+  const [added, setAdded] = useState<Set<string>>(() => new Set(promoted));
+  const [, startPromote] = useTransition();
 
   return (
     <ul className="mt-0.5 flex flex-col gap-1">
       {items.map((item, i) => {
         const isDone = doneSet.has(i);
+        const isAdded = added.has(item);
         return (
-          <li key={i}>
+          <li key={i} className="flex items-start justify-between gap-2">
             <label className="flex cursor-pointer items-start gap-1.5 text-[10.5px] leading-snug">
               <input
                 type="checkbox"
@@ -423,6 +438,33 @@ function EmailActionItems({
                 {item}
               </span>
             </label>
+            {isAdded ? (
+              <span className="mt-0.5 shrink-0 text-[10px] text-ink-3">Added</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setAdded((prev) => new Set(prev).add(item)); // optimistic
+                  startPromote(async () => {
+                    const f = new FormData();
+                    f.set("emailId", messageId);
+                    f.set("companyId", companyId);
+                    f.set("text", item);
+                    const r = await promoteEmailActionItem(f);
+                    // Roll back if the promote was refused.
+                    if (r.status === "error")
+                      setAdded((prev) => {
+                        const s = new Set(prev);
+                        s.delete(item);
+                        return s;
+                      });
+                  });
+                }}
+                className="mt-0.5 shrink-0 text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
+              >
+                Add to commitments
+              </button>
+            )}
           </li>
         );
       })}

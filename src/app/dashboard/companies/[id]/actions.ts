@@ -1557,6 +1557,53 @@ export async function toggleEmailActionItem(
   return { status: "saved" };
 }
 
+// Promote one free-text email follow-up into a tracked commitment (ActionItem)
+// for this company — the aggregated commitments list then owns it (status, due
+// date, reassignment) instead of it living only as an un-tracked email bullet.
+// Defaults to "we owe", owned by the acting staff member (reassignable later via
+// the card). emailMessageId remembers the source so the profile labels it "from
+// email". The email row/bullet is untouched; the UI shows "Added" afterward by
+// matching the promoted text. withOrg scopes the writes; the email must belong to
+// THIS org + company, so a forged/foreign id resolves nothing and is refused.
+export async function promoteEmailActionItem(
+  formData: FormData,
+): Promise<ToggleEmailItemState> {
+  const { orgId, userId } = await requireOrgContext();
+  const emailId = String(formData.get("emailId") ?? "").trim();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const text = String(formData.get("text") ?? "")
+    .trim()
+    .slice(0, 500);
+  if (emailId === "" || companyId === "" || text === "")
+    return { status: "error", message: "Invalid action item." };
+
+  const result = await withOrg(orgId, async (tx) => {
+    // The email must belong to this org (RLS) AND this company — a foreign or
+    // cross-company id resolves null, so the promote is refused.
+    const email = await tx.emailMessage.findFirst({
+      where: { id: emailId, companyId },
+      select: { id: true },
+    });
+    if (email == null) return "not-found" as const;
+    await tx.actionItem.create({
+      data: {
+        orgId,
+        companyId,
+        emailMessageId: emailId,
+        text,
+        status: "open",
+        ownerUserId: userId,
+      },
+    });
+    return "created" as const;
+  });
+
+  if (result === "not-found")
+    return { status: "error", message: "Email not found in this organization." };
+  revalidateActionItemSurfaces();
+  return { status: "saved" };
+}
+
 export async function deleteEmailCorrespondence(formData: FormData): Promise<void> {
   const { orgId } = await requireOrgContext();
 

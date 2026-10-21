@@ -713,6 +713,9 @@ model ActionItem {
   companyId      String?   @map("company_id") @db.Uuid
   /// Null unless this item is a follow-up logged on an event debrief.
   eventId        String?   @map("event_id") @db.Uuid
+  /// Null unless this commitment was promoted from an email follow-up — remembers
+  /// the source email so the profile can label it "from email".
+  emailMessageId String?   @map("email_message_id") @db.Uuid
   text           String
   /// open, done, dropped
   status         String    @default("open")
@@ -744,12 +747,17 @@ model ActionItem {
   event        Event?       @relation(fields: [eventId, orgId], references: [id, orgId], onDelete: Cascade)
   ownerUser    User?        @relation("ActionItemOwnerUser", fields: [ownerUserId], references: [id])
   ownerContact Contact?     @relation("ActionItemOwnerContact", fields: [ownerContactId], references: [id])
+  // Simple FK (mirrors email_messages.company_id) — SetNull keeps a promoted
+  // commitment alive if its source email is removed; org integrity is enforced
+  // by RLS + the promote action re-checking the email belongs to this org.
+  emailMessage EmailMessage? @relation(fields: [emailMessageId], references: [id], onDelete: SetNull)
 
   @@index([orgId])
   @@index([orgId, status, dueDate])
   @@index([orgId, projectId])
   @@index([orgId, companyId])
   @@index([orgId, eventId])
+  @@index([orgId, emailMessageId])
   @@map("action_items")
 }
 
@@ -877,6 +885,8 @@ model EmailMessage {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company      Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  /// Commitments promoted from this email's follow-ups.
+  commitments  ActionItem[]
 
   @@unique([orgId, externalKey])
   @@index([orgId])

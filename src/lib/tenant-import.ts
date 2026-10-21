@@ -118,6 +118,14 @@ const INSERT_PLAN: readonly ImportStep[] = [
       { field: "contactId", target: "contacts" },
     ],
   },
+  // Inserted before actionItems: a promoted commitment carries an
+  // email_message_id FK, so the source email must exist (and have a new-id map)
+  // before the action item that references it lands.
+  {
+    name: "emailMessages",
+    delegate: (tx) => tx.emailMessage as unknown as BulkDelegate,
+    fkRefs: [{ field: "companyId", target: "companies" }],
+  },
   {
     name: "actionItems",
     delegate: (tx) => tx.actionItem as unknown as BulkDelegate,
@@ -128,6 +136,7 @@ const INSERT_PLAN: readonly ImportStep[] = [
       { field: "companyId", target: "companies" },
       { field: "eventId", target: "events" },
       { field: "ownerContactId", target: "contacts" },
+      { field: "emailMessageId", target: "emailMessages" },
     ],
   },
   {
@@ -148,11 +157,6 @@ const INSERT_PLAN: readonly ImportStep[] = [
       { field: "companyId", target: "companies" },
       { field: "projectId", target: "projects" },
     ],
-  },
-  {
-    name: "emailMessages",
-    delegate: (tx) => tx.emailMessage as unknown as BulkDelegate,
-    fkRefs: [{ field: "companyId", target: "companies" }],
   },
   {
     name: "activities",

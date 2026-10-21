@@ -277,6 +277,9 @@ export default async function CompanyDetailPage({
           fromName: true,
           fromEmail: true,
           externalKey: true,
+          // Follow-ups already promoted into commitments — their text drives the
+          // "Added" tag so a bullet isn't promoted twice.
+          commitments: { select: { text: true } },
         },
       });
       // Saved coverage for this company (item 6). Same NewsItem ledger the
@@ -337,6 +340,11 @@ export default async function CompanyDetailPage({
           ownerUser: { select: { name: true } },
           ownerContact: { select: { name: true } },
           project: { select: { name: true } },
+          // Origin, for the per-commitment source label ("from <meeting>" /
+          // "from email" / "logged manually").
+          meetingId: true,
+          meeting: { select: { title: true } },
+          emailMessageId: true,
         },
       });
       // Org projects for the commitment project-picker (optional link).
@@ -547,9 +555,12 @@ export default async function CompanyDetailPage({
     fromName: e.fromName,
     fromEmail: e.fromEmail,
     isManual: e.externalKey.startsWith("manual:"),
+    promotedActionItems: e.commitments.map((c) => c.text),
   }));
 
   // Shape commitments for the interactive card; done items feed the timeline.
+  // source labels its origin: a synced/manual meeting, a promoted email, or a
+  // commitment logged directly on the profile.
   const commitments = actionItems.map((a) => ({
     id: a.id,
     text: a.text,
@@ -558,6 +569,12 @@ export default async function CompanyDetailPage({
     ownerUserId: a.ownerUserId,
     ownerName: a.ownerUser?.name ?? a.ownerContact?.name ?? null,
     projectName: a.project?.name ?? null,
+    source:
+      a.meetingId != null
+        ? { kind: "meeting" as const, label: a.meeting?.title ?? "a meeting" }
+        : a.emailMessageId != null
+          ? { kind: "email" as const }
+          : { kind: "manual" as const },
   }));
 
   // One timeline entry per attended event (a company may send several guests).
