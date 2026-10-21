@@ -660,7 +660,7 @@ describe("event + guest-list actions", () => {
     expect(survived?.id).toBe(orgBEventId);
   });
 
-  test("saves a liked event idea as a planning-stage event", async () => {
+  test("saves a liked event idea parked in the idea stage", async () => {
     const state = await saveEventIdea(
       { status: "idle" },
       fd({
@@ -678,7 +678,7 @@ describe("event + guest-list actions", () => {
       tx.event.findFirst({ where: { name: "Capital & Construction Salon" } }),
     );
     expect(saved?.type).toBe("roundtable");
-    expect(saved?.stage).toBe("planning");
+    expect(saved?.stage).toBe("idea");
     expect(saved?.venue).toBe("Member A HQ");
     expect(saved?.capacity).toBe(14);
     expect(saved?.description).toContain("Suggested guests: Alice A");

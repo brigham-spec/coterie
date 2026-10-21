@@ -22,9 +22,9 @@ import type {
 // browser. Claude proposes distinct events grounded in the network's members,
 // active projects, and recent meetings — each with a "why now", a tiered invite
 // list, and an expected outcome. Results are ephemeral: re-run on demand; nothing
-// is stored — but any idea the host likes can be saved as a real planning-stage
-// event (its substance folded into the description), which drops into the table
-// below while the other ideas stay on screen.
+// is stored — but any idea the host likes can be saved (its substance folded into
+// the description), landing in the Saved ideas list below while the other ideas
+// stay on screen.
 
 const initialState: EventIdeasState = { status: "idle" };
 const saveInitialState: SaveIdeaState = { status: "idle" };
@@ -150,10 +150,10 @@ function IdeaCard({ idea }: { idea: EventIdea }) {
   );
 }
 
-// Save one idea as a real planning-stage event. The idea's fields ride along as
+// Save one idea as a parked "idea"-stage event. The idea's fields ride along as
 // hidden inputs (type is validated server-side against the canonical vocabulary);
-// on success the button latches to "Added" and the new event appears in the table
-// below via the action's revalidate.
+// on success the button latches to "Added" and the idea appears in the Saved
+// ideas list below via the action's revalidate.
 function SaveIdeaButton({ idea }: { idea: EventIdea }) {
   const [state, formAction, isPending] = useActionState(
     saveEventIdea,

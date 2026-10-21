@@ -21,15 +21,22 @@ export const EVENT_TYPES: readonly EventDef[] = [
   { value: "other", label: "Other", tone: "slate" },
 ];
 
-/// Where the event is in its lifecycle, in flow order. Terminal = completed /
+/// Where the event is in its lifecycle, in flow order. "Idea" is a pre-planning
+/// holding stage for saved AI event ideas — not yet on the calendar, so it's
+/// shown in its own list (neither "upcoming" nor "past"). Terminal = completed /
 /// cancelled (an event that's done or called off isn't "upcoming").
 export const EVENT_STAGES: readonly EventDef[] = [
+  { value: "idea", label: "Idea", tone: "slate" },
   { value: "planning", label: "Planning", tone: "slate" },
   { value: "invitations_sent", label: "Invitations Sent", tone: "purple" },
   { value: "confirmed", label: "Confirmed", tone: "gold" },
   { value: "completed", label: "Completed", tone: "teal" },
   { value: "cancelled", label: "Cancelled", tone: "red" },
 ];
+
+/// The pre-planning stage a saved event idea sits in until a host commits it to
+/// the calendar (by promoting it to "planning"). Kept out of "upcoming"/"past".
+export const IDEA_EVENT_STAGE = "idea";
 
 /// Stages excluded from the "upcoming" list — the event is over or called off.
 export const TERMINAL_EVENT_STAGES: readonly string[] = ["completed", "cancelled"];

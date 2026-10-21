@@ -6,6 +6,7 @@ import { withOrg } from "@/lib/tenant";
 import {
   EVENT_STAGES,
   EVENT_TYPES,
+  IDEA_EVENT_STAGE,
   TERMINAL_EVENT_STAGES,
   getEventType,
   isAttending,
@@ -31,8 +32,9 @@ import { EventIdeas } from "./_event-ideas";
 
 // Events — the gatherings surface (slice 11.7). Stage and type are the canonical
 // vocabulary (@/lib/event-stages). One withOrg pass loads every event with its
-// invitees (RLS scopes it to this tenant); upcoming events (non-terminal stage)
-// lead, past/cancelled ones follow.
+// invitees (RLS scopes it to this tenant); saved ideas (the "idea" stage) get
+// their own list, then upcoming events (non-terminal stage) lead and
+// past/cancelled ones follow.
 
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
@@ -92,8 +94,12 @@ export default async function EventsPage() {
     .filter((c): c is { name: string; venue: string } => c.venue != null)
     .map((c) => ({ venue: c.venue, company: c.name }));
 
+  // Saved AI ideas sit in their own "idea" stage — kept out of both upcoming and
+  // past until a host promotes them to a real planning-stage event.
+  const ideas = events.filter((e) => e.stage === IDEA_EVENT_STAGE);
   const upcoming = events.filter(
-    (e) => !TERMINAL_EVENT_STAGES.includes(e.stage),
+    (e) =>
+      e.stage !== IDEA_EVENT_STAGE && !TERMINAL_EVENT_STAGES.includes(e.stage),
   );
   const past = events.filter((e) => TERMINAL_EVENT_STAGES.includes(e.stage));
   const totalGuests = events.reduce(
@@ -215,7 +221,11 @@ export default async function EventsPage() {
 
       <EventIdeas />
 
-      {events.length === 0 ? (
+      {ideas.length > 0 ? (
+        <EventTable title="Saved ideas" events={ideas} />
+      ) : null}
+
+      {upcoming.length === 0 && past.length === 0 ? (
         <Card>
           <p className="px-4 py-6 text-xs text-ink-3">
             No events yet. Add one above.

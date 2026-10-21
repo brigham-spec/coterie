@@ -22,6 +22,7 @@ import { TERMINAL_STAGES } from "@/lib/project-stages";
 import { EVENT_GUEST_STATUSES, NETWORK_STATUSES } from "@/lib/company-statuses";
 import { revalidateActionItemSurfaces } from "@/lib/revalidate";
 import {
+  IDEA_EVENT_STAGE,
   RSVP_ATTENDED,
   RSVP_CONFIRMED,
   getEventType,
@@ -826,12 +827,15 @@ export async function suggestEvents(
   }
 }
 
-// Turn a liked event idea (ephemeral, from suggestEvents) into a real planning-stage
-// event. The idea's substance — why now, anchor, outcome, suggested guests, agenda —
-// is folded into the description on the client so none of it is lost; here we validate
-// the type against the canonical vocabulary and create the row (org_id stamped, RLS
-// WITH CHECK backstops it). No redirect: the events page revalidates so the new event
-// drops into the table below while the remaining ideas stay on screen to save too.
+// Turn a liked event idea (ephemeral, from suggestEvents) into a saved idea — an
+// Event parked in the "idea" stage, so it lands in the Saved ideas list rather
+// than among upcoming/planned events (a host promotes it to "planning" when they
+// commit it to the calendar). The idea's substance — why now, anchor, outcome,
+// suggested guests, agenda — is folded into the description on the client so none
+// of it is lost; here we validate the type against the canonical vocabulary and
+// create the row (org_id stamped, RLS WITH CHECK backstops it). No redirect: the
+// events page revalidates so the saved idea drops into its list while the
+// remaining ideas stay on screen to save too.
 
 export type SaveIdeaState =
   | { status: "idle" }
@@ -866,7 +870,7 @@ export async function saveEventIdea(
         orgId,
         name,
         type,
-        stage: "planning",
+        stage: IDEA_EVENT_STAGE,
         venue: venue === "" ? null : venue,
         theme: theme === "" ? null : theme,
         description,
