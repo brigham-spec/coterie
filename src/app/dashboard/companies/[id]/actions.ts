@@ -3397,6 +3397,17 @@ export async function addNote(formData: FormData): Promise<NoteState> {
     await tx.note.create({
       data: { orgId, companyId, actorUserId: userId, body, occurredAt },
     });
+    // A logged touchpoint (call, email, chat) freshens the company's
+    // last-contact clock that powers the companies list + dashboard "Needs a
+    // Call" card. Forward-only — a backdated note must never roll the clock
+    // backwards past a more recent touch.
+    await tx.company.updateMany({
+      where: {
+        id: companyId,
+        OR: [{ lastContactAt: null }, { lastContactAt: { lt: occurredAt } }],
+      },
+      data: { lastContactAt: occurredAt },
+    });
     return true;
   });
 

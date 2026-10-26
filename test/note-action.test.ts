@@ -159,6 +159,33 @@ describe("addNote", () => {
     );
     expect(count).toBe(1);
   });
+
+  test("freshens the company last-contact clock, forward-only", async () => {
+    const lastContact = () =>
+      withOrg(orgA.id, (tx) =>
+        tx.company
+          .findUnique({
+            where: { id: companyAId },
+            select: { lastContactAt: true },
+          })
+          .then((c) => c!.lastContactAt),
+      );
+
+    // The first add (dated 2026-06-01) already bumped the clock from null.
+    expect((await lastContact())!.toISOString().slice(0, 10)).toBe("2026-06-01");
+
+    // A backdated touchpoint must not roll the clock backwards.
+    await addNote(
+      fd({ companyId: companyAId, body: "Old chat.", occurredAt: "2026-01-15" }),
+    );
+    expect((await lastContact())!.toISOString().slice(0, 10)).toBe("2026-06-01");
+
+    // A more recent touchpoint moves it forward.
+    await addNote(
+      fd({ companyId: companyAId, body: "New call.", occurredAt: "2026-08-01" }),
+    );
+    expect((await lastContact())!.toISOString().slice(0, 10)).toBe("2026-08-01");
+  });
 });
 
 describe("editNote", () => {
