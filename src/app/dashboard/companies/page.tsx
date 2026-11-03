@@ -30,8 +30,14 @@ import {
   cn,
 } from "@/components/ui";
 
+import {
+  categorizeIndustry,
+  OTHER_INDUSTRY_CATEGORY,
+} from "@/lib/industry-categories";
+
 import { AddCompanyForm } from "./_add-company-form";
 import { CompanyFilters } from "./_filters";
+import { IndustryChips } from "./_industry-chips";
 import { LinkedInParse } from "./_linkedin-parse";
 import { BatchSynth } from "./_batch-synth";
 import { OwnerCell, TierCell, TagsCell, ValueCell } from "./_inline-edit";
@@ -200,10 +206,28 @@ export default async function CompaniesPage({
     if (c.industry)
       industryCount.set(c.industry, (industryCount.get(c.industry) ?? 0) + 1);
   }
-  // Industry quick-chips — the industries present, busiest first (name tie-break).
+  // Raw distinct industries — still fed to the add/edit datalist as free-text
+  // suggestions so existing granular values stay valid (busiest first).
   const industries = [...industryCount.entries()]
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+  // Industry quick-chips roll the granular values up into broad natural
+  // categories (e.g. "Construction Manager" -> Construction) so the filter bar
+  // stays short. Busiest first, with "Other" always pinned last.
+  const categoryCount = new Map<string, number>();
+  for (const c of companies)
+    if (c.industry) {
+      const category = categorizeIndustry(c.industry);
+      categoryCount.set(category, (categoryCount.get(category) ?? 0) + 1);
+    }
+  const industryChips = [...categoryCount.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => {
+      if (a.name === OTHER_INDUSTRY_CATEGORY) return 1;
+      if (b.name === OTHER_INDUSTRY_CATEGORY) return -1;
+      return b.count - a.count || a.name.localeCompare(b.name);
+    });
   const owners = [...ownerMap.entries()]
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -237,7 +261,11 @@ export default async function CompaniesPage({
     .filter((c) => (ownerFilter === "all" ? true : c.ownerUserId === ownerFilter))
     .filter((c) => (tagFilter ? c.networkTags.includes(tagFilter) : true))
     .filter((c) => (tierFilter ? c.tier === tierFilter : true))
-    .filter((c) => (industryFilter ? c.industry === industryFilter : true))
+    .filter((c) =>
+      industryFilter
+        ? c.industry !== "" && categorizeIndustry(c.industry) === industryFilter
+        : true,
+    )
     .filter((c) =>
       likelihoodFilter ? (c.likelihood ?? 0) >= likelihoodFilter : true,
     );
@@ -398,29 +426,15 @@ export default async function CompaniesPage({
           })}
         </div>
 
-        {industries.length > 1 ? (
-          <div className="flex flex-wrap items-center gap-1 border-b border-line px-3 py-2">
-            {industries.map((ind) => {
-              const active = industryFilter === ind.name;
-              return (
-                <Link
-                  key={ind.name}
-                  href={industryHref(ind.name)}
-                  className={cn(
-                    "rounded-full px-2.5 py-0.5 text-[10.5px] transition-colors",
-                    active
-                      ? "bg-ink text-white"
-                      : "bg-surface-2 text-ink-3 hover:bg-surface-3 hover:text-ink",
-                  )}
-                >
-                  {ind.name}
-                  <span className={cn("ml-1", active ? "text-white/60" : "text-ink-3")}>
-                    {ind.count}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
+        {industryChips.length > 1 ? (
+          <IndustryChips
+            chips={industryChips.map((ind) => ({
+              name: ind.name,
+              count: ind.count,
+              href: industryHref(ind.name),
+              active: industryFilter === ind.name,
+            }))}
+          />
         ) : null}
 
         <CompanyFilters
