@@ -19,8 +19,10 @@ import {
 // project) and "Review updates from news" (the prototype's enrichment: read the
 // project's saved coverage and propose field updates the operator applies).
 // Every write is an explicit server action; nothing is saved until you click.
-// Saving needs a company to attach to (news_items.company_id is required), so both
-// are gated on the project having an associated company — same as the scanner.
+// A link saves straight to the project even with no associated company — the
+// article attaches to the project alone (news_items.company_id is nullable).
+// When a company IS linked, the save attaches to both so it also surfaces on
+// that company's profile.
 
 // A stage proposal carries the canonical value; show its human label.
 function displayValue(field: EnrichField, value: string): string {
@@ -45,8 +47,7 @@ export function ProjectNewsPanel({
         <button
           type="button"
           onClick={() => setAdding((v) => !v)}
-          disabled={attachCompanyId === null}
-          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline disabled:cursor-not-allowed disabled:text-ink-3 disabled:no-underline"
+          className="text-[10px] font-medium tracking-[0.06em] text-gold uppercase hover:underline"
         >
           {adding ? "Close" : "Add link"}
         </button>
@@ -55,14 +56,7 @@ export function ProjectNewsPanel({
         ) : null}
       </div>
 
-      {attachCompanyId === null ? (
-        <p className="mt-2 text-[10.5px] text-ink-3">
-          Link a company (developer or participant) to this project to save or
-          review coverage.
-        </p>
-      ) : null}
-
-      {adding && attachCompanyId !== null ? (
+      {adding ? (
         <div className="mt-3">
           <AddLinkForm
             projectId={projectId}
@@ -81,7 +75,7 @@ function AddLinkForm({
   onDone,
 }: {
   projectId: string;
-  companyId: string;
+  companyId: string | null;
   onDone: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +86,9 @@ function AddLinkForm({
         const url = String(fd.get("url") ?? "").trim();
         const title = String(fd.get("title") ?? "").trim();
         const f = new FormData();
-        f.set("companyId", companyId);
+        // Attach to the project's company when it has one; a company-less
+        // project saves the link against the project alone.
+        if (companyId !== null) f.set("companyId", companyId);
         f.set("projectId", projectId);
         f.set("url", url);
         // saveNewsItem requires a headline; fall back to the URL when none given

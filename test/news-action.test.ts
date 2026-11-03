@@ -239,6 +239,72 @@ describe("saveNewsItem / deleteNewsItem actions", () => {
   });
 });
 
+describe("saveNewsItem project-only (no company)", () => {
+  let projectId = "";
+
+  beforeAll(async () => {
+    mockCtx.orgId = orgA.id;
+    const project = await withOrg(orgA.id, (tx) =>
+      tx.project.create({
+        data: { orgId: orgA.id, name: "Caught Wind Of", stage: "concept" },
+      }),
+    );
+    projectId = project.id;
+  });
+
+  afterAll(async () => {
+    mockCtx.orgId = orgA.id;
+    await withOrg(orgA.id, async (tx) => {
+      await tx.newsItem.deleteMany({ where: { projectId } });
+      await tx.project.deleteMany({ where: { id: projectId } });
+    });
+  });
+
+  test("saves a link against a project with no company, deduped by (project,url)", async () => {
+    const article = {
+      projectId,
+      headline: "Early buzz about the site",
+      url: "https://x.example/early-buzz",
+      summary: "Heard about it before any developer is attached.",
+    };
+
+    const first = await saveNewsItem(fd(article));
+    expect(first).toEqual({ status: "saved" });
+
+    const row = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.findFirst({ where: { projectId } }),
+    );
+    expect(row?.companyId).toBeNull();
+    expect(row?.projectId).toBe(projectId);
+    expect(row?.headline).toBe(article.headline);
+
+    // Re-saving the same (project,url) is a no-op.
+    const again = await saveNewsItem(fd(article));
+    expect(again).toEqual({ status: "exists" });
+    const count = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.count({ where: { projectId } }),
+    );
+    expect(count).toBe(1);
+  });
+
+  test("refuses a link with neither a company nor a project", async () => {
+    const result = await saveNewsItem(
+      fd({ headline: "Orphan", url: "https://x.example/orphan" }),
+    );
+    expect(result).toEqual({
+      status: "error",
+      message: "A link needs a company or a project.",
+    });
+  });
+
+  test("a project-only article is invisible to another tenant (RLS)", async () => {
+    const seenByB = await withOrg(orgB.id, (tx) =>
+      tx.newsItem.findMany({ where: { url: "https://x.example/early-buzz" } }),
+    );
+    expect(seenByB).toEqual([]);
+  });
+});
+
 describe("linkNewsToProject action", () => {
   let articleId = "";
   let projectId = "";

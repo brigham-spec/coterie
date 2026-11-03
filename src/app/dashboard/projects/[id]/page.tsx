@@ -249,10 +249,10 @@ export default async function ProjectDetailPage({
   // Companies eligible as the developer/lead (any in the tenant).
   const developerId = project.developerMemberId ?? "";
 
-  // Manual "Add link" + "Review updates from news" both save/read against a
-  // company (news_items.company_id is required), so they need one company to
-  // attach to: prefer the developer, else the first participant company. Null
-  // when the project has no linked company at all — the panel disables itself.
+  // The company a saved link also attaches to (so it surfaces on that company's
+  // profile too): prefer the developer, else the first participant company. Null
+  // when the project has no linked company at all — a link then saves against the
+  // project alone (news_items.company_id is nullable).
   const attachCompanyId = project.developer?.id ?? companyIds[0] ?? null;
 
   // Open roles = disciplines not yet staffed on the team. Only meaningful while the
@@ -458,8 +458,12 @@ export default async function ProjectDetailPage({
                         Linked
                       </span>
                     ) : null}
-                    <span>{n.company.name}</span>
-                    <span>·</span>
+                    {n.company ? (
+                      <>
+                        <span>{n.company.name}</span>
+                        <span>·</span>
+                      </>
+                    ) : null}
                     <span>{dateFmt.format(n.capturedAt)}</span>
                   </div>
                 </li>

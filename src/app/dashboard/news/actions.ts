@@ -262,10 +262,14 @@ function parseKeyFacts(raw: FormDataEntryValue | null): string[] {
     .slice(0, MAX_FACTS);
 }
 
-// Persist one discovered article to the NewsItem ledger. Re-verifies the company
-// belongs to THIS org inside the tx (news_items.company_id is a plain FK — RLS
-// WITH CHECK only guards our own org_id, so without this a crafted request could
-// attach an own-org item to another org's company id). Deduped by (companyId,url).
+// Persist one discovered article to the NewsItem ledger. A link attaches to a
+// company, a project, or both — at least one is required (a project-only link
+// lets the operator save coverage for a project it caught wind of before any
+// developer/participant is linked). Re-verifies each referenced company/project
+// belongs to THIS org inside the tx (both are plain FKs — RLS WITH CHECK only
+// guards our own org_id, so without this a crafted request could attach an
+// own-org item to another org's row). Deduped by url within whichever anchor is
+// present (company first, else project).
 export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> {
   const { orgId } = await requireOrgContext();
 
@@ -279,8 +283,10 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
   // The scan card ships the article's AI-extracted facts as a JSON array; a bad
   // or absent value just persists no facts (they're display-only chips).
   const keyFacts = parseKeyFacts(formData.get("keyFacts"));
-  if (companyId === "" || headline === "" || url === "")
+  if (headline === "" || url === "")
     return { status: "error", message: "Missing article details." };
+  if (companyId === "" && projectId === "")
+    return { status: "error", message: "A link needs a company or a project." };
   // The URL is later rendered as a clickable href, so only http(s) links may be
   // stored — a `javascript:`/`data:` scheme would be a stored-XSS vector.
   if (!/^https?:\/\//i.test(url))
@@ -288,12 +294,14 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
 
   try {
     return await withOrg(orgId, async (tx) => {
-      const company = await tx.company.findUnique({
-        where: { id: companyId },
-        select: { id: true },
-      });
-      if (company === null)
-        return { status: "error" as const, message: "Company not found." };
+      if (companyId !== "") {
+        const company = await tx.company.findUnique({
+          where: { id: companyId },
+          select: { id: true },
+        });
+        if (company === null)
+          return { status: "error" as const, message: "Company not found." };
+      }
 
       // Re-verify the project belongs to THIS org before pinning it (plain FK,
       // mirrors linkNewsToProject) so a crafted request can't cross-link.
@@ -306,12 +314,14 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
           return { status: "error" as const, message: "Project not found." };
       }
 
+      // Dedupe by url within the anchor we're saving under: a company save keys
+      // on (companyId, url); a project-only save keys on (projectId, url).
       const existing = await tx.newsItem.findFirst({
-        where: { companyId, url },
+        where: companyId !== "" ? { companyId, url } : { projectId, url },
         select: { id: true, projectId: true },
       });
       if (existing) {
-        // Already saved for this company; if this save came from a project scan
+        // Already saved for this anchor; if this save came from a project scan
         // and the item isn't linked to that project yet, pin it now.
         if (projectId !== "" && existing.projectId !== projectId)
           await tx.newsItem.updateMany({
@@ -324,7 +334,7 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
       await tx.newsItem.create({
         data: {
           orgId,
-          companyId,
+          companyId: companyId === "" ? null : companyId,
           projectId: projectId === "" ? null : projectId,
           headline,
           url,
@@ -341,7 +351,7 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
   } finally {
     revalidatePath("/dashboard/news");
     // The company profile's Saved Articles card reads the same ledger.
-    revalidatePath(`/dashboard/companies/${companyId}`);
+    if (companyId !== "") revalidatePath(`/dashboard/companies/${companyId}`);
     // A project scan saves against the project's Press & News card too.
     if (projectId !== "") revalidatePath(`/dashboard/projects/${projectId}`);
   }

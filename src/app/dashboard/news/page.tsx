@@ -40,6 +40,8 @@ export default async function NewsPage({
         keyFacts: true,
         capturedAt: true,
         company: { select: { id: true, name: true } },
+        // A project-only link carries no company; show the project instead.
+        project: { select: { id: true, name: true } },
       },
     });
     return { companies, newsItems };
@@ -83,8 +85,10 @@ export default async function NewsPage({
           note: n.note,
           keyFacts: n.keyFacts,
           capturedAt: n.capturedAt,
-          companyId: n.company.id,
-          companyName: n.company.name,
+          companyId: n.company?.id ?? null,
+          companyName: n.company?.name ?? null,
+          projectId: n.project?.id ?? null,
+          projectName: n.project?.name ?? null,
         }))}
         companies={companies.map((c) => ({ id: c.id, name: c.name }))}
         currentUserId={userId}

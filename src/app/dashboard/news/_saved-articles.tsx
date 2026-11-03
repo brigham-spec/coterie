@@ -30,8 +30,12 @@ export type SavedArticle = {
   note: string | null;
   keyFacts: string[];
   capturedAt: Date;
-  companyId: string;
-  companyName: string;
+  // Null for a project-only link (saved against a project with no company);
+  // such a row shows its project instead and hides the company quick actions.
+  companyId: string | null;
+  companyName: string | null;
+  projectId: string | null;
+  projectName: string | null;
 };
 
 export type CompanyOption = { id: string; name: string };
@@ -127,33 +131,48 @@ function ArticleItem({
           </div>
         ) : null}
         <div className="mt-1 text-[10px] text-ink-3">
-          <Link
-            href={`/dashboard/companies/${article.companyId}`}
-            className="hover:text-gold"
-          >
-            {article.companyName}
-          </Link>
+          {article.companyId !== null ? (
+            <Link
+              href={`/dashboard/companies/${article.companyId}`}
+              className="hover:text-gold"
+            >
+              {article.companyName}
+            </Link>
+          ) : article.projectId !== null ? (
+            <Link
+              href={`/dashboard/projects/${article.projectId}`}
+              className="hover:text-gold"
+            >
+              {article.projectName}
+            </Link>
+          ) : (
+            <span>No company</span>
+          )}
           {" · "}
           {dateFmt.format(article.capturedAt)}
         </div>
         <NoteEditor
           articleId={article.id}
-          companyId={article.companyId}
+          companyId={article.companyId ?? ""}
           note={article.note}
         />
-        <div className="mt-1.5 flex flex-wrap items-center gap-3">
-          <ArticleQuickActions
-            companyId={article.companyId}
-            headline={article.headline}
-            url={article.url}
-            currentUserId={currentUserId}
-            textClass="text-[10px]"
-          />
-        </div>
+        {/* The quick actions log against a company (timeline note / commitment);
+            a project-only link has none, so they're omitted. */}
+        {article.companyId !== null ? (
+          <div className="mt-1.5 flex flex-wrap items-center gap-3">
+            <ArticleQuickActions
+              companyId={article.companyId}
+              headline={article.headline}
+              url={article.url}
+              currentUserId={currentUserId}
+              textClass="text-[10px]"
+            />
+          </div>
+        ) : null}
       </div>
       <form action={deleteNewsItem} className="shrink-0">
         <input type="hidden" name="id" value={article.id} />
-        <input type="hidden" name="companyId" value={article.companyId} />
+        <input type="hidden" name="companyId" value={article.companyId ?? ""} />
         <button
           type="submit"
           className="text-[10px] text-ink-3 hover:text-red-ink"

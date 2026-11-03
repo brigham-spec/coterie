@@ -15,10 +15,11 @@ import type { NewsArticle } from "@/lib/news-scan";
 // Project-scoped web news scan (companion to the company-level News scanner).
 // A thin client shell over the scanProjectNews server action — the web-search
 // discovery stays server-side. Results are ephemeral until an explicit "Save"
-// persists an article to the project's associated company AND links it to this
-// project in one write. A scan is a billable call, so it stays gated behind the
-// explicit button (never auto-fired). If the project has no associated company
-// (no developer/participant), results still surface but can't be saved.
+// persists an article against this project (and, when the project has an
+// associated company, that company too) in one write. A scan is a billable
+// call, so it stays gated behind the explicit button (never auto-fired). A
+// company-less project can still save results — the article attaches to the
+// project alone.
 
 const initialState: ProjectNewsScanState = { status: "idle" };
 
@@ -79,12 +80,6 @@ function ScanResults({
       <div className="mb-2 text-[10px] font-medium tracking-[0.07em] text-ink-3 uppercase">
         {articles.length} result{articles.length === 1 ? "" : "s"}
       </div>
-      {attachCompanyId === null ? (
-        <p className="mb-2 text-[10.5px] text-ink-3">
-          Link a company (developer or participant) to this project to save
-          these articles.
-        </p>
-      ) : null}
       <ul className="flex flex-col gap-2.5">
         {articles.map((a, i) => (
           <ScanArticle
@@ -113,8 +108,9 @@ function ScanArticle({
 
   const saved = result?.status === "saved";
   const exists = result?.status === "exists";
-  // Savable only with a link AND an associated company to attach to.
-  const canSave = article.url !== null && attachCompanyId !== null;
+  // Savable with a link — it attaches to the project (plus the associated
+  // company, when there is one).
+  const canSave = article.url !== null;
 
   return (
     <li className="rounded-md border border-line bg-surface px-3.5 py-3 shadow-card">
@@ -155,9 +151,11 @@ function ScanArticle({
           disabled={isSaving || saved || exists || !canSave}
           onClick={() =>
             startSave(async () => {
-              if (attachCompanyId === null || article.url === null) return;
+              if (article.url === null) return;
               const f = new FormData();
-              f.set("companyId", attachCompanyId);
+              // Attach to the project's company when it has one; otherwise the
+              // article saves against the project alone.
+              if (attachCompanyId !== null) f.set("companyId", attachCompanyId);
               f.set("projectId", projectId);
               f.set("headline", article.headline);
               f.set("url", article.url);

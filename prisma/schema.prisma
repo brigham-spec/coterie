@@ -823,7 +823,12 @@ model Payment {
 model NewsItem {
   id         String   @id @default(uuid()) @db.Uuid
   orgId      String   @map("org_id") @db.Uuid
-  companyId  String   @map("company_id") @db.Uuid
+  /// Nullable so a link can be saved against just a project (e.g. a project the
+  /// operator caught wind of before any developer/participant is linked). Plain
+  /// FK; same-org enforced in the action inside withOrg (mirrors projectId and
+  /// email_messages.company_id). Still Cascade: a company delete drops its own
+  /// coverage; project-only rows (null company) are untouched.
+  companyId  String?  @map("company_id") @db.Uuid
   headline   String
   url        String
   summary    String?
@@ -843,7 +848,7 @@ model NewsItem {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company      Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([orgId])
