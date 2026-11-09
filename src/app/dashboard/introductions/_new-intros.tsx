@@ -17,11 +17,13 @@ import { INTRO_DISMISS_REASONS } from "@/lib/intro-dismissal";
 
 // The "New intro opportunities" panel on the Introductions page (co-attendance
 // discovery — two member companies in the same room with no intro on record). A
-// client shell over the server-rendered candidates so each pairing can be either
-// LOGGED (createIntroduction) or DISMISSED with a reason. A disposition is
-// optimistically hidden here and persisted via dismissIntro; the same pair is
-// then folded into the discovery suppression set, so it won't resurface on the
-// next load. A failed write simply reappears on the next reload.
+// client shell over the server-rendered candidates so each pairing can be acted
+// on four ways: MAKE it (createIntroduction, optionally with a COMMENT saved onto
+// the intro's notes), IGNORE it with a specific reason, or DELETE it (a one-click
+// quick-dismiss). A disposition is optimistically hidden here and persisted via
+// dismissIntro; the same pair is then folded into the discovery suppression set,
+// so it won't resurface on the next load. A failed write simply reappears on the
+// next reload.
 //
 // The whole panel collapses behind its gold header (native <details>) because the
 // worklist can run up to a dozen candidates; the open/closed choice persists in
@@ -124,6 +126,9 @@ function CandidateRow({
   onDismiss: (key: string) => void;
 }): ReactNode {
   const [isDismissing, startDismiss] = useTransition();
+  // The comment field is revealed on demand; collapsed by default so the row
+  // stays compact. When open it submits as the intro's `notes` on Log intro.
+  const [noteOpen, setNoteOpen] = useState(false);
 
   function dispose(reason: string) {
     // Optimistically hide, then persist. A failed write just reappears on the
@@ -134,8 +139,15 @@ function CandidateRow({
     });
   }
 
+  // The whole row is the Log-intro form so an optional comment (`notes`) rides
+  // along on submit. The ignore/delete controls are type="button" (they never
+  // submit the form) — they optimistically dismiss the pair instead.
   return (
-    <div className="px-4 py-2.5">
+    <form action={createIntroduction} className="px-4 py-2.5">
+      <input type="hidden" name="partyAContactId" value={c.contactAId} />
+      <input type="hidden" name="partyBContactId" value={c.contactBId} />
+      <input type="hidden" name="status" value="suggested" />
+      <input type="hidden" name="headline" value={`Met at ${c.meetingTitle}`} />
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-[11.5px] text-ink">
@@ -148,22 +160,28 @@ function CandidateRow({
             Met at {c.meetingTitle} &middot; {c.meetingLabel}
           </div>
         </div>
-        <form action={createIntroduction} className="flex-shrink-0">
-          <input type="hidden" name="partyAContactId" value={c.contactAId} />
-          <input type="hidden" name="partyBContactId" value={c.contactBId} />
-          <input type="hidden" name="status" value="suggested" />
-          <input
-            type="hidden"
-            name="headline"
-            value={`Met at ${c.meetingTitle}`}
-          />
-          <Button type="submit" variant="primary">
-            Log intro
-          </Button>
-        </form>
+        <Button type="submit" variant="primary" className="flex-shrink-0">
+          Log intro
+        </Button>
       </div>
+      {noteOpen ? (
+        <textarea
+          name="notes"
+          rows={2}
+          maxLength={1000}
+          placeholder="Add a comment (saved to the intro's notes)…"
+          className="mt-2 w-full rounded-sm border border-line-2 bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-gold-line"
+        />
+      ) : null}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-[9.5px] text-ink-3">Dismiss as</span>
+        <button
+          type="button"
+          onClick={() => setNoteOpen((v) => !v)}
+          className="text-[10px] text-ink-3 hover:text-ink-2 hover:underline"
+        >
+          {noteOpen ? "Hide comment" : "Comment"}
+        </button>
+        <span className="text-[9.5px] text-ink-3">Ignore as</span>
         {INTRO_DISMISS_REASONS.map((r) => (
           <button
             key={r.value}
@@ -175,7 +193,15 @@ function CandidateRow({
             {r.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => dispose("not_relevant")}
+          disabled={isDismissing}
+          className="text-[10px] font-medium text-red hover:underline disabled:opacity-50"
+        >
+          Delete
+        </button>
       </div>
-    </div>
+    </form>
   );
 }
