@@ -26,6 +26,17 @@ vi.mock("@/lib/news-scan", async (importOriginal) => {
   return { ...actual, scanCompanyNews: scanSpy };
 });
 
+// The pasted-link enrichment seam does a live web fetch + AI summary; mock it so
+// the action tests stay hermetic. Defaults to "no summary found" (the common
+// path when a URL can't be read), which leaves the saved row's summary untouched;
+// individual tests override it per-call to exercise the enriched path.
+const summarizeSpy = vi.hoisted(() =>
+  vi.fn<
+    (url: string) => Promise<import("@/lib/news-link").ArticleSummary | null>
+  >(async () => null),
+);
+vi.mock("@/lib/news-link", () => ({ summarizeArticleLink: summarizeSpy }));
+
 const { scanNews, saveNewsItem, deleteNewsItem, updateNewsNote, linkNewsToProject } =
   await import("@/app/dashboard/news/actions");
 
@@ -84,6 +95,8 @@ afterAll(async () => {
 
 beforeEach(() => {
   scanSpy.mockReset();
+  summarizeSpy.mockReset();
+  summarizeSpy.mockResolvedValue(null);
 });
 
 function fd(entries: Record<string, string>): FormData {
@@ -236,6 +249,81 @@ describe("saveNewsItem / deleteNewsItem actions", () => {
       status: "error",
       message: "Article not found in this organization.",
     });
+  });
+
+  test("saves a link-less article (no citable source), deduped by headline", async () => {
+    const article = {
+      companyId: companyAId,
+      headline: "Scan find the model couldn't link",
+      summary: "Real content, no source URL.",
+      keyFacts: JSON.stringify(["$12M", "80 units"]),
+    };
+
+    const first = await saveNewsItem(fd(article));
+    expect(first).toEqual({ status: "saved" });
+    // No URL was present, so the enrichment seam is never consulted.
+    expect(summarizeSpy).not.toHaveBeenCalled();
+
+    const row = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.findFirst({ where: { headline: article.headline } }),
+    );
+    expect(row?.url).toBeNull();
+    expect(row?.summary).toBe(article.summary);
+    expect(row?.keyFacts).toEqual(["$12M", "80 units"]);
+
+    // Re-saving the same (company,headline) with no URL is a no-op.
+    const again = await saveNewsItem(fd(article));
+    expect(again).toEqual({ status: "exists" });
+    const count = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.count({ where: { headline: article.headline } }),
+    );
+    expect(count).toBe(1);
+
+    await deleteNewsItem(fd({ id: row!.id }));
+  });
+
+  test("rejects a missing headline", async () => {
+    const result = await saveNewsItem(
+      fd({ companyId: companyAId, url: "https://x.example/no-headline" }),
+    );
+    expect(result).toEqual({ status: "error", message: "Missing article details." });
+  });
+
+  test("rejects a non-http(s) url but allows a link-less save", async () => {
+    const bad = await saveNewsItem(
+      fd({ companyId: companyAId, headline: "Bad scheme", url: "ftp://x.example/f" }),
+    );
+    expect(bad).toEqual({
+      status: "error",
+      message: "Article link must be an http(s) URL.",
+    });
+  });
+
+  test("enriches a bare pasted link via the summary seam", async () => {
+    summarizeSpy.mockResolvedValueOnce({
+      headline: "Fetched: Kingston approves waterfront plan",
+      summary: "The planning board approved the project on Tuesday.",
+      keyFacts: ["approved", "waterfront"],
+    });
+    const url = "https://x.example/paste-enrich";
+
+    // The manual "Add link" path sends headline === url (its URL fallback) and an
+    // empty summary — the enrichment then fills summary/facts and replaces the
+    // placeholder headline.
+    const saved = await saveNewsItem(
+      fd({ companyId: companyAId, headline: url, url, summary: "" }),
+    );
+    expect(saved).toEqual({ status: "saved" });
+    expect(summarizeSpy).toHaveBeenCalledWith(url);
+
+    const row = await withOrg(orgA.id, (tx) =>
+      tx.newsItem.findFirst({ where: { url } }),
+    );
+    expect(row?.headline).toBe("Fetched: Kingston approves waterfront plan");
+    expect(row?.summary).toBe("The planning board approved the project on Tuesday.");
+    expect(row?.keyFacts).toEqual(["approved", "waterfront"]);
+
+    await deleteNewsItem(fd({ id: row!.id }));
   });
 });
 

@@ -323,7 +323,6 @@ function ArticleCard({
 
   const saved = result?.status === "saved";
   const exists = result?.status === "exists";
-  const canSave = article.url !== null;
 
   return (
     <li className="rounded-md border border-line bg-surface px-3.5 py-3 shadow-card">
@@ -359,12 +358,14 @@ function ArticleCard({
         <Button
           type="button"
           variant="gold"
-          disabled={isSaving || saved || exists || !canSave}
+          disabled={isSaving || saved || exists}
           onClick={() =>
             startSave(async () => {
               const f = new FormData();
               f.set("companyId", companyId);
               f.set("headline", article.headline);
+              // A scan result the model couldn't cite a source for saves without
+              // a url (its headline/summary/facts still carry value).
               f.set("url", article.url ?? "");
               f.set("summary", article.summary);
               f.set("keyFacts", JSON.stringify(article.keyFacts));
@@ -372,15 +373,7 @@ function ArticleCard({
             })
           }
         >
-          {saved
-            ? "Saved"
-            : exists
-              ? "Already saved"
-              : isSaving
-                ? "Saving…"
-                : canSave
-                  ? "Save"
-                  : "No link to save"}
+          {saved ? "Saved" : exists ? "Already saved" : isSaving ? "Saving…" : "Save"}
         </Button>
         <ArticleQuickActions
           companyId={companyId}

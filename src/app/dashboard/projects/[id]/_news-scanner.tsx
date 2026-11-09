@@ -108,9 +108,6 @@ function ScanArticle({
 
   const saved = result?.status === "saved";
   const exists = result?.status === "exists";
-  // Savable with a link — it attaches to the project (plus the associated
-  // company, when there is one).
-  const canSave = article.url !== null;
 
   return (
     <li className="rounded-md border border-line bg-surface px-3.5 py-3 shadow-card">
@@ -148,17 +145,18 @@ function ScanArticle({
         <Button
           type="button"
           variant="gold"
-          disabled={isSaving || saved || exists || !canSave}
+          disabled={isSaving || saved || exists}
           onClick={() =>
             startSave(async () => {
-              if (article.url === null) return;
               const f = new FormData();
               // Attach to the project's company when it has one; otherwise the
               // article saves against the project alone.
               if (attachCompanyId !== null) f.set("companyId", attachCompanyId);
               f.set("projectId", projectId);
               f.set("headline", article.headline);
-              f.set("url", article.url);
+              // A scan result the model couldn't cite a source for saves without
+              // a url (its headline/summary/facts still carry value).
+              f.set("url", article.url ?? "");
               f.set("summary", article.summary);
               f.set("keyFacts", JSON.stringify(article.keyFacts));
               setResult(await saveNewsItem(f));
@@ -171,9 +169,7 @@ function ScanArticle({
               ? "Already saved"
               : isSaving
                 ? "Saving…"
-                : article.url === null
-                  ? "No link to save"
-                  : "Save to project"}
+                : "Save to project"}
         </Button>
         {article.url ? (
           <a

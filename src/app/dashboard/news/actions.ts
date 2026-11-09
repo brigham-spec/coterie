@@ -13,6 +13,7 @@ import {
   scanCompanyNews,
   type NewsArticle,
 } from "@/lib/news-scan";
+import { summarizeArticleLink } from "@/lib/news-link";
 
 // News Intelligence actions (slice 11.9). scanNews loads ONE company's context
 // in a withOrg tx (RLS scopes it — a foreign id resolves to no company) and hands
@@ -70,7 +71,13 @@ export async function scanNews(
       where: { companyId },
       select: { url: true },
     });
-    return { company, links, savedUrls: saved.map((n) => n.url) };
+    // url is nullable (a link-less save) — drop nulls; only real URLs can match
+    // a scan result for exclusion.
+    return {
+      company,
+      links,
+      savedUrls: saved.map((n) => n.url).filter((u): u is string => u !== null),
+    };
   });
 
   if (company === null)
@@ -192,7 +199,8 @@ export async function scanProjectNews(
       project,
       subject,
       attachCompanyId,
-      savedUrls: saved.map((n) => n.url),
+      // url is nullable (a link-less save) — drop nulls for scan exclusion.
+      savedUrls: saved.map((n) => n.url).filter((u): u is string => u !== null),
     };
   });
 
@@ -265,32 +273,57 @@ function parseKeyFacts(raw: FormDataEntryValue | null): string[] {
 // Persist one discovered article to the NewsItem ledger. A link attaches to a
 // company, a project, or both — at least one is required (a project-only link
 // lets the operator save coverage for a project it caught wind of before any
-// developer/participant is linked). Re-verifies each referenced company/project
-// belongs to THIS org inside the tx (both are plain FKs — RLS WITH CHECK only
-// guards our own org_id, so without this a crafted request could attach an
-// own-org item to another org's row). Deduped by url within whichever anchor is
-// present (company first, else project).
+// developer/participant is linked). The URL is optional: a scan result the model
+// couldn't cite a source for is still saved for its headline/summary/facts (it
+// just isn't clickable). Re-verifies each referenced company/project belongs to
+// THIS org inside the tx (both are plain FKs — RLS WITH CHECK only guards our own
+// org_id, so without this a crafted request could attach an own-org item to
+// another org's row). Deduped by url within the anchor when a url is present,
+// else by headline.
 export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> {
   const { orgId } = await requireOrgContext();
 
   const companyId = String(formData.get("companyId") ?? "").trim();
-  const headline = String(formData.get("headline") ?? "").trim();
+  let headline = String(formData.get("headline") ?? "").trim();
   const url = String(formData.get("url") ?? "").trim();
-  const summary = String(formData.get("summary") ?? "").trim();
+  let summary = String(formData.get("summary") ?? "").trim();
   // Optional: when saving from a project scan, link the new item to that project
   // in the same write (news_items.project_id is a plain FK, re-verified below).
   const projectId = String(formData.get("projectId") ?? "").trim();
   // The scan card ships the article's AI-extracted facts as a JSON array; a bad
   // or absent value just persists no facts (they're display-only chips).
-  const keyFacts = parseKeyFacts(formData.get("keyFacts"));
-  if (headline === "" || url === "")
+  let keyFacts = parseKeyFacts(formData.get("keyFacts"));
+  if (headline === "")
     return { status: "error", message: "Missing article details." };
   if (companyId === "" && projectId === "")
     return { status: "error", message: "A link needs a company or a project." };
-  // The URL is later rendered as a clickable href, so only http(s) links may be
-  // stored — a `javascript:`/`data:` scheme would be a stored-XSS vector.
-  if (!/^https?:\/\//i.test(url))
+  // When a URL is present it's later rendered as a clickable href, so only
+  // http(s) links may be stored — a `javascript:`/`data:` scheme would be a
+  // stored-XSS vector. A link-less save skips this.
+  if (url !== "" && !/^https?:\/\//i.test(url))
     return { status: "error", message: "Article link must be an http(s) URL." };
+
+  // Enrich a bare pasted link (a URL with no summary yet, i.e. the manual "Add
+  // link" path): fetch the page and summarize it so the saved row carries real
+  // content and "Review updates from news" has something to read. Best-effort
+  // and OUTSIDE the tx (slow network + AI must not pin a DB connection) — any
+  // failure just saves the link as-is.
+  if (url !== "" && summary === "") {
+    try {
+      await enforceAiRateLimit(orgId);
+      const enriched = await summarizeArticleLink(url);
+      if (enriched) {
+        summary = enriched.summary;
+        if (keyFacts.length === 0) keyFacts = enriched.keyFacts;
+        // Replace the headline only when it was the URL fallback (no real title
+        // was given), so a user-provided title is never overwritten.
+        if (headline === url && enriched.headline !== "")
+          headline = enriched.headline;
+      }
+    } catch (err) {
+      console.error("news link enrichment failed", err);
+    }
+  }
 
   try {
     return await withOrg(orgId, async (tx) => {
@@ -314,10 +347,14 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
           return { status: "error" as const, message: "Project not found." };
       }
 
-      // Dedupe by url within the anchor we're saving under: a company save keys
-      // on (companyId, url); a project-only save keys on (projectId, url).
+      // Dedupe within the anchor we're saving under (company first, else
+      // project): key on url when there is one, else on the headline so a
+      // link-less save still can't be duplicated.
       const existing = await tx.newsItem.findFirst({
-        where: companyId !== "" ? { companyId, url } : { projectId, url },
+        where: {
+          ...(companyId !== "" ? { companyId } : { projectId }),
+          ...(url !== "" ? { url } : { headline }),
+        },
         select: { id: true, projectId: true },
       });
       if (existing) {
@@ -337,7 +374,7 @@ export async function saveNewsItem(formData: FormData): Promise<SaveNewsResult> 
           companyId: companyId === "" ? null : companyId,
           projectId: projectId === "" ? null : projectId,
           headline,
-          url,
+          url: url === "" ? null : url,
           summary: summary || null,
           keyFacts,
           capturedAt: new Date(),

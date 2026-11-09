@@ -830,7 +830,12 @@ model NewsItem {
   /// coverage; project-only rows (null company) are untouched.
   companyId  String?  @map("company_id") @db.Uuid
   headline   String
-  url        String
+  /// Nullable so a scan result the model couldn't cite a source for is still
+  /// savable for its headline/summary/key facts (it just isn't clickable). When
+  /// present it's http(s)-validated in the action before storage (stored-XSS
+  /// guard, since it's rendered as an href). Dedup anchors on url when set, else
+  /// on headline.
+  url        String?
   summary    String?
   // A free-text user annotation and the AI-extracted key facts (News audit item
   // 6). note is edited inline on the saved-articles list; keyFacts is populated

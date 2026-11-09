@@ -25,7 +25,9 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
 export type SavedArticle = {
   id: string;
   headline: string;
-  url: string;
+  // Null for a link-less save (a scan find with no citable source); the headline
+  // then renders as plain text instead of a link.
+  url: string | null;
   summary: string | null;
   note: string | null;
   keyFacts: string[];
@@ -105,14 +107,20 @@ function ArticleItem({
   return (
     <li className="flex items-start justify-between gap-3 px-4 py-3">
       <div className="min-w-0">
-        <a
-          href={article.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[12.5px] font-medium text-ink hover:text-gold hover:underline"
-        >
-          {article.headline}
-        </a>
+        {article.url !== null ? (
+          <a
+            href={article.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[12.5px] font-medium text-ink hover:text-gold hover:underline"
+          >
+            {article.headline}
+          </a>
+        ) : (
+          <span className="text-[12.5px] font-medium text-ink">
+            {article.headline}
+          </span>
+        )}
         {article.summary ? (
           <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-relaxed text-ink-3">
             {article.summary}

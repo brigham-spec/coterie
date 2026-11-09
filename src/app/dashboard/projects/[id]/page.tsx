@@ -439,14 +439,20 @@ export default async function ProjectDetailPage({
               )
               .map((n) => (
                 <li key={n.id} className="flex flex-col gap-1 px-4 py-3">
-                  <a
-                    href={n.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[12.5px] font-medium text-ink hover:text-gold hover:underline"
-                  >
-                    {n.headline}
-                  </a>
+                  {n.url !== null ? (
+                    <a
+                      href={n.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[12.5px] font-medium text-ink hover:text-gold hover:underline"
+                    >
+                      {n.headline}
+                    </a>
+                  ) : (
+                    <span className="text-[12.5px] font-medium text-ink">
+                      {n.headline}
+                    </span>
+                  )}
                   {n.summary ? (
                     <p className="line-clamp-2 text-[10.5px] text-ink-3">
                       {n.summary}
