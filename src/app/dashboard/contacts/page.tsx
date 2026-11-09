@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireOrgContext } from "@/lib/auth";
 import { withOrg } from "@/lib/tenant";
 import {
+  Button,
   Card,
   CardHeader,
   PageTitle,
@@ -37,11 +38,21 @@ export default async function ContactsPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <div className="mb-6">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <PageTitle
           title="Contacts"
           subtitle={`${contacts.length} across ${ctx.orgName}'s network`}
         />
+        {ctx.role === "admin" && contacts.length > 0 ? (
+          // A Route Handler download (CSV attachment), not a page — a plain <a> so
+          // the browser navigates and saves the file. The lint rule only flags it
+          // because the static `export` segment looks like the sibling [id] page;
+          // at runtime the static route wins.
+          // eslint-disable-next-line @next/next/no-html-link-for-pages
+          <a href="/dashboard/contacts/export">
+            <Button>Export CSV</Button>
+          </a>
+        ) : null}
       </div>
 
       {companies.length === 0 ? (

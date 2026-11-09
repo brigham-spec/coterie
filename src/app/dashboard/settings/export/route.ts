@@ -1,4 +1,5 @@
 import { requireOrgContext } from "@/lib/auth";
+import { slugify } from "@/lib/slug";
 import { exportTenantData } from "@/lib/tenant-export";
 
 // Tenant data export download (admin only). Streams the org's own data as one
@@ -6,15 +7,6 @@ import { exportTenantData } from "@/lib/tenant-export";
 // like the activity log: a non-admin gets a bare 404 so the route's existence
 // stays hidden from staff, rather than a thrown ForbiddenError. The export itself
 // is RLS-scoped inside exportTenantData, so a caller only ever gets their org.
-
-function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "org"
-  );
-}
 
 export async function GET(): Promise<Response> {
   const ctx = await requireOrgContext();

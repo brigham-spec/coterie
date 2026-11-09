@@ -38,3 +38,11 @@ const VALUES = new Set(COMPANY_STATUSES);
 export function isCompanyStatus(value: string): boolean {
   return VALUES.has(value);
 }
+
+const STATUS_LABELS = new Map(COMPANY_STATUS_DEFS.map((s) => [s.value, s.label]));
+
+/// The display label for a status value, falling back to the raw value for any
+/// legacy/unknown status so a CSV export never shows a blank cell.
+export function companyStatusLabel(value: string): string {
+  return STATUS_LABELS.get(value) ?? value;
+}

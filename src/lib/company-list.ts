@@ -5,6 +5,8 @@
 // introductions it's a party to. The page loads the rows withOrg and hands them
 // here so the thresholds and attribution stay unit-tested without a database.
 
+import { categorizeIndustry } from "@/lib/industry-categories";
+
 const DAY = 86_400_000;
 
 // The companies-table sort model — a FIELD (which column) plus a DIRECTION. One
@@ -117,4 +119,80 @@ export function tallyIntrosByCompany(rows: IntroAttrRow[]): Map<string, number> 
     for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
   }
   return counts;
+}
+
+// ── List filtering (shared by the companies page + the CSV export route) ──────
+// One source for the status tabs and the row filter so the page you're viewing
+// and the file you export can never drift apart. `statuses: null` is the
+// catch-all "All" tab.
+export const COMPANY_SEGMENTS: {
+  key: string;
+  label: string;
+  statuses: string[] | null;
+}[] = [
+  { key: "all", label: "All", statuses: null },
+  { key: "members", label: "Members", statuses: ["member"] },
+  { key: "partners", label: "Partners", statuses: ["strategic_partner"] },
+  { key: "prospects", label: "Prospects", statuses: ["prospect"] },
+  { key: "former", label: "Former", statuses: ["former"] },
+];
+
+const SEGMENT_BY_KEY = new Map(COMPANY_SEGMENTS.map((s) => [s.key, s]));
+
+/// PURE: whether a company status belongs to a segment tab. An unknown segment
+/// key falls back to "All" (matches everything).
+export function companySegmentMatches(segmentKey: string, status: string): boolean {
+  const seg = SEGMENT_BY_KEY.get(segmentKey) ?? COMPANY_SEGMENTS[0];
+  return seg.statuses == null || seg.statuses.includes(status);
+}
+
+// The active list filters, pre-resolved from the URL query string. `q` is already
+// trimmed + lowercased; `owner` is "all"/"" (everyone) or a user id; `industry` is
+// a rolled-up category label; `likelihood` is a 1-5 floor (0 = off).
+export type CompanyFilter = {
+  segment: string;
+  q: string;
+  owner: string;
+  tag: string;
+  tier: string;
+  industry: string;
+  likelihood: number;
+};
+
+type FilterableCompany = {
+  name: string;
+  status: string;
+  industry: string;
+  ownerUserId: string | null;
+  networkTags: string[];
+  tier: string | null;
+  likelihood: number | null;
+};
+
+/// PURE: apply the active filters to a loaded company set. Mirrors the companies
+/// page's in-memory predicate chain exactly so an export matches the view.
+export function filterCompanies<T extends FilterableCompany>(
+  companies: T[],
+  f: CompanyFilter,
+): T[] {
+  return companies.filter((c) => {
+    if (!companySegmentMatches(f.segment, c.status)) return false;
+    if (
+      f.q !== "" &&
+      !c.name.toLowerCase().includes(f.q) &&
+      !c.industry.toLowerCase().includes(f.q)
+    )
+      return false;
+    if (f.owner !== "" && f.owner !== "all" && c.ownerUserId !== f.owner)
+      return false;
+    if (f.tag !== "" && !c.networkTags.includes(f.tag)) return false;
+    if (f.tier !== "" && c.tier !== f.tier) return false;
+    if (
+      f.industry !== "" &&
+      !(c.industry !== "" && categorizeIndustry(c.industry) === f.industry)
+    )
+      return false;
+    if (f.likelihood > 0 && (c.likelihood ?? 0) < f.likelihood) return false;
+    return true;
+  });
 }

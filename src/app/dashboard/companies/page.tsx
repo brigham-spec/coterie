@@ -8,7 +8,10 @@ import { ACTIVE_COMMITMENT_STATUSES } from "@/lib/commitments";
 import { NETWORK_STATUSES } from "@/lib/company-statuses";
 import { readMemberTiers } from "@/lib/member-tiers";
 import {
+  COMPANY_SEGMENTS,
+  companySegmentMatches,
   defaultSortDir,
+  filterCompanies,
   parseCompanySort,
   staleTone,
   tallyIntrosByCompany,
@@ -60,16 +63,6 @@ const addedDate = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   year: "numeric",
 });
-
-type Segment = { key: string; label: string; match: (status: string) => boolean };
-
-const SEGMENTS: Segment[] = [
-  { key: "all", label: "All", match: () => true },
-  { key: "members", label: "Members", match: (s) => s === "member" },
-  { key: "partners", label: "Partners", match: (s) => s === "strategic_partner" },
-  { key: "prospects", label: "Prospects", match: (s) => s === "prospect" },
-  { key: "former", label: "Former", match: (s) => s === "former" },
-];
 
 const DAY = 86_400_000;
 
@@ -176,11 +169,15 @@ export default async function CompaniesPage({
   const configuredTiers = readMemberTiers(org?.settings);
   const staff = staffRows.map((m) => ({ id: m.user.id, name: m.user.name }));
 
-  const segment = SEGMENTS.find((s) => s.key === segmentKey) ?? SEGMENTS[0];
+  const segment =
+    COMPANY_SEGMENTS.find((s) => s.key === segmentKey) ?? COMPANY_SEGMENTS[0];
 
   // Segment counts from the full set (so tabs show totals, not the filtered view).
   const segmentCounts = new Map(
-    SEGMENTS.map((s) => [s.key, companies.filter((c) => s.match(c.status)).length]),
+    COMPANY_SEGMENTS.map((s) => [
+      s.key,
+      companies.filter((c) => companySegmentMatches(s.key, c.status)).length,
+    ]),
   );
 
   // Top-of-page network metrics, all from the full set: total recurring value and
@@ -250,25 +247,15 @@ export default async function CompaniesPage({
     return ra !== rb ? ra - rb : a.localeCompare(b);
   });
 
-  const filtered = companies
-    .filter((c) => segment.match(c.status))
-    .filter((c) =>
-      q === ""
-        ? true
-        : c.name.toLowerCase().includes(q) ||
-          c.industry.toLowerCase().includes(q),
-    )
-    .filter((c) => (ownerFilter === "all" ? true : c.ownerUserId === ownerFilter))
-    .filter((c) => (tagFilter ? c.networkTags.includes(tagFilter) : true))
-    .filter((c) => (tierFilter ? c.tier === tierFilter : true))
-    .filter((c) =>
-      industryFilter
-        ? c.industry !== "" && categorizeIndustry(c.industry) === industryFilter
-        : true,
-    )
-    .filter((c) =>
-      likelihoodFilter ? (c.likelihood ?? 0) >= likelihoodFilter : true,
-    );
+  const filtered = filterCompanies(companies, {
+    segment: segmentKey,
+    q,
+    owner: ownerFilter,
+    tag: tagFilter,
+    tier: tierFilter,
+    industry: industryFilter,
+    likelihood: likelihoodFilter,
+  });
 
   // Each field's comparator in ascending order; the direction flips the sign
   // below. Tier uses an Infinity sentinel so unranked rows always settle at the
@@ -333,6 +320,12 @@ export default async function CompaniesPage({
   }
   const segmentHref = (key: string) =>
     makeHref({ segment: key === "all" ? "" : key });
+  // The CSV export carries the active filters (reusing makeHref's query so the two
+  // can't drift) to the export route, so the download matches the current view.
+  const listQuery = makeHref({}).split("?")[1] ?? "";
+  const exportHref = listQuery
+    ? `/dashboard/companies/export?${listQuery}`
+    : "/dashboard/companies/export";
   // Clicking the active industry chip clears it.
   const industryHref = (name: string) =>
     makeHref({ industry: industryFilter === name ? "" : name });
@@ -373,9 +366,16 @@ export default async function CompaniesPage({
           subtitle={`${companies.length} in ${ctx.orgName}'s network`}
         />
         {ctx.role === "admin" ? (
-          <Link href="/dashboard/companies/import">
-            <Button>Import CSV</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            {companies.length > 0 ? (
+              <a href={exportHref}>
+                <Button>Export CSV</Button>
+              </a>
+            ) : null}
+            <Link href="/dashboard/companies/import">
+              <Button>Import CSV</Button>
+            </Link>
+          </div>
         ) : null}
       </div>
 
@@ -404,7 +404,7 @@ export default async function CompaniesPage({
 
       <Card>
         <div className="flex flex-wrap items-center gap-1 border-b border-line bg-surface-2 px-3 py-2">
-          {SEGMENTS.map((s) => {
+          {COMPANY_SEGMENTS.map((s) => {
             const active = s.key === segment.key;
             return (
               <Link
